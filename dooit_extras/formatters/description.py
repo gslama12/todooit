@@ -77,13 +77,11 @@ def description_highlight_tags(color: StyleType = "", fmt=" {}"):
         regex = re.compile(r"@\w+")
         style = color or api.vars.theme.primary
 
-        for match in re.finditer(regex, value):
-            start, end = match.span()
-            formatted_tag = fmt.format(value[start + 1 : end])  # +1 for @ symbol
-            formatted_tag = Text.from_markup(formatted_tag, style=style).markup
-            value = value[:start] + formatted_tag + value[end:]
+        def highlight(match: re.Match) -> str:
+            formatted_tag = fmt.format(match.group()[1:])  # strip the @ symbol
+            return Text.from_markup(formatted_tag, style=style).markup
 
-        return value
+        return regex.sub(highlight, value)
 
     return wrapper
 
