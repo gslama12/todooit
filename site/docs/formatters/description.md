@@ -2,7 +2,7 @@
 
 ## Children Count
 
-This formatter shows the count of children present in a given `Todo`/`Workspace`
+This formatter shows the count of children present in a given `Todo`/`Project`
 
 | Param|<div style="width: 100px">Default</div> |Description|
 | ------------- | :----------------:  | :----------------------------------------------------------------------------------------|
@@ -17,7 +17,7 @@ from dooit.ui.api.events import subscribe, Startup
 @subscribe(Startup)
 def setup(api, _):
     # ...
-    api.formatter.workspaces.description.add(description_children_count(fmt = "..."))
+    api.formatter.projects.description.add(description_children_count(fmt = "..."))
     api.formatter.todos.description.add(description_children_count(fmt = "..."))
     # ...
 ```
@@ -38,7 +38,7 @@ from dooit.ui.api.events import subscribe, Startup
 @subscribe(Startup)
 def setup(api, _):
     # ...
-    api.formatter.workspaces.description.add(description_highlight_link())
+    api.formatter.projects.description.add(description_highlight_link())
     api.formatter.todos.description.add(description_highlight_link())
     # ...
 ```
@@ -60,7 +60,7 @@ from dooit.ui.api.events import subscribe, Startup
 @subscribe(Startup)
 def setup(api, _):
     # ...
-    api.formatter.workspaces.description.add(description_highlight_tags())
+    api.formatter.projects.description.add(description_highlight_tags())
     api.formatter.todos.description.add(description_highlight_tags())
     # ...
 ```
@@ -83,7 +83,7 @@ from dooit_extras.formatters import description_strike_completed
 @subscribe(Startup)
 def setup(api, _):
     # ...
-    api.formatter.workspaces.description.add(description_strike_completed(dim = True))
+    api.formatter.projects.description.add(description_strike_completed(dim = True))
     api.formatter.todos.description.add(description_strike_completed(dim = True))
     # ...
 ```

@@ -12,9 +12,9 @@ def setup_formatters(api: DooitAPI, _):
     fmt = api.formatter
     theme = api.vars.theme
 
-    # ------- WORKSPACES -------
+    # ------- PROJECTS -------
     format = Text(" ({}) ", style=theme.primary).markup
-    fmt.workspaces.description.add(description_children_count(format))
+    fmt.projects.description.add(description_children_count(format))
 
     # --------- TODOS ---------
     # status formatter

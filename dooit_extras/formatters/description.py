@@ -1,12 +1,12 @@
 from typing import Union, Optional
-from dooit.api import Todo, Workspace
+from dooit.api import Todo, Project
 from rich.style import Style, StyleType
 from dooit.ui.api import DooitAPI
 from rich.text import Text
 from dooit.ui.api import extra_formatter
 import re
 
-ModelType = Union[Todo, Workspace]
+ModelType = Union[Todo, Project]
 
 
 def description_highlight_link(color: Optional[str] = None):
@@ -48,7 +48,7 @@ def description_children_count(fmt: str = " ({}) "):
         if isinstance(model, Todo):
             children_count = len(model.todos)
         else:
-            children_count = len(model.workspaces)
+            children_count = len(model.projects)
 
         if not children_count:
             return

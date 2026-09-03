@@ -1,21 +1,21 @@
 from rich.text import Text
 from dooit.ui.api import DooitAPI, subscribe
-from dooit.ui.api.events import TodoEvent, WorkspaceSelected
+from dooit.ui.api.events import TodoEvent, ProjectSelected
 from .text_poller import Custom
 
 
 def get_status_icons(completed_icon, pending_icon, overdue_icon):
-    @subscribe(TodoEvent, WorkspaceSelected)
+    @subscribe(TodoEvent, ProjectSelected)
     def wrapper(api: DooitAPI, _):
-        workspace = api.vars.current_workspace
-        if not workspace:
+        project = api.vars.current_project
+        if not project:
             return ""
 
         theme = api.vars.theme
 
-        completed = sum([i.is_completed for i in workspace.todos])
-        pending = sum([i.is_pending for i in workspace.todos])
-        overdue = sum([i.is_overdue for i in workspace.todos])
+        completed = sum([i.is_completed for i in project.todos])
+        pending = sum([i.is_pending for i in project.todos])
+        overdue = sum([i.is_overdue for i in project.todos])
 
         return (
             Text()

@@ -54,7 +54,7 @@ export default defineConfig({
         collapsed: true,
         items: [
           { text: "Clock", link: "/widgets/clock" },
-          { text: "Current Workspace", link: "/widgets/current_workspace" },
+          { text: "Current Project", link: "/widgets/current_project" },
           { text: "Custom", link: "/widgets/custom" },
           { text: "Date", link: "/widgets/date" },
           { text: "Mode", link: "/widgets/mode" },
@@ -64,7 +64,7 @@ export default defineConfig({
           { text: "Status Icons", link: "/widgets/status_icons" },
           { text: "TextBox", link: "/widgets/text_box" },
           { text: "Ticker", link: "/widgets/ticker" },
-          { text: "Workspace Progress", link: "/widgets/workspace_progress" },
+          { text: "Project Progress", link: "/widgets/project_progress" },
         ],
       },
       {
@@ -72,7 +72,7 @@ export default defineConfig({
         collapsible: true,
         collapsed: true,
         items: [
-          { text: "Toggle Workspaces", link: "/scripts/toggle_workspaces" },
+          { text: "Toggle Projects", link: "/scripts/toggle_projects" },
           { text: "Custom Tree Borders", link: "/scripts/custom_tree_borders" },
           { text: "Dim Unfocused", link: "/scripts/dim_unfocused" },
         ],

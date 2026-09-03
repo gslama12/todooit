@@ -1,6 +1,6 @@
-# Workspace Progress
+# Project Progress
 
-A widget to show current completion progress in percentage for a workspace
+A widget to show current completion progress in percentage for a project
 
 | Key|<div style="width: 100px">Default</div> |Description|
 | ------------- | :----------------:  | :----------------------------------------------------------------------------------------|
@@ -12,7 +12,7 @@ A widget to show current completion progress in percentage for a workspace
 ## Usage
 
 ```python
-from dooit_extras.bar_widgets import WorkspaceProgress
+from dooit_extras.bar_widgets import ProjectProgress
 from dooit.ui.api.events import subscribe, Startup
 
 @subscribe(Startup)
@@ -20,7 +20,7 @@ def setup(api, _):
     api.bar.set( 
         [
             # ....
-            WorkspaceProgress(api),
+            ProjectProgress(api),
             # ....
         ]
     )
