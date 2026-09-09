@@ -15,7 +15,7 @@ from todooit.api import Project, manager
 
 def test_has_changed_notices_an_outside_write():
     with tempfile.TemporaryDirectory() as folder:
-        db = Path(folder) / "dooit.db"
+        db = Path(folder) / "todooit.db"
         manager.connect(str(db))
 
         p = Project(description="test")

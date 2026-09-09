@@ -16,11 +16,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 if getattr(sys, "frozen", False):
-    BASE_PATH = Path(sys._MEIPASS) / "dooit"  # pragma: no cover (binary pkg)
+    BASE_PATH = Path(sys._MEIPASS) / "todooit"  # pragma: no cover (binary pkg)
 else:
     BASE_PATH = Path(__file__).parent.parent.parent
 
-MAIN_FOLDER = "dooit"
+MAIN_FOLDER = "todooit"
 CONFIG_FILE = Path(user_config_dir(MAIN_FOLDER)) / "config.py"
 DEFAULT_CONFIG = BASE_PATH / "utils" / "default_config.py"
 

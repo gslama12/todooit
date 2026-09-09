@@ -30,12 +30,18 @@ Where changes go:
 - Structural / rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.
 
-## Data locations (deliberately kept from dooit)
+## Data locations
 
-todooit keeps dooit's platformdirs app name so it opens the same live data as
-a dooit install: the real database is `~/.local/share/dooit/dooit.db`
-**inside WSL** (CSS cache: `~/.cache/dooit`). Do not "rebrand" these paths —
-that would orphan the user's data.
+todooit keeps its own data, separate from any dooit install:
+
+- database: `~/.local/share/todooit/todooit.db` **inside WSL**
+- CSS cache: `~/.cache/todooit` (generated `todooit.tcss`)
+- config dir: `~/.config/todooit` (unused - the plugin manager always loads
+  `default_config.py`)
+
+It was seeded on 2026-09-09 with a copy of the old dooit database and the two
+have diverged independently since. Nothing todooit does touches
+`~/.local/share/dooit/`.
 
 ## Testing a change
 

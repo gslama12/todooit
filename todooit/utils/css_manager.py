@@ -5,10 +5,10 @@ from platformdirs import user_cache_dir
 from todooit.api.theme import DooitThemeBase, TokyoNight
 from uuid import uuid4
 
-dooit_cache_path = Path(user_cache_dir("dooit"))
+todooit_cache_path = Path(user_cache_dir("todooit"))
 
 if getattr(sys, "frozen", False):
-    BASE_PATH = Path(sys._MEIPASS) / "dooit"  # pragma: no cover (binary pkg)
+    BASE_PATH = Path(sys._MEIPASS) / "todooit"  # pragma: no cover (binary pkg)
 else:
     BASE_PATH = Path(__file__).parent.parent
 
@@ -24,12 +24,12 @@ class CssManager:
     def __init__(
         self,
         theme: DooitThemeBase = TokyoNight(),
-        cache_path: Path = dooit_cache_path,
+        cache_path: Path = todooit_cache_path,
     ):
         self.theme: DooitThemeBase = theme
         self.cache_path = cache_path
         self.stylesheets: Path = cache_path / "stylesheets"
-        self.css_file: Path = cache_path / "dooit.tcss"
+        self.css_file: Path = cache_path / "todooit.tcss"
 
         cache_path.mkdir(parents=True, exist_ok=True)
         if not self.css_file.exists():

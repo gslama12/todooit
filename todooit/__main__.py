@@ -43,7 +43,7 @@ def main(ctx, version: bool, config: str, db: str) -> None:
 @main.command(help="Show config location.")
 def config_loc() -> None:
     """Print the location of the configuration file."""
-    print(Path(user_config_dir("dooit")) / "config.py")
+    print(Path(user_config_dir("todooit")) / "config.py")
 
 
 if __name__ == "__main__":
