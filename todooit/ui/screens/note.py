@@ -187,10 +187,14 @@ class NoteEditor(TextArea):
     """
     A plain text editor that styles `**bold**`, `*italic*` and bullets as typed
 
-    Two modes, the way the rest of dooit has two. The window opens in NORMAL,
-    where the letters move the cursor about and nothing typed reaches the note,
-    and `i` drops into INSERT, where they land in it. `escape` climbs back out
-    one step at a time: INSERT to NORMAL, NORMAL to the todo the note is on.
+    Two modes, the way the rest of dooit has two. NORMAL is where the letters
+    move the cursor about and nothing typed reaches the note, and `i` drops
+    into INSERT, where they land in it. `escape` climbs back out one step at a
+    time: INSERT to NORMAL, NORMAL to the todo the note is on.
+
+    Which mode the window opens in follows what there is to open on: a note
+    with something written in it opens in NORMAL, to be read; an empty one in
+    INSERT, since reading a blank page is not what it was opened for.
 
     Selecting, copying and pasting work the same in either mode - shift with a
     motion picks text out, `ctrl+a` takes the lot, and `ctrl+c`/`ctrl+x`/`ctrl+v`
@@ -227,8 +231,10 @@ class NoteEditor(TextArea):
         #
         # `read_only` is what NORMAL mode *is*: keystrokes still move the
         # cursor and pick text out, but none of them reach the document, so
-        # the letters are free to mean motions instead of themselves
-        super().__init__(text, read_only=True)
+        # the letters are free to mean motions instead of themselves. An empty
+        # note has nothing to read, so it starts out of it - and whitespace
+        # alone counts as empty, being nothing anyone opened the note to see
+        super().__init__(text, read_only=bool(text.strip()))
 
         # Raised by the first `g` of a `gg` and by nothing else
         self._pending_g = False
@@ -750,15 +756,15 @@ class NoteScreenBase(BaseScreen):
         editor.border_title = self.title_text
 
         yield editor
-        yield Static(self.HINTS[MODE_NORMAL], id="note-hint")
+        yield Static(self.HINTS[editor.mode], id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
         editor.register_theme(build_theme(self.api.vars.theme))
         editor.theme = THEME_NAME
 
-        # The window takes the keyboard, but in NORMAL mode: the note opens to
-        # be read, and `i` is what says it is about to be written
+        # The window takes the keyboard, in whichever of the two modes the
+        # editor picked out of the text it was handed
         editor.focus()
         self.mode_changed()
 

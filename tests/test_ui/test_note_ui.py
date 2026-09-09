@@ -40,8 +40,27 @@ async def test_space_opens_the_note_window():
     async with run_pilot() as pilot:
         screen = await open_note(pilot, "the todo")
 
-        # Titled by the todo, opened to be read
+        # Titled by the todo, and opened ready to write: there is nothing in
+        # an empty note to have opened it to read
         assert screen.editor.border_title == "the todo"
+        assert screen.editor.mode == MODE_INSERT
+
+
+async def test_a_written_note_opens_to_be_read():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("something written"))
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+        # Second time round there is something on the page, so it opens in
+        # NORMAL and the letters are motions again
+        await pilot.press(" ")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
         assert screen.editor.mode == MODE_NORMAL
 
 
@@ -50,9 +69,7 @@ async def test_writing_a_note_and_closing_saves_it():
         app = pilot.app
         screen = await open_note(pilot)
 
-        await pilot.press("i")
         assert screen.editor.mode == MODE_INSERT
-
         await pilot.press(*list("remember the milk"))
         await pilot.press("escape")  # back to NORMAL
         assert screen.editor.mode == MODE_NORMAL
@@ -68,7 +85,6 @@ async def test_the_note_opens_on_what_it_holds():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("i")
         await pilot.press(*list("first draft"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -94,6 +110,7 @@ async def test_normal_mode_letters_do_not_write():
         app = pilot.app
         await open_note(pilot)
 
+        await pilot.press("escape")  # an empty note opens in INSERT
         await pilot.press(*list("kjl"))  # motions, not letters
         await pilot.press("escape")
         await pilot.pause()
@@ -106,7 +123,6 @@ async def test_clear_note_asks_first():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("i")
         await pilot.press(*list("precious words"))
         await pilot.press("escape")
 
@@ -155,7 +171,6 @@ async def test_bold_and_bullet_markup():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("i")
         await pilot.press(*list("word"))
 
         # Select the line and wrap it bold
@@ -178,7 +193,6 @@ async def test_header_draws_a_rule_under_the_line():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("i")
         await pilot.press(*list("Section"))
         await pilot.press("ctrl+t")
         await pilot.pause()
@@ -205,7 +219,6 @@ async def test_open_link_inside_the_note():
         ):
             await open_note(pilot)
 
-            await pilot.press("i")
             await pilot.press(*list("see https://example.com here"))
             await pilot.press("escape")
 
@@ -236,7 +249,6 @@ async def test_pinned_note_via_m():
         assert isinstance(screen, PinnedNoteScreen)
         assert screen.editor.border_title == "Pinned Note"
 
-        await pilot.press("i")
         await pilot.press(*list("a thought with no task yet"))
         await pilot.press("escape", "escape")
         await pilot.pause()
