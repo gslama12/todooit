@@ -1,6 +1,6 @@
 # Dim Unfocused
 
-This script allows you to dimmify workspaces or todo tree which is Unfocused
+This script allows you to dimmify projects or todo tree which is Unfocused
 The value for opacity is in the format: `<number>%` where number can be from 1 till 100
 
 | Param|<div style="width: 100px">Default</div> |Description|
@@ -22,6 +22,6 @@ def setup(api: DooitAPI, _):
 
 Preview:
 
-![Dim Unfocused Workspaces](./previews/dim_unfocused_workspaces.png)
+![Dim Unfocused Projects](./previews/dim_unfocused_projects.png)
 
 ![Dim Unfocused Todos](./previews/dim_unfocused_todos.png)

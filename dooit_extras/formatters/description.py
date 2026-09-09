@@ -1,12 +1,12 @@
 from typing import Union, Optional
-from dooit.api import Todo, Workspace
+from dooit.api import Todo, Project
 from rich.style import Style, StyleType
 from dooit.ui.api import DooitAPI
 from rich.text import Text
 from dooit.ui.api import extra_formatter
 import re
 
-ModelType = Union[Todo, Workspace]
+ModelType = Union[Todo, Project]
 
 
 def description_highlight_link(color: Optional[str] = None):
@@ -48,7 +48,7 @@ def description_children_count(fmt: str = " ({}) "):
         if isinstance(model, Todo):
             children_count = len(model.todos)
         else:
-            children_count = len(model.workspaces)
+            children_count = len(model.projects)
 
         if not children_count:
             return
@@ -77,13 +77,11 @@ def description_highlight_tags(color: StyleType = "", fmt=" {}"):
         regex = re.compile(r"@\w+")
         style = color or api.vars.theme.primary
 
-        for match in re.finditer(regex, value):
-            start, end = match.span()
-            formatted_tag = fmt.format(value[start + 1 : end])  # +1 for @ symbol
-            formatted_tag = Text.from_markup(formatted_tag, style=style).markup
-            value = value[:start] + formatted_tag + value[end:]
+        def highlight(match: re.Match) -> str:
+            formatted_tag = fmt.format(match.group()[1:])  # strip the @ symbol
+            return Text.from_markup(formatted_tag, style=style).markup
 
-        return value
+        return regex.sub(highlight, value)
 
     return wrapper
 

@@ -1,6 +1,6 @@
-# Current Workspace
+# Current Project
 
-A widget to show the works workspace
+A widget to show the works project
 
 
 | Key|<div style="width: 100px">Default</div> |Description|
@@ -13,7 +13,7 @@ A widget to show the works workspace
 ## Usage
 
 ```python
-from dooit_extras.bar_widgets import CurrentWorkspace
+from dooit_extras.bar_widgets import CurrentProject
 from dooit.ui.api.events import subscribe, Startup
 
 @subscribe(Startup)
@@ -21,7 +21,7 @@ def setup(api, _):
     api.bar.set( 
         [
             # ....
-            CurrentWorkspace(api),
+            CurrentProject(api),
             # ....
         ]
     )

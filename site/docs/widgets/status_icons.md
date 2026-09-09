@@ -1,6 +1,6 @@
 # StatusIcons
 
-A widget to display count of `completed`, `pending` and `overdue` todos for selected workspace
+A widget to display count of `completed`, `pending` and `overdue` todos for selected project
 
 | Key            | Default                              | Description                                                                   |
 |----------------|:------------------------------------:|-------------------------------------------------------------------------------|
