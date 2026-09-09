@@ -2,7 +2,7 @@
 The Bin: throwing work away, getting it back, and emptying it out
 """
 
-from dooit.api import (
+from todooit.api import (
     Project,
     Todo,
     binned_tasks,
@@ -11,7 +11,7 @@ from dooit.api import (
     move_todo_to_bin,
     restore_todo,
 )
-from dooit.api.recycle import REVIVED_PREFIX, UNKNOWN_PROJECT, revive_home
+from todooit.api.recycle import REVIVED_PREFIX, UNKNOWN_PROJECT, revive_home
 from tests.test_core.core_base import *  # noqa
 
 

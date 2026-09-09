@@ -4,15 +4,15 @@ Notes: the window on a todo's note, and the pinned scratchpad
 
 from unittest.mock import patch
 
-from dooit.api import PinnedNote, Todo
-from dooit.ui.screens.note import (
+from todooit.api import PinnedNote, Todo
+from todooit.ui.screens.note import (
     MODE_INSERT,
     MODE_NORMAL,
     RULE,
     NoteScreen,
     NoteScreenBase,
 )
-from dooit.ui.screens.pinned_note import PinnedNoteScreen
+from todooit.ui.screens.pinned_note import PinnedNoteScreen
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -200,7 +200,7 @@ async def test_open_link_inside_the_note():
         opened = []
 
         with patch(
-            "dooit.ui.screens.note.open_url",
+            "todooit.ui.screens.note.open_url",
             lambda url: opened.append(url) or True,
         ):
             await open_note(pilot)

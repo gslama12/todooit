@@ -1,4 +1,4 @@
-from dooit.api.project import Project
+from todooit.api.project import Project
 from tests.test_core.core_base import *  # noqa
 
 

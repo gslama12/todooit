@@ -1,8 +1,8 @@
 from typing import List, Tuple
 from datetime import datetime, timedelta
 from pytest import raises, mark
-from dooit.api.exceptions import NoParentError, MultipleParentError
-from dooit.api import Todo, Project
+from todooit.api.exceptions import NoParentError, MultipleParentError
+from todooit.api import Todo, Project
 from tests.test_core.core_base import *  # noqa
 
 
@@ -339,7 +339,7 @@ def test_total_children_counts_only_open_work(create_project):
     child2.toggle_complete()
     assert t.total_children == 2
 
-    from dooit.api import move_todo_to_bin
+    from todooit.api import move_todo_to_bin
 
     move_todo_to_bin(child1)
     assert t.total_children == 0
@@ -435,7 +435,7 @@ def test_tags_ignore_emails(create_project):
 
 
 def test_is_binned(create_project):
-    from dooit.api import move_todo_to_bin
+    from todooit.api import move_todo_to_bin
 
     p = create_project()
     t = p.add_todo()

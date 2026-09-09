@@ -1,5 +1,5 @@
 from typing import Callable, Optional
-from dooit.ui.api import DooitAPI
+from todooit.ui.api import DooitAPI
 from ._base import BarUtilWidgetBase
 
 

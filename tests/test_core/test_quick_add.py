@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pytest import raises
 
-from dooit.utils.quick_add import QuickAddError, parse_quick_add, split_path
+from todooit.utils.quick_add import QuickAddError, parse_quick_add, split_path
 
 # A Wednesday morning, so relative dates resolve the same way every run
 NOW = datetime(2026, 9, 2, 10, 30)

@@ -1,4 +1,4 @@
-from dooit.api import Project
+from todooit.api import Project
 from tests.test_core.core_base import *  # noqa
 
 
@@ -84,7 +84,7 @@ def test_root():
 def test_total_todos_counts_open_work_at_every_level(create_project):
     """The tally beside a project counts work left, however it is filed"""
 
-    from dooit.api import move_todo_to_bin
+    from todooit.api import move_todo_to_bin
 
     p = create_project("home")
     sub = Project(description="garden", parent_project=p)

@@ -4,8 +4,8 @@ The quick add overlay: a whole task typed in one line over the app
 
 from datetime import date, timedelta
 
-from dooit.api import Project, Todo
-from dooit.ui.screens.quick_add import QuickAddScreen
+from todooit.api import Project, Todo
+from todooit.ui.screens.quick_add import QuickAddScreen
 from tests.test_ui.ui_base import (
     boot,
     new_project,

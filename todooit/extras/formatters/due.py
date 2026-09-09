@@ -1,7 +1,7 @@
 from typing import Callable, Optional
 from rich.style import Style
-from dooit.api.todo import datetime, Todo
-from dooit.ui.api import DooitAPI, extra_formatter
+from todooit.api.todo import datetime, Todo
+from todooit.ui.api import DooitAPI, extra_formatter
 from rich.text import Text
 
 

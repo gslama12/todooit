@@ -1,6 +1,6 @@
-from dooit.api import TODAY
-from dooit.ui.tui import Dooit
-from dooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
+from todooit.api import TODAY
+from todooit.ui.tui import Dooit
+from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
 from tests.test_ui.ui_base import boot, run_pilot
 
 

@@ -1,6 +1,6 @@
 from tests.test_ui.ui_base import run_pilot
-from dooit.ui.tui import Dooit
-from dooit.ui.api import loader
+from todooit.ui.tui import Dooit
+from todooit.ui.api import loader
 import tempfile
 from pathlib import Path
 

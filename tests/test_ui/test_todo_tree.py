@@ -6,11 +6,11 @@ from datetime import date, datetime, timedelta
 
 from pytest import raises
 
-from dooit.api import Todo
-from dooit.api.exceptions import NoNodeError
-from dooit.ui.api.widgets import TodoWidget
-from dooit.ui.tui import Dooit
-from dooit.ui.widgets.renderers.base_renderer import BaseRenderer
+from todooit.api import Todo
+from todooit.api.exceptions import NoNodeError
+from todooit.ui.api.widgets import TodoWidget
+from todooit.ui.tui import Dooit
+from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,

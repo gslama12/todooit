@@ -1,8 +1,8 @@
 from typing import Optional
 from rich.style import Style
 from rich.text import Text
-from dooit.api import Todo
-from dooit.ui.api import DooitAPI, extra_formatter
+from todooit.api import Todo
+from todooit.ui.api import DooitAPI, extra_formatter
 
 
 def recurrence_icon(icon: str = "󰑖 ", color: Optional[str] = None):

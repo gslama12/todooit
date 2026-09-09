@@ -6,8 +6,8 @@ pane borrows when a hidden column is edited. (The old modal sort bar has no
 key bound to it any more; the sort chords are tested in test_sort.py.)
 """
 
-from dooit.api import Todo
-from dooit.ui.widgets.bars import StatusBar
+from todooit.api import Todo
+from todooit.ui.widgets.bars import StatusBar
 from tests.test_ui.ui_base import (
     boot,
     create_and_move_to_todo,

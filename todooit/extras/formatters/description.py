@@ -1,9 +1,9 @@
 from typing import Union, Optional
-from dooit.api import Todo, Project
+from todooit.api import Todo, Project
 from rich.style import Style, StyleType
-from dooit.ui.api import DooitAPI
+from todooit.ui.api import DooitAPI
 from rich.text import Text
-from dooit.ui.api import extra_formatter
+from todooit.ui.api import extra_formatter
 import re
 
 ModelType = Union[Todo, Project]

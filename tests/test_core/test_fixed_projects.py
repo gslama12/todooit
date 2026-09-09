@@ -7,14 +7,14 @@ blocks and their rows come in.
 
 from datetime import datetime, timedelta
 
-from dooit.api import (
+from todooit.api import (
     BIN,
     COMPLETED,
     TODAY,
     UPCOMING,
     move_todo_to_bin,
 )
-from dooit.api.fixed_projects import (
+from todooit.api.fixed_projects import (
     PATH_SEPARATOR,
     fixed_project_from_id,
     fixed_project_from_key,

@@ -1,7 +1,7 @@
 from textual import events
 from tests.test_ui.ui_base import run_pilot
-from dooit.ui.tui import Dooit
-from dooit.ui.screens import MainScreen
+from todooit.ui.tui import Dooit
+from todooit.ui.screens import MainScreen
 
 
 async def test_base_screen_keys():

@@ -1,29 +1,29 @@
 [project]
+name = "todooit"
+version = "1.0.0"
+description = "A beautiful, versatile todo app in your terminal for a keyboard based workflow."
 requires-python = ">=3.9"
-name = "dooit"
-version = "3.3.4"
-description = "A TUI Todo Manager"
 authors = [
-    {name = "kraanzu", email = "kraanzu@gmail.com"}
-]
-maintainers = [
-    {name = "kraanzu", email = "kraanzu@gmail.com"}
+    {name = "Georg Slamanig", email = "georgslamanig@gmail.com"}
 ]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/dooit-org/dooit"
-repository = "https://github.com/dooit-org/dooit"
-exclude = ["imgs"]
 dependencies = [
     "click>=8.1.8",
     "platformdirs>=4.4.0",
     "pyperclip>=1.10.0",
     "python-dateutil>=2.9.0.post0",
-    "pyyaml>=6.0.2",
     "sqlalchemy>=2.0.43",
     "textual>=6.1.0",
-    "tzlocal>=5.3.1",
+    "typing-extensions>=4.5.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/gslama12/todooit"
+Repository = "https://github.com/gslama12/todooit"
+
+[project.scripts]
+todooit = "todooit.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -40,8 +40,8 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project.scripts]
-dooit = "dooit.__main__:main"
+[tool.hatch.build.targets.wheel]
+packages = ["todooit"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -52,4 +52,4 @@ asyncio_default_fixture_loop_scope = "function"
 ignore = ["E712"]
 
 [tool.coverage.report]
-omit = ["nix/store/*", "dooit/utils/default_config.py"]
+omit = ["todooit/utils/default_config.py"]

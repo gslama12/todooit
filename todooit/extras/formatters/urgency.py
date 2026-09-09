@@ -1,8 +1,8 @@
 from typing import Callable, Dict
 from rich.style import StyleType, Style
 from rich.text import Text
-from dooit.api import Todo
-from dooit.ui.api import DooitAPI
+from todooit.api import Todo
+from todooit.ui.api import DooitAPI
 
 
 def urgency_icons(

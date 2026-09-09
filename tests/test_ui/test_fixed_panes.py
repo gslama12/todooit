@@ -3,7 +3,7 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
-from dooit.api import Todo
+from todooit.api import Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,

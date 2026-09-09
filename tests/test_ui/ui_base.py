@@ -5,11 +5,11 @@ from textual.pilot import Pilot
 from textual.widgets import ContentSwitcher
 from textual.widgets.option_list import Option
 
-from dooit.api import Project, Todo, fixed_project_from_id
-from dooit.ui.tui import Dooit
-from dooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
-from dooit.ui.widgets.trees.model_tree import ModelTree
-from dooit.ui.widgets.trees.todos_tree import TodosTree
+from todooit.api import Project, Todo, fixed_project_from_id
+from todooit.ui.tui import Dooit
+from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
+from todooit.ui.widgets.trees.model_tree import ModelTree
+from todooit.ui.widgets.trees.todos_tree import TodosTree
 
 TEMP_DB_PATH = ":memory:"
 
@@ -24,15 +24,15 @@ def set_clipboard(text: str) -> None:
     _clipboard = text
 
 
-patch("dooit.utils.clipboard.pyperclip.paste", lambda: _clipboard).start()
-patch("dooit.utils.clipboard.pyperclip.copy", lambda text: None).start()
+patch("todooit.utils.clipboard.pyperclip.paste", lambda: _clipboard).start()
+patch("todooit.utils.clipboard.pyperclip.copy", lambda text: None).start()
 
 
 def run_pilot():
     # Expansion state lives on the tree *class* and model uuids repeat
     # between one :memory: database and the next, so a row expanded in one
     # test would come up expanded in another
-    from dooit.ui.widgets.trees.base_tree import BaseTree
+    from todooit.ui.widgets.trees.base_tree import BaseTree
 
     BaseTree.expanded_nodes.clear()
 

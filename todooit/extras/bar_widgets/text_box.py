@@ -1,4 +1,4 @@
-from dooit.ui.api import DooitAPI, subscribe, events
+from todooit.ui.api import DooitAPI, subscribe, events
 from rich.text import TextType
 from ._base import BarUtilWidgetBase
 

@@ -1,9 +1,9 @@
 from typing import Callable, Optional
-from dooit.ui.api import DooitAPI
-from dooit.api.theme import DooitThemeBase
+from todooit.ui.api import DooitAPI
+from todooit.api.theme import DooitThemeBase
 from rich.style import Style, StyleType
 from rich.text import Text, TextType
-from dooit.ui.widgets.bars import StatusBarWidget
+from todooit.ui.widgets.bars import StatusBarWidget
 
 
 class BarUtilWidgetBase(StatusBarWidget):

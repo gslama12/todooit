@@ -1,5 +1,5 @@
 from datetime import datetime
-from dooit.ui.api import DooitAPI, timer
+from todooit.ui.api import DooitAPI, timer
 from .text_poller import Custom
 
 

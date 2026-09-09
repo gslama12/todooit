@@ -1,5 +1,5 @@
 from typing import Literal
-from dooit.ui.api import DooitAPI
+from todooit.ui.api import DooitAPI
 
 BorderKind = Literal[
     "ascii",

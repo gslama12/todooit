@@ -1,7 +1,7 @@
 from typing import Callable
 from rich.text import Text
-from dooit.api import Todo
-from dooit.ui.api import DooitAPI
+from todooit.api import Todo
+from todooit.ui.api import DooitAPI
 
 
 def status_icons(completed="x", pending="o", overdue="!", fmt="{}") -> Callable:

@@ -2,7 +2,7 @@
 Moving around: pane focus, cursor keys, and the jumps to the fixed projects
 """
 
-from dooit.api import BIN, COMPLETED, TODAY, UPCOMING
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING
 from tests.test_ui.ui_base import (
     boot,
     commit_line,

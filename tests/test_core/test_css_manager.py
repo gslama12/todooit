@@ -1,6 +1,6 @@
 from pathlib import Path
-from dooit.api.theme import DooitThemeBase
-from dooit.utils import CssManager
+from todooit.api.theme import DooitThemeBase
+from todooit.utils import CssManager
 from tempfile import TemporaryDirectory
 
 

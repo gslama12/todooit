@@ -10,7 +10,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from dooit.api import Project, manager
+from todooit.api import Project, manager
 
 
 def test_has_changed_notices_an_outside_write():

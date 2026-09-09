@@ -2,7 +2,7 @@
 The projects pane: stored projects among the fixed ones
 """
 
-from dooit.api import BIN, TODAY, Project, Todo
+from todooit.api import BIN, TODAY, Project, Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,

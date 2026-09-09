@@ -2,9 +2,9 @@
 The help screen: the keybinds of the config, grouped the way it groups them
 """
 
-from dooit.ui.api.events import SpawnHelp
-from dooit.ui.screens import HelpScreen, MainScreen
-from dooit.ui.screens.help import DooitKeyTable
+from todooit.ui.api.events import SpawnHelp
+from todooit.ui.screens import HelpScreen, MainScreen
+from todooit.ui.screens.help import DooitKeyTable
 from tests.test_ui.ui_base import boot, run_pilot
 
 

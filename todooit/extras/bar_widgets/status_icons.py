@@ -1,6 +1,6 @@
 from rich.text import Text
-from dooit.ui.api import DooitAPI, subscribe
-from dooit.ui.api.events import TodoEvent, ProjectSelected
+from todooit.ui.api import DooitAPI, subscribe
+from todooit.ui.api.events import TodoEvent, ProjectSelected
 from .text_poller import Custom
 
 

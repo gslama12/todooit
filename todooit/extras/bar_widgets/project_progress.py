@@ -1,7 +1,7 @@
 from typing import Union
-from dooit.ui.api import DooitAPI, subscribe
-from dooit.ui.api.events import ProjectSelected, TodoEvent
-from dooit.api import Project
+from todooit.ui.api import DooitAPI, subscribe
+from todooit.ui.api.events import ProjectSelected, TodoEvent
+from todooit.api import Project
 from .text_poller import Custom
 
 

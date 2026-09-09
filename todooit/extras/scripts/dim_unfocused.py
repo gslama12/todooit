@@ -1,4 +1,4 @@
-from dooit.ui.api import DooitAPI
+from todooit.ui.api import DooitAPI
 
 
 def dim_unfocused(api: DooitAPI, opacity: str = "50%"):

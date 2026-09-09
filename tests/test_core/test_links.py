@@ -2,7 +2,7 @@
 The links inside a description or a note
 """
 
-from dooit.utils.links import find_links, first_link, link_at, link_label
+from todooit.utils.links import find_links, first_link, link_at, link_label
 
 
 def test_a_plain_url_is_found():

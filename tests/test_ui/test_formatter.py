@@ -1,12 +1,12 @@
 from typing import Optional
 from rich.text import Text
 from rich.style import Style
-from dooit.api.project import Project
-from dooit.ui.api.api_components.formatters import FormatterStore
-from dooit.ui.api.dooit_api import DooitAPI
-from dooit.ui.api import extra_formatter
+from todooit.api.project import Project
+from todooit.ui.api.api_components.formatters import FormatterStore
+from todooit.ui.api.dooit_api import DooitAPI
+from todooit.ui.api import extra_formatter
 from tests.test_ui.ui_base import run_pilot
-from dooit.ui.tui import Dooit
+from todooit.ui.tui import Dooit
 
 
 def set_italic(value: str, _: Project, api: DooitAPI) -> Optional[str]:

@@ -2,8 +2,8 @@
 The pinned note: one scratchpad for the whole of dooit
 """
 
-from dooit.api import PinnedNote
-from dooit.api.pinned_note import PINNED_NOTE_ID
+from todooit.api import PinnedNote
+from todooit.api.pinned_note import PINNED_NOTE_ID
 from tests.test_core.core_base import *  # noqa
 
 

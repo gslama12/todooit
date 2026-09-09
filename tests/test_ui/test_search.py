@@ -3,10 +3,10 @@ from datetime import datetime
 from textual.pilot import Pilot
 from textual.widgets import ContentSwitcher
 
-from dooit.api import COMPLETED, Project, Todo
-from dooit.ui.screens.search import BINNED, DONE, MAX_ROWS, SearchScreen
-from dooit.ui.tui import Dooit
-from dooit.ui.widgets.trees.todos_tree import TodosTree
+from todooit.api import COMPLETED, Project, Todo
+from todooit.ui.screens.search import BINNED, DONE, MAX_ROWS, SearchScreen
+from todooit.ui.tui import Dooit
+from todooit.ui.widgets.trees.todos_tree import TodosTree
 from tests.test_ui.ui_base import run_pilot
 
 ITEMS = ["apple", "apps", "applet", "apricot"]

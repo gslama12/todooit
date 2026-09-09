@@ -5,8 +5,8 @@ of real use strings them together
 
 from datetime import date, timedelta
 
-from dooit.api import BIN, COMPLETED, TODAY, UPCOMING, Project, Todo
-from dooit.ui.screens.search import SearchScreen
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Project, Todo
+from todooit.ui.screens.search import SearchScreen
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -299,7 +299,7 @@ async def test_a_recurring_chore_through_the_day():
         assert todo.is_pending
         assert TODAY.todos == []
 
-        from dooit.api import UPCOMING
+        from todooit.api import UPCOMING
 
         assert UPCOMING.todos == [todo]
 

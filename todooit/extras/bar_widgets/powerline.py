@@ -1,5 +1,5 @@
-from dooit.ui.api import DooitAPI
-from dooit.ui.tui import Dooit
+from todooit.ui.api import DooitAPI
+from todooit.ui.tui import Dooit
 from .text_box import TextBox
 from typing_extensions import Self
 

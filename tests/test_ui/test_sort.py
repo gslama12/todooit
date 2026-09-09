@@ -7,7 +7,7 @@ chords down. (The old modal sort bar these chords replaced has no key bound
 to it any more.)
 """
 
-from dooit.api import Todo
+from todooit.api import Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,

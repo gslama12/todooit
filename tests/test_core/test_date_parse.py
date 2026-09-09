@@ -1,6 +1,6 @@
 from datetime import datetime
 import unittest
-from dooit.utils.date_parser import parse
+from todooit.utils.date_parser import parse
 
 # A Wednesday, so that "next monday" and a bare weekday are visibly different
 NOW = datetime(2026, 9, 2, 10, 30)
