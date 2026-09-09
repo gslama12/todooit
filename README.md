@@ -59,6 +59,10 @@ todooit
 
 Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in `~/.cache/todooit`.
 
+Setting `TODOOIT_HOME` moves the database, CSS cache and config into that one
+directory instead, giving a fully isolated instance. `todooit --dev` is
+shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev` - handy for trying out config changes next to a running instance without touching your real todos.
+
 ## Known Bugs
 
 - Labels break at `-`. For now, use `_` as a whiteapce inside labels.

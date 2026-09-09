@@ -4,11 +4,11 @@ from functools import partial
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Type
-from platformdirs import user_config_dir
 from textual.css.query import NoMatches
 
 from todooit.ui.api.event_handlers import DOOIT_EVENT_ATTR, DOOIT_TIMER_ATTR
 from todooit.ui.api.events import DooitEvent
+from todooit.paths import config_file
 from .loader import load_file
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -20,8 +20,6 @@ if getattr(sys, "frozen", False):
 else:
     BASE_PATH = Path(__file__).parent.parent.parent
 
-MAIN_FOLDER = "todooit"
-CONFIG_FILE = Path(user_config_dir(MAIN_FOLDER)) / "config.py"
 DEFAULT_CONFIG = BASE_PATH / "utils" / "default_config.py"
 
 
@@ -31,7 +29,7 @@ def is_running_under_pytest() -> bool:
 
 class PluginManager:
     def __init__(self, api: "DooitAPI", config: Optional[Path] = None) -> None:
-        self.config = config or CONFIG_FILE
+        self.config = config or config_file()
         self.events: defaultdict[Type[DooitEvent], List[Callable]] = defaultdict(list)
         self.timers: defaultdict[float, List[Callable]] = defaultdict(list)
         self.api = api

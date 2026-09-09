@@ -1,8 +1,9 @@
 import os
+from pathlib import Path
 from typing import Optional
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from ._vars import DATABASE_FILE
+from todooit.paths import database_file
 
 
 class Manager:
@@ -28,8 +29,12 @@ class Manager:
             rename_workspace_to_project,
         )
 
-        path = path or DATABASE_FILE
+        path = str(path or database_file())
         path = os.path.expanduser(path)
+
+        if path != ":memory:":
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+
         connection_string = f"sqlite:///{path}"
 
         self.engine = create_engine(connection_string)

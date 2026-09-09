@@ -43,6 +43,27 @@ It was seeded on 2026-09-09 with a copy of the old dooit database and the two
 have diverged independently since. Nothing todooit does touches
 `~/.local/share/dooit/`.
 
+### The dev instance
+
+`TODOOIT_HOME` relocates all three of those into one self-contained directory,
+which is how development stays off the live data:
+
+```
+$TODOOIT_HOME/
+  todooit.db        # database
+  cache/            # todooit.tcss + stylesheets/
+  config.py         # user config (unused, as above)
+```
+
+`todooit --dev` is shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev`. Run
+it to inspect the demo project a change ships; it can sit next to a running
+production instance without either touching the other. With `TODOOIT_HOME`
+unset, everything resolves exactly as it always has, so plain `todooit` is
+still the real instance.
+
+Paths are resolved in [todooit/paths.py](todooit/paths.py) — the single place
+any of them is computed.
+
 ## Testing a change
 
 Python tooling only works from WSL here, not from Windows. To try a change:
@@ -70,20 +91,21 @@ VIRTUAL_ENV=/tmp/ttest uv pip install -e . pytest pytest-asyncio faker
 
 ## Every change ships a demo project
 
-At the end of each change, seed a project into the live database that
-demonstrates the change, so it can be verified by just opening todooit — never
-leave the user to type in example items by hand. Name it after the change
-(e.g. `demo: priority icons`) and fill it with todos that actually hit the new
-code path (overdue, high priority, nested, recurring, … — whatever the change
-touches). Refresh or replace the demo project when iterating instead of piling
-up new ones.
+At the end of each change, seed a project into the **dev** database that
+demonstrates the change, so it can be verified by just opening the dev
+instance — never leave the user to type in example items by hand. Name it after
+the change (e.g. `demo: priority icons`) and fill it with todos that actually
+hit the new code path (overdue, high priority, nested, recurring, … — whatever
+the change touches). Refresh or replace the demo project when iterating instead
+of piling up new ones.
 
-Seed with the API rather than raw SQL, from the same activated venv:
+Demos never go into the live database. Seed with the API rather than raw SQL,
+from the same activated venv, pointing `TODOOIT_HOME` at the dev instance:
 
 ```bash
-python - <<'PY'
+TODOOIT_HOME=~/.local/share/todooit-dev python - <<'PY'
 from todooit.api import manager, Project
-manager.connect()
+manager.connect()               # no arg -> resolves to the dev database
 
 p = Project()
 p.save()                        # attaches to the root project
@@ -97,7 +119,7 @@ t.save()
 PY
 ```
 
-Then relaunch todooit and confirm the demo project shows the change.
+Then launch `todooit --dev` and confirm the demo project shows the change.
 
-Before touching the db in any other way, copy it to `/tmp` first and work on
-the copy.
+Before touching a database in any other way, copy it to `/tmp` first and work
+on the copy.
