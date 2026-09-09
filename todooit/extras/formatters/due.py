@@ -1,32 +1,8 @@
 from typing import Callable, Optional
 from rich.style import Style
 from todooit.api.todo import datetime, Todo
-from todooit.ui.api import DooitAPI, extra_formatter
+from todooit.ui.api import DooitAPI
 from rich.text import Text
-
-
-def due_casual_format(fmt="{}") -> Callable:
-    def wrapper(due: Optional[datetime], _: Todo) -> str:
-        """
-        Shows the date in a more simple format:
-        Example: `23 Oct` instead of `23-10-2024`
-        """
-
-        if not due:
-            return ""
-
-        current_year = datetime.now().year
-        dt_format = "%b %d"
-
-        if due.year != current_year:
-            dt_format += " '%y"
-
-        if due.hour != 0 or due.minute != 0:
-            dt_format += " (%H:%M)"
-
-        return fmt.format(due.strftime(dt_format))
-
-    return wrapper
 
 
 def due_danger_today(fmt: str = "{}") -> Callable:
@@ -50,24 +26,3 @@ def due_danger_today(fmt: str = "{}") -> Callable:
     return wrapper
 
 
-def due_icon(completed: str = "󰃯 ", pending: str = "󰃰 ", overdue: str = " "):
-    @extra_formatter
-    def wrapper(due: str, model: Todo, api: DooitAPI):
-        theme = api.vars.theme
-        if not model.due:
-            return due
-
-        if model.is_completed:
-            icon = completed
-            color = theme.green
-
-        elif model.is_overdue:
-            icon = overdue
-            color = theme.red
-        else:
-            icon = pending
-            color = theme.yellow
-
-        return Text() + Text.from_markup(icon, style=Style(color=color)) + due
-
-    return wrapper

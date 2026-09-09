@@ -2,9 +2,8 @@ from pathlib import Path
 from typing import Optional
 
 import click
-from platformdirs import user_config_dir, user_data_dir
+from platformdirs import user_config_dir
 
-OLD_CONFIG = Path(user_data_dir("dooit")) / "todo.yaml"
 VERSION = "1.0.0"
 
 
@@ -38,27 +37,7 @@ def main(ctx, version: bool, config: str, db: str) -> None:
         return print(f"todooit - {VERSION}")
 
     if ctx.invoked_subcommand is None:
-        if OLD_CONFIG.exists():
-            from todooit.utils.cli_logger import logger
-
-            logger.warn(
-                "Found todos for v2.",
-                "Please migrate to v3 using [reverse] dooit migrate [/reverse] first.",
-            )
-            return
-
         run_dooit(config=config, db_path=db)
-
-
-@main.command(help="Migrate data from v2 to v3.")
-def migrate() -> None:
-    from todooit.utils.cli_logger import logger
-
-    logger.info("Migrating from v2 ...")
-    from todooit.backport.migrate_from_v2 import Migrator2to3
-
-    migrator = Migrator2to3()
-    migrator.migrate()
 
 
 @main.command(help="Show config location.")

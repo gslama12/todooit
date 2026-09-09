@@ -1,4 +1,3 @@
-from typing import Optional
 from sqlalchemy import Engine, MetaData, inspect, text
 from sqlalchemy.orm import Session
 
@@ -7,13 +6,6 @@ from sqlalchemy.orm import Session
 # (highest). Priority runs the other way around: 1 is the highest and 3 the
 # lowest, with 0 meaning "no priority set".
 URGENCY_TO_PRIORITY = {1: 0, 2: 3, 3: 2, 4: 1}
-
-
-def urgency_to_priority(urgency: Optional[int]) -> int:
-    if urgency is None:
-        return 0
-
-    return URGENCY_TO_PRIORITY.get(urgency, 0)
 
 
 def migrate_urgency_to_priority(engine: Engine):
