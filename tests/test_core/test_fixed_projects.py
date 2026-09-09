@@ -7,6 +7,8 @@ blocks and their rows come in.
 
 from datetime import datetime, timedelta
 
+from sqlalchemy import update
+
 from todooit.api import (
     BIN,
     COMPLETED,
@@ -157,6 +159,124 @@ def test_today_orders_a_block_by_priority(create_project):
     assert group.todos == [high, low, none]
 
 
+def test_today_gathers_a_scheduled_task_once(create_project):
+    """A task planned for today is one row: its steps came along with it"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    step = task.add_todo()
+    deeper = step.add_todo()
+
+    task.scheduled = today_at()
+    task.save()
+
+    # The day reached the whole family, and the pane still draws one task
+    assert step.scheduled == task.scheduled
+    assert deeper.scheduled == task.scheduled
+
+    assert TODAY.todos == [task]
+
+    (group,) = TODAY.todo_groups
+    (row,) = group.rows
+    assert row.todo == task
+    assert not row.is_context
+    assert row.under == []
+
+
+def test_today_draws_a_scheduled_step_under_its_task(create_project):
+    """The task comes along for context, with only the day's step under it"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    task.description = "tax return"
+    task.save()
+
+    step = task.add_todo()
+    step.description = "dig out the receipts"
+    step.scheduled = today_at()
+    step.save()
+
+    other = task.add_todo()
+    other.description = "fill in the form"
+    other.save()
+
+    (group,) = TODAY.todo_groups
+    assert group.label == "work"
+
+    # The day's work is the step alone
+    assert group.todos == [step]
+
+    # ...drawn under the task it belongs to, which is only there to say so
+    (top,) = group.rows
+    assert top.todo == task
+    assert top.is_context
+
+    (under,) = top.under
+    assert under.todo == step
+    assert not under.is_context
+    assert other not in [row.todo for row in top.under]
+
+
+def test_context_reaches_all_the_way_up_to_the_task(create_project):
+    """Every task above a planned step is drawn, not just the nearest one"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    part = task.add_todo()
+    step = part.add_todo()
+
+    step.scheduled = today_at()
+    step.save()
+
+    (group,) = TODAY.todo_groups
+
+    (top,) = group.rows
+    assert (top.todo, top.is_context) == (task, True)
+
+    (middle,) = top.under
+    assert (middle.todo, middle.is_context) == (part, True)
+
+    (bottom,) = middle.under
+    assert (bottom.todo, bottom.is_context) == (step, False)
+
+
+def test_two_steps_of_one_task_share_its_context_row(create_project):
+    """A task is drawn once a block, however much of it lands in that block"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    first = task.add_todo()
+    second = task.add_todo()
+
+    for step in (first, second):
+        step.scheduled = today_at()
+        step.save()
+
+    (group,) = TODAY.todo_groups
+
+    (top,) = group.rows
+    assert top.todo == task
+    assert [row.todo for row in top.under] == [first, second]
+
+
+def test_a_context_row_is_not_part_of_the_days_work(create_project):
+    """It is drawn, but nothing about it is what the day asked for"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    step = task.add_todo()
+    step.scheduled = today_at()
+    step.save()
+
+    assert TODAY.todos == [step]
+    assert TODAY.total_todos == 1
+
+
 def test_today_headings_carry_the_project_path(create_project):
     outer = create_project("outer")
     inner = Project(description="inner", parent_project=outer)  # noqa: F405
@@ -175,7 +295,9 @@ def test_today_headings_carry_the_project_path(create_project):
 # ------------------------------------------------------------------
 
 
-def test_upcoming_gathers_the_days_ahead_in_order(create_project):
+def test_upcoming_gathers_the_days_from_today_on_in_order(create_project):
+    """Today opens it: the day being rescheduled off has to be in reach"""
+
     p = create_project("work")
 
     later = p.add_todo()
@@ -190,20 +312,70 @@ def test_upcoming_gathers_the_days_ahead_in_order(create_project):
     today.scheduled = today_at()
     today.save()
 
+    gone = p.add_todo()
+    gone.scheduled = today_at() - timedelta(days=1)
+    gone.save()
+
     groups = UPCOMING.todo_groups
-    assert [g.todos for g in groups] == [[soon], [later]]
-    assert today not in UPCOMING.todos
+    assert [g.todos for g in groups] == [[today], [soon], [later]]
+    assert gone not in UPCOMING.todos
 
 
-def test_upcoming_names_tomorrow(create_project):
+def test_upcoming_names_today_and_tomorrow(create_project):
     p = create_project("work")
+
+    now = p.add_todo()
+    now.scheduled = today_at()
+    now.save()
 
     t = p.add_todo()
     t.scheduled = today_at() + timedelta(days=1)
     t.save()
 
+    assert [g.label for g in UPCOMING.todo_groups] == ["Today", "Tomorrow"]
+
+
+def test_upcoming_gathers_a_scheduled_task_once(create_project):
+    """The same rule Today reads by: a planned task's steps come with it"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    step = task.add_todo()
+
+    task.scheduled = today_at() + timedelta(days=1)
+    task.save()
+
     (group,) = UPCOMING.todo_groups
-    assert group.label == "Tomorrow"
+    assert group.todos == [task]
+    assert step.scheduled == task.scheduled
+
+
+def test_upcoming_draws_a_task_over_every_day_it_has_work_in(create_project):
+    """A task spread over the week is context in each of the days it touches"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+    now = task.add_todo()
+    later = task.add_todo()
+
+    now.scheduled = today_at()
+    now.save()
+
+    later.scheduled = today_at() + timedelta(days=1)
+    later.save()
+
+    today_block, tomorrow_block = UPCOMING.todo_groups
+    assert [g.label for g in (today_block, tomorrow_block)] == [
+        "Today",
+        "Tomorrow",
+    ]
+
+    for block, step in ((today_block, now), (tomorrow_block, later)):
+        (top,) = block.rows
+        assert (top.todo, top.is_context) == (task, True)
+        assert [row.todo for row in top.under] == [step]
 
 
 # ------------------------------------------------------------------
@@ -290,3 +462,34 @@ def test_bin_shows_a_task_with_its_steps_inside_it(create_project):
 
     # One row: the task. The step is drawn under it, not beside it.
     assert BIN.todos == [task]
+
+
+# ------------------------------------------------------------------
+# Work planned before a day meant the whole of a task
+# ------------------------------------------------------------------
+
+
+def test_upcoming_draws_no_todo_twice(create_project):
+    """
+    A task and a step of it on different days is one row, not two
+
+    The day put on a task reaches every step of it now, so the two of them can
+    only be that far apart in work planned before that was true. The task is
+    still one row of one day, with the step drawn inside it, since a pane that
+    gathered both would draw the step under its task and beside it at once.
+    """
+
+    p = create_project("work")
+    task = p.add_todo()
+    step = task.add_todo()
+
+    # Straight to the database, the way the rows stood before the rule
+    for todo, day in ((task, today_at()), (step, today_at() + timedelta(days=1))):
+        manager.session.execute(  # noqa: F405
+            update(Todo).where(Todo.id == todo.id).values(scheduled=day)  # noqa: F405
+        )
+
+    manager.session.expire_all()  # noqa: F405
+
+    drawn = [todo.id for group in UPCOMING.todo_groups for todo in group.todos]
+    assert drawn == [task.id]

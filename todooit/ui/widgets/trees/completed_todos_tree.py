@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from rich.text import Text
 from textual import on
 
 from todooit.api import FixedProject, Todo, TodoGroup, manager, revive_home
@@ -42,13 +41,6 @@ class CompletedTodosTree(FixedTodosTree):
     whole, whichever of its rows was unticked, since unticking any step of a
     task sends the task itself back: what is held is never half a family.
     """
-
-    show_children = True
-
-    # Rows are whole tasks and the steps under them, so the pane draws the
-    # same guides the project it came from does; the flat panes have nothing
-    # to draw them for
-    show_guides = True
 
     def __init__(self, model: FixedProject) -> None:
         super().__init__(model)
@@ -117,19 +109,6 @@ class CompletedTodosTree(FixedTodosTree):
         todos.sort(key=self._order_key, reverse=True)
 
         return [TodoGroup(todos=todos)]
-
-    def row_note(self, model) -> Text:
-        """
-        Only a task says which project it came out of
-
-        The steps under it came out of the same one, and saying so on every
-        row of a family would say it three times over.
-        """
-
-        if isinstance(model, Todo) and model.parent_todo is not None:
-            return Text()
-
-        return super().row_note(model)
 
     def column_value(self, attr: str, component: Any) -> Any:
         """

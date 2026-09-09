@@ -1,10 +1,11 @@
 from datetime import datetime
-from typing import Any, List
+from typing import Any, Dict, List, Optional, Set
 
 from rich.style import Style
 from rich.text import Text
+from textual.widgets.option_list import Option
 
-from todooit.api import FixedProject, Todo, TodoGroup
+from todooit.api import FixedProject, Todo, TodoGroup, TodoRow
 from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
 from todooit.ui.api.events import BarNotification, StartFieldEdit
 from todooit.ui.api.widgets import TodoWidget
@@ -41,17 +42,76 @@ class FixedTodosTree(TodosTree):
     where it came from, since its headings no longer do.
     """
 
-    show_guides = False
+    # A row of a fixed project is a whole task: whatever it was gathered for,
+    # it is drawn with the steps filed under it beneath it, as far as it is
+    # expanded, exactly the way the project it came from draws it
+    show_children = True
+    show_guides = True
 
-    # Whether a row is followed by the todos filed under it. A fixed project
-    # that gathers single todos from all over the tree draws one flat run of
-    # rows; one whose rows are whole tasks draws each with its steps under it,
-    # the way the project it came from did.
-    show_children = False
+    def __init__(self, model: FixedProject) -> None:
+        super().__init__(model)
+
+        # The rows that open a block, taken down as the pane is built. They
+        # are where the guides stop and where the project names on the rows
+        # start: what hangs off one of them came along with it, and belongs to
+        # it rather than to the pane
+        self._row_roots: Set[str] = set()
+
+        # Of the rows a block picked out itself, which are the last of the
+        # ones drawn beside them. A context row shows only the work the block
+        # gathered, so the row that ends a family here is rarely the one that
+        # ends it in the project it came from
+        self._last_rows: Dict[str, bool] = {}
 
     @property
     def model(self) -> FixedProject:
         return self._model
+
+    def _body_options(self) -> List[Option]:
+        self._row_roots = set()
+        self._last_rows = {}
+
+        for group in self.todo_groups:
+            self._row_roots.update(row.todo.uuid for row in group.rows)
+            self._note_drawn(group.rows)
+
+        return super()._body_options()
+
+    def _note_drawn(self, rows: List[TodoRow]) -> None:
+        """
+        Takes down where each of a block's own rows falls among the ones beside it
+        """
+
+        for row in rows:
+            if not row.is_context:
+                continue
+
+            for index, child in enumerate(row.under):
+                self._last_rows[child.todo.uuid] = index == len(row.under) - 1
+
+            self._note_drawn(row.under)
+
+    def is_row_root(self, model: Any) -> bool:
+        return model.uuid in self._row_roots or not model.nest_level
+
+    def is_last_row(self, model: Any) -> bool:
+        last = self._last_rows.get(model.uuid)
+
+        return super().is_last_row(model) if last is None else last
+
+    def _get_parent(self, id: str) -> Optional[Todo]:
+        """
+        The row a row hangs off, if this pane drew that one too
+
+        A gathered row can be a step of a task that was not gathered: the task
+        it belongs to is nowhere on screen, so there is nothing here to fold
+        the row back into.
+        """
+
+        if self.is_row_root(Todo.from_id(id)):
+            return None
+
+        return super()._get_parent(id)
 
     @property
     def sort_mode(self) -> None:
@@ -150,12 +210,19 @@ class FixedTodosTree(TodosTree):
         it shows is the project's own name rather than its whole path, which
         is what keeps it to the end of a line it is sharing.
 
+        Only the gathered row says it, never the steps under it: they came out
+        of the same project it did, and saying so on every row of a family
+        would say it three times over.
+
         A todo that outlived its project has the name it was filed under
         instead, which is the name the project comes back under if the todo
         does.
         """
 
         if not self.model.show_owning_project or not isinstance(model, Todo):
+            return Text()
+
+        if not self.is_row_root(model):
             return Text()
 
         name = self._owner_name(model)

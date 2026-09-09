@@ -14,7 +14,12 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class BaseTree(OptionList, can_focus=True, inherit_bindings=False):
-    expanded_nodes = defaultdict(bool)
+    # Whether each node is drawn with what hangs off it beneath it, keyed by
+    # uuid. A node nothing has been said about yet counts as expanded: a tree
+    # that opens closed hides the work it was opened to show, and asks to be
+    # walked open a row at a time before it says anything. Collapsing is the
+    # deliberate act, and only that writes a False here.
+    expanded_nodes = defaultdict(lambda: True)
 
     @property
     def api(self) -> "DooitAPI":

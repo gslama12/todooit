@@ -123,3 +123,7 @@ Then launch `todooit --dev` and confirm the demo project shows the change.
 
 Before touching a database in any other way, copy it to `/tmp` first and work
 on the copy.
+
+## Every new feature creates testcases
+
+If you implement a new feature, be sure that the test cases stay up-to-date and that the new functionality is also covered by the test suite.

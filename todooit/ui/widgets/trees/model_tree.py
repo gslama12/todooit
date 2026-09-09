@@ -407,6 +407,30 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     def is_node_expaned(self, _id: str) -> bool:
         return self.expanded_nodes[_id]
 
+    def is_row_root(self, model: Any) -> bool:
+        """
+        Whether a row opens a family here rather than hanging off a row above it
+
+        Where the guides in front of a row stop. A pane that draws the tree as
+        it stands stops at the top of it; one that gathers rows from all over
+        the tree stops at the rows it gathered, since a guide pointing past
+        them would point at a row this pane never drew.
+        """
+
+        return not model.nest_level
+
+    def is_last_row(self, model: Any) -> bool:
+        """
+        Whether nothing else is drawn beside a row, under whatever it hangs off
+
+        What the elbow at the end of a row's guides is picked from. Usually
+        the same thing as being the last of its siblings; in a pane that shows
+        only some of what is filed under a row, it is the last of the ones
+        that made it in.
+        """
+
+        return model.is_last_sibling()
+
     def visible_children(self, model: Any) -> List:
         """
         The children of a model that this pane has a row for

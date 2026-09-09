@@ -5,6 +5,7 @@ from .pinned_note import PINNED_NOTE_ID, PinnedNote
 from .fixed_projects import (
     FixedProject,
     TodoGroup,
+    TodoRow,
     TODAY,
     UPCOMING,
     COMPLETED,
@@ -60,6 +61,7 @@ __all__ = [
     "PINNED_NOTE_ID",
     "FixedProject",
     "TodoGroup",
+    "TodoRow",
     "TODAY",
     "UPCOMING",
     "COMPLETED",

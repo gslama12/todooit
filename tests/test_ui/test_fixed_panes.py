@@ -4,6 +4,7 @@ The panes of the fixed projects: what they draw, and what they turn away
 
 
 from todooit.api import Todo
+from todooit.ui.widgets.renderers.base_renderer import GUIDE_LAST_BRANCH
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -22,6 +23,22 @@ async def schedule(pilot, when: str):
 
     await pilot.press("s")
     await commit_line(pilot, when)
+
+
+def descriptions(tree):
+    """What the pane's stored rows say, top to bottom"""
+
+    return [tree._renderers[o.id].model.description for o in tree_options(tree)]
+
+
+def context_ids(tree):
+    """The rows the pane drew only to say what the work belongs to"""
+
+    return [
+        o.id
+        for o in tree._options
+        if (o.id or "").startswith("dooit-todo-context-")
+    ]
 
 
 async def test_today_draws_a_block_per_project():
@@ -70,6 +87,161 @@ async def test_today_hides_the_scheduled_column():
 
         assert "scheduled" not in columns
         assert "scheduled" in today_tree.editable_columns
+
+
+async def test_today_opens_the_steps_of_a_scheduled_task():
+    """A scheduled task brings its steps along, and `h` folds them away"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+
+        # Only the task is given a date; the step has none of its own
+        await pilot.press("k")
+        await pilot.pause()
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["task", "step"]
+
+        await pilot.press("h")
+        await pilot.pause()
+        assert descriptions(today) == ["task"]
+
+        await pilot.press("h")
+        await pilot.pause()
+        assert descriptions(today) == ["task", "step"]
+
+
+async def test_today_draws_the_task_above_a_scheduled_step():
+    """The task is drawn for context; the day's work is the step alone"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+        await schedule(pilot, "today")
+
+        task = Todo.from_id("Todo_1")
+        assert task.description == "task"
+        assert task.scheduled is None
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["step"]
+        assert context_ids(today) == [today._context_id(0, task)]
+
+        # The cursor opens on the work and cannot be walked onto the context
+        assert today.current_model.description == "step"
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert today.current_model.description == "step"
+
+
+async def test_a_guide_ends_at_the_last_row_the_pane_drew():
+    """
+    The elbow follows the rows on screen, not the ones in the project
+
+    A context row shows only the work the day asked for, so the step that ends
+    a family here is rarely the one that ends it where it is filed.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+
+        await pilot.press("N")
+        await commit_line(pilot, "planned")
+        await schedule(pilot, "today")
+
+        # Filed after it, and not part of today: the guide must not point at it
+        await pilot.press("n")
+        await commit_line(pilot, "someday")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["planned"]
+
+        planned = today.current_model
+        assert planned.description == "planned"
+        assert not planned.is_last_sibling()
+
+        guide = today._renderers[planned.uuid].tree_guide.plain
+        assert guide == GUIDE_LAST_BRANCH
+
+
+async def test_upcoming_repeats_a_task_over_the_days_it_has_work_in():
+    """One context row per day block, each naming the day it belongs to"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+
+        await pilot.press("N")
+        await commit_line(pilot, "now")
+        await schedule(pilot, "today")
+
+        await pilot.press("n")
+        await commit_line(pilot, "later")
+        await schedule(pilot, "tomorrow")
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+        assert descriptions(upcoming) == ["now", "later"]
+
+        # Drawn twice over, and named after the block rather than the task, so
+        # that the two rows are not the same row
+        task = Todo.from_id("Todo_1")
+        assert context_ids(upcoming) == [
+            upcoming._context_id(0, task),
+            upcoming._context_id(1, task),
+        ]
+
+
+async def test_upcoming_opens_with_today():
+    """The day being rescheduled off is in reach of the days ahead"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "now")
+        await schedule(pilot, "today")
+
+        await pilot.press("n")
+        await commit_line(pilot, "soon")
+        await schedule(pilot, "tomorrow")
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        assert descriptions(visible_todos(app)) == ["now", "soon"]
 
 
 async def test_upcoming_groups_by_day():

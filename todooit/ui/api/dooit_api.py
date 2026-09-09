@@ -150,7 +150,7 @@ class DooitAPI:
         self.goto_fixed_project(TODAY.key)
 
     def goto_upcoming(self):
-        """Jump to Upcoming and start on the first task scheduled ahead"""
+        """Jump to Upcoming and start on the nearest day's first task"""
 
         self.goto_fixed_project(UPCOMING.key)
 

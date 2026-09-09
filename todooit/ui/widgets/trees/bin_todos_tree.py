@@ -18,10 +18,5 @@ class BinTodosTree(FixedTodosTree):
 
     shows_binned = True
 
-    # Rows are whole tasks and the steps under them, so the pane draws the
-    # same guides the project it came from does
-    show_children = True
-    show_guides = True
-
     def toggle_complete(self):
         self._not_here("Tasks can't be ticked off")

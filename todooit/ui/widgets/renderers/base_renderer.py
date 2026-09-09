@@ -99,7 +99,9 @@ class BaseRenderer(Generic[ModelType]):
 
         The innermost level is the elbow the item itself hangs off; every level
         above it only says whether the line of that ancestor carries on past
-        this row or has already run out of siblings.
+        this row or has already run out of siblings. They stop at whichever
+        row the pane counts as the top of the family, which in a pane that
+        gathers its rows is not the top of the tree.
         """
 
         if not self.tree.show_guides:
@@ -108,8 +110,8 @@ class BaseRenderer(Generic[ModelType]):
         node = self.model
         pieces: List[str] = []
 
-        while node.nest_level:
-            last = node.is_last_sibling()
+        while node.nest_level and not self.tree.is_row_root(node):
+            last = self.tree.is_last_row(node)
 
             if pieces:
                 pieces.append(GUIDE_BLANK if last else GUIDE_VERTICAL)

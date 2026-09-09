@@ -44,13 +44,13 @@ async def test_projects_tree_basics():
         child.save()
         ptree.force_refresh()
 
-        assert len(tree_options(ptree)) == 4  # collapsed
-
-        ptree.toggle_expand()
-        assert len(tree_options(ptree)) == 5
+        assert len(tree_options(ptree)) == 5  # expanded by default
 
         ptree.toggle_expand()
         assert len(tree_options(ptree)) == 4
+
+        ptree.toggle_expand()
+        assert len(tree_options(ptree)) == 5
 
 
 async def test_add_and_commit_with_enter():

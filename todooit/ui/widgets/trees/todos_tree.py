@@ -1,5 +1,8 @@
 from functools import partial
-from typing import TYPE_CHECKING, List, Optional, Set, Union
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
+
+from rich.console import RenderableType
+from rich.styled import Styled
 from textual import on
 from textual.color import Color
 from textual.strip import Strip
@@ -10,6 +13,7 @@ from todooit.api import (
     Todo,
     Project,
     TodoGroup,
+    TodoRow,
     move_todo_to_bin,
     restore_todo,
     sort_todos,
@@ -257,32 +261,87 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
                     )
                 )
 
-            for row, todo in enumerate(self._group_rows(group.todos)):
+            # Counted over the work alone, so that the banding of a block does
+            # not restart or skip a beat on the tasks drawn between its rows
+            row = 0
+
+            for todo, is_context in self._group_rows(group.rows):
+                if is_context:
+                    options.append(
+                        self.static_row(
+                            self._context_id(index, todo),
+                            partial(self._make_context, todo.uuid),
+                        )
+                    )
+                    continue
+
                 if row % 2:
                     self._shaded_rows.add(len(options))
 
+                row += 1
                 options.append(Option("", id=self._renderers[todo.uuid].id))
 
         return options
 
-    def _group_rows(self, todos: List[Todo]) -> List[Todo]:
+    def _context_id(self, group: int, todo: Todo) -> str:
         """
-        The rows a block draws, in the order they are drawn in
+        What names a context row, which is not the todo it draws
 
-        The todos the block gathered, each followed by whatever is filed under
-        it for a pane that shows them, exactly as far as the node is expanded.
+        The same task can be the context of more than one block — a task with
+        a step on Monday and another on Tuesday is drawn over both of them —
+        and a row is named after the place it is in rather than after the todo
+        it is showing.
         """
 
-        if not self.show_children:
-            return list(todos)
+        return f"dooit-todo-context-{group}-{todo.id}"
+
+    def _make_context(self, uuid: str) -> RenderableType:
+        """
+        A task drawn only to say what the work under it belongs to
+
+        The row it would be if it were the work itself, faded and out of
+        reach: the columns line up with the rows beneath it, and the cursor
+        never lands on a task the pane is not really showing.
+        """
+
+        return Styled(self._renderers[uuid].prompt, "dim")
+
+    def _group_rows(self, rows: List[TodoRow]) -> List[Tuple[Todo, bool]]:
+        """
+        The rows a block draws, in the order they are drawn in, each saying
+        whether it is there for context alone
+
+        A row that is the work is followed by whatever is filed under it, for
+        a pane that shows them, exactly as far as the row is expanded. A
+        context row is followed by the way down the block picked for it, which
+        is the work it was drawn for and nothing else.
+        """
+
+        drawn: List[Tuple[Todo, bool]] = []
+
+        for row in rows:
+            drawn.append((row.todo, row.is_context))
+
+            if row.is_context:
+                drawn.extend(self._group_rows(row.under))
+            else:
+                drawn.extend((todo, False) for todo in self._steps_of(row.todo))
+
+        return drawn
+
+    def _steps_of(self, todo: Todo) -> List[Todo]:
+        """
+        The todos drawn under a row, as far as the row is expanded
+        """
+
+        if not self.show_children or not self.is_node_expaned(todo.uuid):
+            return []
 
         rows: List[Todo] = []
 
-        for todo in todos:
-            rows.append(todo)
-
-            if self.is_node_expaned(todo.uuid):
-                rows.extend(self._group_rows(self.visible_children(todo)))
+        for child in self.visible_children(todo):
+            rows.append(child)
+            rows.extend(self._steps_of(child))
 
         return rows
 

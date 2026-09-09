@@ -77,8 +77,9 @@ async def test_a_task_s_whole_life():
 async def test_planning_a_day_across_projects():
     """
     Two projects, three scheduled tasks: Today gathers this day's two into a
-    block per project, Upcoming holds the third, and finishing one from the
-    Today pane empties its block.
+    block per project, Upcoming holds all three — the day being planned off
+    among the days ahead — and finishing one from the Today pane empties its
+    block.
     """
 
     async with run_pilot() as pilot:
@@ -103,7 +104,14 @@ async def test_planning_a_day_across_projects():
             "water plants",
             "write report",
         ]
-        assert [t.description for t in UPCOMING.todos] == ["plan sprint"]
+        # Upcoming reads a day at a time, and opens with the one being planned
+        upcoming = UPCOMING.todo_groups
+        assert [g.label for g in upcoming] == ["Today", "Tomorrow"]
+        assert {t.description for t in upcoming[0].todos} == {
+            "water plants",
+            "write report",
+        }
+        assert [t.description for t in upcoming[1].todos] == ["plan sprint"]
 
         # Work the day off its own pane
         await pilot.press("g", "t")
@@ -301,6 +309,50 @@ async def test_a_recurring_chore_through_the_day():
         from todooit.api import UPCOMING
 
         assert UPCOMING.todos == [todo]
+
+
+async def test_priority_on_a_repeating_task_leaves_its_day_alone():
+    """
+    A weekly task whose last step is ticked comes round again there and then,
+    and setting a priority on it afterwards does not move the day again.
+    """
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "water the plants")
+        await pilot.press("s")
+        await commit_line(pilot, "today")
+        await pilot.press("r")
+        await commit_line(pilot, "1w")
+
+        task = Todo.all()[0]
+        assert task.recurrence == timedelta(days=7)
+
+        # A step of its own, ticked off: the task it finishes repeats, so it
+        # comes round again instead of being left completed
+        await pilot.press("n")
+        await commit_line(pilot, "fill the can")
+        await pilot.press("I")
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+
+        assert task.is_pending
+        assert task.scheduled is not None
+        next_time = task.scheduled
+        assert next_time.date() == date.today() + timedelta(days=7)
+
+        # Setting a priority is not ticking it off
+        await pilot.press("k")
+        await pilot.pause()
+        await pilot.press("p", "2")
+        await pilot.pause()
+
+        assert task.priority == 2
+        assert task.scheduled == next_time
 
 
 async def test_indenting_builds_a_task_out_of_rows():
