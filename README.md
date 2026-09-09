@@ -66,6 +66,7 @@ shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev` - handy for trying out c
 ## Known Bugs
 
 - Labels break at `-`. For now, use `_` as a whiteapce inside labels.
+- '@' symbols inside links turn into labels.
 
 ## Credits
 
