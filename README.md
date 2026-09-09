@@ -2,9 +2,7 @@
 
 A beautiful, versatile todo app in your terminal for a keyboard based workflow. Started as a fork of "Dooit" extended with many features of "Todoist".
 
-## Todoist Features
-
-Added on top of the dooit fork:
+## Added Features (mainly from Todoist)
 
 - **Today / Upcoming / Completed / Bin** — fixed projects built from the real ones, jumped to with `gt`, `gu`, `gc`, `gb`, each with its own grouping.
 - **Bin instead of deletion** — `xx` throws a task away, `u` fetches it back, `yy` deletes one for good and `YY` empties the whole Bin.
@@ -59,7 +57,11 @@ todooit
 
 ## Data
 
-Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in `~/.cache/todooit`. This is todooit's own database: a dooit install alongside it keeps its own, untouched.
+Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in `~/.cache/todooit`.
+
+## Known Bugs
+
+- Labels break at `-`. For now, use `_` as a whiteapce inside labels.
 
 ## Credits
 
