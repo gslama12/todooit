@@ -8,7 +8,8 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Bin instead of deletion** — `xx` throws a task away, `u` fetches it back, `yy` deletes one for good and `YY` empties the whole Bin.
 - **Quick add** — `C` types a whole task in one line, with its project, labels, priority and day, from wherever the cursor happens to be.
 - **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one that is picked.
-- **Notes** — every task carries a note (`space`) with an insert mode, selection, copy and paste, and headings; `m` opens a pinned scratchpad note for thoughts with no task yet.
+- **Notes** — every task carries a note (`space`) with an insert mode, selection, copy and paste; `m` opens a pinned scratchpad note for thoughts with no task yet.
+- **Note markup** — `ctrl+e` emphasises in orange, delimited by zero-width marks so the words go loud with nothing at all around them; `ctrl+b` (or a typed `> `) sets a line off as a green quote, `ctrl+l` bullets a line and `tab` / `shift+tab` nest it, `ctrl+t` closes a line off as a heading, and a typed `---` turns into a separator.
 - **Link opening** — `o` opens the link under the cursor, on a task row and inside a note alike.
 - **Priority `p0`-`p3`** — Todoist's scale, typed as a chord and shown as a colored checkbox rather than a column of its own.
 - **Effort `e0`-`e3`** — the same kind of scale for how big a job is, colored green through red.

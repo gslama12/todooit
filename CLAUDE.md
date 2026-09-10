@@ -30,13 +30,18 @@ constraint — this is a personal project meant to be customized.
 This repo runs multiple parallel Claude Code sessions via git worktrees, one
 branch each, under `../<repo>-trees/<branch-name>`.
 
+- At the start of a new change/feature request, create its worktree without
+  asking first: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`.
+  Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
+  `feat-recurring-todos`). Then do all work for that request inside it.
+- Branches always branch from `dev`, never `main` or another feature branch.
 - Assume you're in one worktree, not the main checkout — check with
   `git worktree list` / `git branch --show-current` before assuming repo state.
-- New feature branches always branch from `dev`, never `main` or another
-  feature branch: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`.
-- Never switch branches inside a worktree; each is pinned to one branch. Ask
-  the user first if a different branch is needed.
-- Don't `git worktree add/remove` without user confirmation.
+- Never switch branches inside a worktree; each is pinned to one branch. If
+  the request clearly belongs to work already in progress on an existing
+  worktree, reuse that one instead of creating a new one.
+- Removing a worktree (`git worktree remove`) still needs user confirmation —
+  only creation is autonomous.
 - Don't read/edit files outside the current worktree unless asked.
 - Confirm you're not on `main`/`dev` before committing.
 - `node_modules`, `.env`, build artifacts, and dev-server ports are **not**
