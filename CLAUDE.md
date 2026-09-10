@@ -2,86 +2,81 @@
 
 ## What this is
 
-A standalone TUI todo manager: the personal dooit fork (upstream v3.3.4) and
-the parts of dooit-extras its config actually uses, merged into one
-installable package. Built on [Textual](https://textual.textualize.io/): todos
-are grouped into a tree of projects, navigated with vim-like keybindings, and
-stored in a SQLite database via SQLAlchemy. It is configured through a Python
-config file, which makes bar, dashboard, colors, formatters and keybinds fully
-scriptable. Both source histories are preserved in this repo's git log.
+A standalone TUI todo manager: the personal dooit fork (upstream v3.3.4) plus
+the parts of dooit-extras its config uses, merged into one installable
+package. Built on [Textual](https://textual.textualize.io/): todos are grouped
+into a tree of projects, navigated with vim-like keybindings, stored in
+SQLite via SQLAlchemy, and configured through a scriptable Python config
+file. Both source histories are preserved in this repo's git log.
 
 - `todooit/` — the app itself (was `dooit/dooit`)
-- `todooit/extras/` — the companion widget/formatter library (was
-  `dooit_extras`), trimmed to the formatters and bar widgets the config uses
+- `todooit/extras/` — companion widget/formatter library (was `dooit_extras`),
+  trimmed to what the config uses
 
 ## Goal
 
-Extend todooit in **appearance** and **functionality** — better visuals
-(layout, colors, tree rendering, bar/dashboard, formatters) and new behaviour
-(keybinds, commands, todo/project features). Upstream parity is not a
-constraint; this is a personal project meant to be customized.
+Extend todooit in **appearance and functionality**. Upstream parity is not a
+constraint — this is a personal project meant to be customized.
 
-Where changes go:
-
-- Config-level customization (keybinds, formatters, layout, status bar, colors)
-  → `todooit/utils/default_config.py`. There is **no** config file in
-  `~/.config`; the plugin manager always loads `default_config.py`, so that
-  file *is* the user's config.
-- Structural / rendering changes → the package itself, e.g.
+- Config-level changes (keybinds, formatters, layout, bar, colors) →
+  `todooit/utils/default_config.py`. There is no `~/.config` file — the
+  plugin manager always loads `default_config.py`, so that file *is* the
+  user's config.
+- Structural/rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.
+
+## Git worktrees
+
+This repo runs multiple parallel Claude Code sessions via git worktrees, one
+branch each, under `../<repo>-trees/<branch-name>`.
+
+- Assume you're in one worktree, not the main checkout — check with
+  `git worktree list` / `git branch --show-current` before assuming repo state.
+- New feature branches always branch from `dev`, never `main` or another
+  feature branch: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`.
+- Never switch branches inside a worktree; each is pinned to one branch. Ask
+  the user first if a different branch is needed.
+- Don't `git worktree add/remove` without user confirmation.
+- Don't read/edit files outside the current worktree unless asked.
+- Confirm you're not on `main`/`dev` before committing.
+- `node_modules`, `.env`, build artifacts, and dev-server ports are **not**
+  shared between worktrees — check/set up per worktree, don't assume. DB
+  migrations *are* shared project-wide (`docs/db.md`) — be careful running
+  destructive ones from a feature worktree.
 
 ## Data locations
 
-todooit keeps its own data, separate from any dooit install:
+todooit's data is separate from any dooit install (paths resolved in
+[todooit/paths.py](todooit/paths.py)):
 
-- database: `~/.local/share/todooit/todooit.db` **inside WSL**
-- CSS cache: `~/.cache/todooit` (generated `todooit.tcss`)
-- config dir: `~/.config/todooit` (unused - the plugin manager always loads
-  `default_config.py`)
+- DB: `~/.local/share/todooit/todooit.db` **inside WSL**
+- CSS cache: `~/.cache/todooit`
+- config dir: `~/.config/todooit` (unused, see above)
 
-It was seeded on 2026-09-09 with a copy of the old dooit database and the two
-have diverged independently since. Nothing todooit does touches
-`~/.local/share/dooit/`.
+Seeded 2026-09-09 from the old dooit database; the two have diverged since.
+Nothing here touches `~/.local/share/dooit/`.
 
-### The dev instance
-
-`TODOOIT_HOME` relocates all three of those into one self-contained directory,
-which is how development stays off the live data:
-
-```
-$TODOOIT_HOME/
-  todooit.db        # database
-  cache/            # todooit.tcss + stylesheets/
-  config.py         # user config (unused, as above)
-```
-
-`todooit --dev` is shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev`. Run
-it to inspect the demo project a change ships; it can sit next to a running
-production instance without either touching the other. With `TODOOIT_HOME`
-unset, everything resolves exactly as it always has, so plain `todooit` is
-still the real instance.
-
-Paths are resolved in [todooit/paths.py](todooit/paths.py) — the single place
-any of them is computed.
+**Dev instance:** `TODOOIT_HOME=~/.local/share/todooit-dev` (shorthand:
+`todooit --dev`) relocates DB/cache/config into one self-contained directory,
+so development never touches the live data. Unset, `todooit` is the real
+instance.
 
 ## Testing a change
 
-Python tooling only works from WSL here, not from Windows. To try a change:
+Python tooling only works from WSL, not Windows.
 
 ```bash
-wsl                     # from the todooit folder
+wsl
 uv venv .venv && source .venv/bin/activate    # first time only
 uv pip install -e .                           # first time only
-todooit                 # launches the real instance (live database!)
+todooit                                       # launches the real instance — live DB!
 ```
 
-Then test the change in that running instance. **Every change must be
-exercised this way** before it counts as done — a change that only
-type-checks is not done.
+Exercise every change in that running instance — type-checking alone doesn't
+count as done.
 
-The dev dependency group cannot be synced inside WSL (`textual-dev` pulls
-`aiohttp`, which needs a C compiler WSL lacks), so run the test suite from a
-throwaway venv:
+`textual-dev` (dev dep group) needs a C compiler WSL lacks, so run tests from
+a throwaway venv instead:
 
 ```bash
 uv venv /tmp/ttest --python 3.14
@@ -89,18 +84,15 @@ VIRTUAL_ENV=/tmp/ttest uv pip install -e . pytest pytest-asyncio faker
 /tmp/ttest/bin/python -m pytest tests -q
 ```
 
-## Every change ships a demo project
+**Only run tests relevant to the change** — not the whole suite — for small
+changes.
 
-At the end of each change, seed a project into the **dev** database that
-demonstrates the change, so it can be verified by just opening the dev
-instance — never leave the user to type in example items by hand. Name it after
-the change (e.g. `demo: priority icons`) and fill it with todos that actually
-hit the new code path (overdue, high priority, nested, recurring, … — whatever
-the change touches). Refresh or replace the demo project when iterating instead
-of piling up new ones.
+## Every change ships a demo
 
-Demos never go into the live database. Seed with the API rather than raw SQL,
-from the same activated venv, pointing `TODOOIT_HOME` at the dev instance:
+Seed a project into the **dev** database (never live) that exercises the new
+code path, named after the change (e.g. `demo: priority icons`). Refresh/
+replace it when iterating rather than piling up new ones. Seed via the API,
+not raw SQL:
 
 ```bash
 TODOOIT_HOME=~/.local/share/todooit-dev python - <<'PY'
@@ -108,7 +100,7 @@ from todooit.api import manager, Project
 manager.connect()               # no arg -> resolves to the dev database
 
 p = Project()
-p.save()                        # attaches to the root project
+p.save()
 p.description = "demo: <what changed>"
 p.save()
 
@@ -119,11 +111,10 @@ t.save()
 PY
 ```
 
-Then launch `todooit --dev` and confirm the demo project shows the change.
+Then launch `todooit --dev` and confirm it. Before touching any DB any other
+way, copy it to `/tmp` first.
 
-Before touching a database in any other way, copy it to `/tmp` first and work
-on the copy.
+## Every new feature needs tests
 
-## Every new feature creates testcases
-
-If you implement a new feature, be sure that the test cases stay up-to-date and that the new functionality is also covered by the test suite.
+New functionality must be covered by the test suite; keep existing tests
+up-to-date.
