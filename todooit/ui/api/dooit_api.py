@@ -103,6 +103,12 @@ class DooitAPI:
 
         self.focused.copy_description_to_clipboard()
 
+    def copy_note_to_clipboard(self):
+        """Copy the note of the highlighted todo to the clipboard"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.copy_note_to_clipboard()
+
     def paste_as_sibling(self):
         """Add an item described by whatever is on the clipboard"""
 
