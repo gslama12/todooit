@@ -127,6 +127,22 @@ class BaseRenderer(Generic[ModelType]):
         # the guides instead of bleeding into whatever gets appended to them
         return Text.assemble(("".join(reversed(pieces)), self.guide_style))
 
+    def _with_row_mark(self, rendered: RenderableType) -> RenderableType:
+        """
+        The description behind whatever the pane has to put in front of it
+
+        In front rather than after, and inside the description's own column:
+        what a mark says is what to do with the row, which is read before the
+        row itself and not hunted for at the end of it.
+        """
+
+        mark = self.tree.row_mark(self.model)
+
+        if not mark.cell_len:
+            return rendered
+
+        return mark + rendered if isinstance(rendered, Text) else rendered
+
     def _with_row_note(self, rendered: RenderableType) -> RenderableType:
         """
         The description with whatever the pane has to say about the row after it
@@ -181,6 +197,12 @@ class BaseRenderer(Generic[ModelType]):
             # it is the pane's word about the row and not the field's. What is
             # left of the column goes to the description, which wraps into it
             # exactly as it would have without a note.
+            # The pane's mark on the row leads its description, edit or no
+            # edit: a mark that came and went as the description was typed
+            # into would shift the whole of it sideways and back again
+            if attr == "description":
+                rendered = self._with_row_mark(rendered)
+
             if attr == "description" and not component.is_editing:
                 rendered = self._with_row_note(rendered)
 

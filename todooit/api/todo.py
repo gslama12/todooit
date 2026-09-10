@@ -1,5 +1,5 @@
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
 from sqlalchemy import ForeignKey, select, nulls_last
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -424,6 +424,28 @@ class Todo(DooitModel):
             return False
 
         return self.pending and self.due < datetime.now()
+
+    @property
+    def is_overscheduled(self) -> bool:
+        """
+        Whether the day this was planned to be worked on has already gone by
+
+        The other half of `is_overdue`: a deadline that has passed says the
+        work is late, where a planning day that has passed says only that the
+        plan did not survive the day it was made for. That is a day-at-a-time
+        question, so the hour a todo was scheduled at has no say in it: work
+        planned for this morning is still today's work this evening.
+
+        What it is for are the panes work is planned in. They carry what has
+        slipped onto today rather than leaving it behind in a week nobody
+        opens again, and mark it as having slipped, since a day that was
+        missed is a day to be picked again.
+        """
+
+        if not self.scheduled:
+            return False
+
+        return self.pending and self.scheduled.date() < date.today()
 
     @classmethod
     def all(cls) -> List["Todo"]:

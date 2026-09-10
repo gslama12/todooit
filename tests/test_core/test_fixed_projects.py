@@ -316,9 +316,9 @@ def test_upcoming_gathers_the_days_from_today_on_in_order(create_project):
     gone.scheduled = today_at() - timedelta(days=1)
     gone.save()
 
+    # No block for the day that has gone by: what was left on it leads today's
     groups = UPCOMING.todo_groups
-    assert [g.todos for g in groups] == [[today], [soon], [later]]
-    assert gone not in UPCOMING.todos
+    assert [g.todos for g in groups] == [[gone, today], [soon], [later]]
 
 
 def test_upcoming_names_today_and_tomorrow(create_project):
@@ -373,6 +373,135 @@ def test_upcoming_draws_a_task_over_every_day_it_has_work_in(create_project):
     ]
 
     for block, step in ((today_block, now), (tomorrow_block, later)):
+        (top,) = block.rows
+        assert (top.todo, top.is_context) == (task, True)
+        assert [row.todo for row in top.under] == [step]
+
+
+# ------------------------------------------------------------------
+# Work that slipped: a day that was planned for and has gone by
+# ------------------------------------------------------------------
+
+
+def test_a_todo_slips_once_the_day_it_was_planned_for_has_gone_by(create_project):
+    p = create_project("work")
+
+    slipped = p.add_todo()
+    slipped.scheduled = today_at() - timedelta(days=2)
+    slipped.save()
+
+    # The day is what counts and not the hour: work planned for this morning
+    # is still today's work for the rest of the day
+    this_morning = p.add_todo()
+    this_morning.scheduled = today_at(1)
+    this_morning.save()
+
+    someday = p.add_todo()
+    someday.save()
+
+    assert slipped.is_overscheduled
+    assert not this_morning.is_overscheduled
+    assert not someday.is_overscheduled
+
+    # Nothing that is finished with has a day left to miss
+    slipped.toggle_complete()
+    assert not slipped.is_overscheduled
+
+
+def test_today_carries_what_slipped_into_it(create_project):
+    """A day nobody got to is today's problem, not last week's"""
+
+    p = create_project("work")
+
+    slipped = p.add_todo()
+    slipped.description = "meant to do this on monday"
+    slipped.scheduled = today_at() - timedelta(days=3)
+    slipped.save()
+
+    planned = p.add_todo()
+    planned.scheduled = today_at()
+    planned.save()
+
+    assert TODAY.todos == [slipped, planned]
+
+
+def test_today_reads_what_slipped_ahead_of_the_days_own_work(create_project):
+    """What has already been missed is the first thing the day decides about"""
+
+    p = create_project("work")
+
+    urgent_today = p.add_todo()
+    urgent_today.scheduled = today_at()
+    urgent_today.priority = 1
+    urgent_today.save()
+
+    slipped = p.add_todo()
+    slipped.scheduled = today_at() - timedelta(days=1)
+    slipped.save()
+
+    urgent_slipped = p.add_todo()
+    urgent_slipped.scheduled = today_at() - timedelta(days=4)
+    urgent_slipped.priority = 1
+    urgent_slipped.save()
+
+    # Both runs read by priority, and the whole of what slipped comes first
+    (group,) = TODAY.todo_groups
+    assert group.todos == [urgent_slipped, slipped, urgent_today]
+
+
+def test_nothing_finished_or_thrown_away_slips_into_today(create_project):
+    p = create_project("work")
+
+    done = p.add_todo()
+    done.scheduled = today_at() - timedelta(days=2)
+    done.save()
+    done.toggle_complete()
+
+    thrown = p.add_todo()
+    thrown.scheduled = today_at() - timedelta(days=2)
+    thrown.save()
+    move_todo_to_bin(thrown)
+
+    assert TODAY.todos == []
+    assert UPCOMING.todos == []
+
+
+def test_upcoming_opens_a_today_block_for_what_slipped(create_project):
+    """A day gone by is no day to plan against, so nothing is grouped under one"""
+
+    p = create_project("work")
+
+    slipped = p.add_todo()
+    slipped.scheduled = today_at() - timedelta(days=6)
+    slipped.save()
+
+    (group,) = UPCOMING.todo_groups
+    assert group.label == "Today"
+    assert group.todos == [slipped]
+
+
+def test_upcoming_draws_a_slipped_step_under_its_task_in_today(create_project):
+    """A step left behind is carried in the way a step of any other day is"""
+
+    p = create_project("work")
+
+    task = p.add_todo()
+
+    missed = task.add_todo()
+    missed.scheduled = today_at() - timedelta(days=2)
+    missed.save()
+
+    ahead = task.add_todo()
+    ahead.scheduled = today_at() + timedelta(days=1)
+    ahead.save()
+
+    today_block, tomorrow_block = UPCOMING.todo_groups
+    assert [g.label for g in (today_block, tomorrow_block)] == [
+        "Today",
+        "Tomorrow",
+    ]
+
+    for block, step in ((today_block, missed), (tomorrow_block, ahead)):
         (top,) = block.rows
         assert (top.todo, top.is_context) == (task, True)
         assert [row.todo for row in top.under] == [step]

@@ -21,6 +21,11 @@ OWNER_ICON = "󰉋"
 # read, never to be scanned down the pane.
 OWNER_FADE = 0.55
 
+# What leads a row that was planned for a day already gone by. A word rather
+# than a symbol, and the word for what the row is here to have done to it: the
+# pane it is sitting in is the one it gets rescheduled from
+RESCHEDULE_MARK = "Reschedule: "
+
 # How much of a row a trailing project name may take before it is cut short.
 # It shares a column with the description, which is the one thing on the row
 # that has to stay readable, so a long project name gives way to it. A fixed
@@ -200,6 +205,32 @@ class FixedTodosTree(TodosTree):
             self.post_message(StartFieldEdit(self, property))
 
         return started
+
+    def row_mark(self, model) -> Text:
+        """
+        What is to be done with a row that slipped in from a day gone by
+
+        Only in the panes that carry such work onto today, where the row sits
+        among the day's own work with nothing on it to say it does not belong
+        to the day. In front of the description rather than after it: it is
+        not another thing known about the row, it is what the row is doing in
+        a pane it was never planned into.
+
+        Every row of a family says it, not just the gathered one: a step that
+        was left behind was left behind whether or not the task above it was.
+        """
+
+        if not self.model.marks_overscheduled or not isinstance(model, Todo):
+            return Text()
+
+        if not model.is_overscheduled:
+            return Text()
+
+        theme = self.api.vars.theme
+
+        # Assembled rather than styled as a whole, so that the red stays on
+        # the mark instead of bleeding into the description behind it
+        return Text.assemble((RESCHEDULE_MARK, Style(color=theme.red)))
 
     def row_note(self, model) -> Text:
         """

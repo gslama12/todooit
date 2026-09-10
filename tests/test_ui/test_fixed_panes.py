@@ -3,8 +3,12 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
+from rich.style import Style as RichStyle
+from textual.style import Style
+
 from todooit.api import Todo
 from todooit.ui.widgets.renderers.base_renderer import GUIDE_LAST_BRANCH
+from todooit.ui.widgets.trees.fixed_todos_tree import RESCHEDULE_MARK
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -29,6 +33,24 @@ def descriptions(tree):
     """What the pane's stored rows say, top to bottom"""
 
     return [tree._renderers[o.id].model.description for o in tree_options(tree)]
+
+
+def drawn_segments(tree, option):
+    """
+    What a row actually comes out as: its first line, as (text, color) pairs
+    """
+
+    (strip, *_) = tree._get_option_render(option, Style())
+
+    return [
+        (
+            segment.text,
+            segment.style.color.triplet.hex.lower()
+            if segment.style and segment.style.color and segment.style.color.triplet
+            else None,
+        )
+        for segment in strip
+    ]
 
 
 def context_ids(tree):
@@ -266,6 +288,100 @@ async def test_upcoming_groups_by_day():
             "sooner",
             "later",
         ]
+
+
+async def test_today_marks_the_rows_that_slipped_into_it():
+    """A row that was planned for a day gone by says what is to be done with it"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "missed")
+        await schedule(pilot, "yesterday")
+
+        await pilot.press("n")
+        await commit_line(pilot, "planned")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+
+        # What slipped leads the block, so it is where the rescheduling starts
+        assert descriptions(today) == ["missed", "planned"]
+
+        missed, planned = (today._renderers[o.id].model for o in tree_options(today))
+        assert today.row_mark(missed).plain == RESCHEDULE_MARK
+
+        # Nothing to say about a row that is where it was planned to be
+        assert today.row_mark(planned).plain == ""
+
+        # And nothing added after the description either
+        assert today.row_note(missed).plain == ""
+
+
+async def test_the_mark_leads_the_description_without_coloring_it():
+    """In front of the row's own words, in red, and only the mark in red"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "missed")
+        await schedule(pilot, "yesterday")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        (row,) = tree_options(today)
+
+        red = RichStyle(color=today.api.vars.theme.red).color.triplet.hex.lower()
+        segments = drawn_segments(today, row)
+        drawn = "".join(text for text, _ in segments)
+
+        assert drawn.index(RESCHEDULE_MARK) < drawn.index("missed")
+
+        marks = [color for text, color in segments if RESCHEDULE_MARK.strip() in text]
+        assert marks == [red]
+
+        # The description behind it is left in the color it came in
+        described = [color for text, color in segments if "missed" in text]
+        assert described and red not in described
+
+
+async def test_upcoming_carries_a_slipped_row_into_today():
+    """Nothing is filed under a day that has gone by: it is picked again here"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "missed")
+        await schedule(pilot, "yesterday")
+
+        await pilot.press("n")
+        await commit_line(pilot, "soon")
+        await schedule(pilot, "tomorrow")
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+        assert [g.label for g in upcoming.todo_groups] == ["Today", "Tomorrow"]
+        assert descriptions(upcoming) == ["missed", "soon"]
+
+        missed, soon = (upcoming._renderers[o.id].model for o in tree_options(upcoming))
+        assert upcoming.row_mark(missed).plain == RESCHEDULE_MARK
+        assert upcoming.row_mark(soon).plain == ""
+
+        # The project a row came out of is still the only thing after it
+        assert "project" in upcoming.row_note(missed).plain
 
 
 async def test_completing_a_task_moves_it_to_completed():

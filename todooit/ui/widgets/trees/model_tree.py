@@ -303,6 +303,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return self._renderers[_id].prompt
 
+    def row_mark(self, model: ModelType) -> Text:
+        """
+        What this pane has to say about a row, drawn in front of its description
+
+        Nothing, for a pane whose rows all stand in the same relation to it; a
+        pane that gathers work it wants something done about marks the rows it
+        means.
+        """
+
+        return Text()
+
     def row_note(self, model: ModelType) -> Text:
         """
         What this pane has to add to a row, drawn after its description
