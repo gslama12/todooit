@@ -21,7 +21,7 @@ from todooit.api import (
 from todooit.api.fixed_projects import PATH_SEPARATOR
 from todooit.ui.api.events import BarNotification, SpawnNote, TodoChanged, TodoRemoved
 from todooit.ui.api.events.events import TodoSelected
-from todooit.utils import blend
+from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
 from ..renderers.todo_renderer import TodoRender
 from ._decorators import refresh_tree, require_highlighted_node
@@ -557,6 +557,22 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         # Posted rather than pushed from here: the screen package imports the
         # trees, so reaching the other way would close the circle
         self.post_message(SpawnNote(self.current_model))
+
+    @require_highlighted_node
+    def copy_note_to_clipboard(self):
+        assert isinstance(self.current_model, Todo)
+
+        note = self.current_model.note
+
+        # A copy leaves nothing on screen to look at, and a task with no note
+        # looks exactly like one whose note was just taken - so both ends of
+        # it are said in the bar
+        if not note.strip():
+            self.post_message(BarNotification("This task has no note", "warning"))
+            return
+
+        copy_text(self.app, note)
+        self.post_message(BarNotification("Note copied to clipboard", "info"))
 
     @on(ModelTree.OptionHighlighted)
     def todo_highlighted(self, event: ModelTree.OptionHighlighted):

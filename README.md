@@ -16,7 +16,7 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Natural language dates** — due and scheduled dates are typed as words, shown with their day name, and colored green through red as they come closer.
 - **Recurrence on the scheduled date** — a recurring task moves its scheduled date on instead of carrying a due date.
 - **Projects as folders** — projects nest and count their children, and a nested task is only completed once all of its children are.
-- **Moving tasks** — `I` / `U` file a task under the one above it or pull it back out, and `ctrl+c` / `ctrl+v` copy and paste through the system clipboard.
+- **Moving tasks** — `I` / `U` file a task under the one above it or pull it back out, `ctrl+c` / `ctrl+v` copy and paste through the system clipboard, and `ctrl+n` takes a task's note without opening it.
 - **Sorting** — `SP`, `SD`, `SS` read a project by priority, due date or scheduled date.
 - **Help screen** — `?` held down shows every keybind, grouped by what it is for.
 - **Reworked look** — Tokyo Night colors, a status bar with the current mode, icons, headers, rounded lines, alternating row shading (`q`), and completed tasks struck through and grayed out.

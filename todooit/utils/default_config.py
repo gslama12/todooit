@@ -569,6 +569,9 @@ def key_setup(api: DooitAPI, _):
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)
+    # The note beside the description, on the key it is named after: the whole
+    # of a task's note, taken without the note screen ever coming up
+    api.keys.set("<ctrl+n>", api.copy_note_to_clipboard, group=MOVING)
     api.keys.set("<ctrl+v>", api.paste_as_sibling, group=MOVING)
 
     # "o" for open, on the row and inside the note alike: the same key opens
