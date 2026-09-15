@@ -3,12 +3,14 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
+from datetime import datetime, timedelta
+
 from rich.style import Style as RichStyle
 from textual.style import Style
 
 from todooit.api import Todo
 from todooit.ui.widgets.renderers.base_renderer import GUIDE_LAST_BRANCH
-from todooit.ui.widgets.trees.fixed_todos_tree import RESCHEDULE_MARK
+from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -27,6 +29,12 @@ async def schedule(pilot, when: str):
 
     await pilot.press("s")
     await commit_line(pilot, when)
+
+
+def slipped_mark(days: int = 1) -> str:
+    """What a row planned that many days back is expected to lead with"""
+
+    return reschedule_mark(datetime.now() - timedelta(days=days))
 
 
 def descriptions(tree):
@@ -314,13 +322,34 @@ async def test_today_marks_the_rows_that_slipped_into_it():
         assert descriptions(today) == ["missed", "planned"]
 
         missed, planned = (today._renderers[o.id].model for o in tree_options(today))
-        assert today.row_mark(missed).plain == RESCHEDULE_MARK
+        assert today.row_mark(missed).plain == slipped_mark()
+
+        # And what it says is the day the row was planned for, which is the
+        # one thing the pane took off it by carrying it onto today
+        assert today.row_mark(missed).plain.strip() == missed.scheduled.strftime(
+            "(%d.%m.)"
+        )
 
         # Nothing to say about a row that is where it was planned to be
         assert today.row_mark(planned).plain == ""
 
         # And nothing added after the description either
         assert today.row_note(missed).plain == ""
+
+
+def test_the_mark_is_the_day_the_row_was_planned_for():
+    """Day and month, in the German order, with no year to read past"""
+
+    assert reschedule_mark(datetime(2026, 9, 14)) == "(14.09.) "
+
+    # A day out of another month and another year reads the same way: what the
+    # mark is for is picking the row off that day again, and a row still being
+    # picked off is a row from around now
+    assert reschedule_mark(datetime(2025, 3, 1)) == "(01.03.) "
+
+    # The hour it was planned at has no say in it, the way the planning itself
+    # has none: it is a day the row slipped off, not a moment
+    assert reschedule_mark(datetime(2026, 9, 14, 23, 45)) == "(14.09.) "
 
 
 async def test_the_mark_leads_the_description_without_coloring_it():
@@ -344,9 +373,9 @@ async def test_the_mark_leads_the_description_without_coloring_it():
         segments = drawn_segments(today, row)
         drawn = "".join(text for text, _ in segments)
 
-        assert drawn.index(RESCHEDULE_MARK) < drawn.index("missed")
+        assert drawn.index(slipped_mark()) < drawn.index("missed")
 
-        marks = [color for text, color in segments if RESCHEDULE_MARK.strip() in text]
+        marks = [color for text, color in segments if slipped_mark().strip() in text]
         assert marks == [red]
 
         # The description behind it is left in the color it came in
@@ -377,7 +406,7 @@ async def test_upcoming_carries_a_slipped_row_into_today():
         assert descriptions(upcoming) == ["missed", "soon"]
 
         missed, soon = (upcoming._renderers[o.id].model for o in tree_options(upcoming))
-        assert upcoming.row_mark(missed).plain == RESCHEDULE_MARK
+        assert upcoming.row_mark(missed).plain == slipped_mark()
         assert upcoming.row_mark(soon).plain == ""
 
         # The project a row came out of is still the only thing after it
