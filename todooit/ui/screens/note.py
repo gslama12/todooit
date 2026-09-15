@@ -934,7 +934,15 @@ class NoteEditor(TextArea):
 
                 glyph_at = len(prefix) - len(prefix.lstrip(" \t"))
 
-                if line[len(prefix) :].strip():
+                if column < len(prefix):
+                    # The cursor is still in front of the words, somewhere in
+                    # the indent or in the marker itself: what opens here is a
+                    # blank line above, with the item moving down whole. A
+                    # prefix carried on from here would hand that item a second
+                    # marker and cut the one it already wears in half
+                    self.insert("\n", (row, 0), maintain_selection_offset=False)
+                    self.move_cursor((row + 1, column))
+                elif line[len(prefix) :].strip():
                     self.insert("\n" + prefix, maintain_selection_offset=False)
                 else:
                     # An empty bullet is where the list ends: the marker goes,
