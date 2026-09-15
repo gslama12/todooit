@@ -25,13 +25,19 @@ SELECTION_EXTEND_KEYS = frozenset(
     }
 )
 
+# The cell just past the last character, kept at the end of every buffer that
+# is being edited. It is where the cursor sits once it has run off the end of
+# the text, and reserving it even while the cursor is elsewhere is what keeps
+# the field one constant width: without it the field would grow and shrink by
+# a column each time the cursor arrived at the end and left it again.
+CURSOR_REST = " "
+
 
 class Input:
     """
     A simple single line Text Input
     """
 
-    _cursor: str = "|"
     highlight_pattern = ""
     is_editing = False
 
@@ -94,17 +100,6 @@ class Input:
 
         return self._value[span[0] : span[1]]
 
-    def draw(self) -> str:
-        if self.is_editing:
-            text = self._render_text_with_cursor()
-        else:
-            text = self.value
-
-        return text
-
-    def render(self) -> str:
-        return self.draw().strip()
-
     def render_editing(self, theme) -> Text:
         """
         What to draw while this field is being edited
@@ -121,19 +116,33 @@ class Input:
 
         # The buffer rather than `value`: a field that derives what it shows
         # from the model (an unset priority, say) still has the buffer the
-        # keystrokes land in, and that is what is up for replacement
+        # keystrokes land in, and that is what is up for replacement.
+        #
+        # Drawn verbatim, with no strip: while a field is being typed into,
+        # the spaces at either end of it are as much of what was typed as the
+        # letters are, and dropping them would slide the whole line sideways
+        # the moment the cursor moved off them.
+        text = Text(self._value + CURSOR_REST)
+
         span = self.selection
 
         if span is not None:
-            text = Text(self._value)
-
             # spanned rather than styled as a whole, so that a subclass which
             # appends to this -- a due date's preview, say -- stays outside
             # the highlight instead of being drawn as part of the selection
             text.stylize(self.selection_style(theme), *span)
-            return text
+        else:
+            # Styled onto the character the cursor stands on rather than
+            # written into the buffer as a glyph of its own: nothing is
+            # inserted, so the letters either side of it keep their columns as
+            # the cursor travels over them
+            text.stylize(
+                self.cursor_style(theme),
+                self._cursor_position,
+                self._cursor_position + 1,
+            )
 
-        return Text(self.render())
+        return text
 
     @staticmethod
     def selection_style(theme) -> Style:
@@ -143,16 +152,14 @@ class Input:
 
         return Style(color=theme.background1, bgcolor=theme.secondary)
 
-    def _render_text_with_cursor(self) -> str:
+    @staticmethod
+    def cursor_style(theme) -> Style:
         """
-        Produces renderable Text object combining value and cursor
+        What a terminal draws its own cursor as: a block filling the whole
+        cell, with the character standing in it punched back out
         """
 
-        return (
-            self._value[: self._cursor_position]
-            + self._cursor
-            + self._value[self._cursor_position :]
-        )
+        return Style(color=theme.background1, bgcolor=theme.primary)
 
     def start_edit(self) -> None:
         self.is_editing = True
