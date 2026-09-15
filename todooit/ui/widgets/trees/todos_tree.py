@@ -1,5 +1,5 @@
 from functools import partial
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 from rich.console import RenderableType
 from rich.styled import Styled
@@ -386,7 +386,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         The todos drawn under a row, as far as the row is expanded
         """
 
-        if not self.show_children or not self.is_node_expaned(todo.uuid):
+        if not self.draws_rows_under(todo):
             return []
 
         rows: List[Todo] = []
@@ -396,6 +396,11 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             rows.extend(self._steps_of(child))
 
         return rows
+
+    def draws_rows_under(self, model: Any) -> bool:
+        """A pane that draws no steps at all has nothing under any of its rows"""
+
+        return self.show_children and super().draws_rows_under(model)
 
     def _get_parent(self, id: str) -> Optional[Todo]:
         return Todo.from_id(id).parent_todo
