@@ -20,7 +20,13 @@ from todooit.api import (
     sort_todos,
 )
 from todooit.api.fixed_projects import PATH_SEPARATOR
-from todooit.ui.api.events import BarNotification, SpawnNote, TodoChanged, TodoRemoved
+from todooit.ui.api.events import (
+    BarNotification,
+    RevealTodo,
+    SpawnNote,
+    TodoChanged,
+    TodoRemoved,
+)
 from todooit.ui.api.events.events import TodoSelected
 from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
@@ -466,6 +472,11 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         revived = restore_todo(todo)
         self.post_message(TodoChanged(todo))
         self.announce_revived(revived)
+
+        # The row is out of the Bin and gone from it, so the pane in front no
+        # longer has it: the app goes to where it landed rather than leaving
+        # the key looking like it did nothing
+        self.post_message(RevealTodo(todo))
 
     def announce_revived(self, projects: List[Project]) -> None:
         """

@@ -73,6 +73,61 @@ def test_restore_takes_the_family_back_out(create_project):
     assert binned_tasks() == []
 
 
+def test_restoring_a_step_takes_the_whole_task_back(create_project):
+    """
+    A task can only come back whole, whichever of its rows the key was on
+
+    A step let out on its own is drawn nowhere at all: the Bin has stopped
+    holding it, and the project is still hiding the task it hangs off.
+    """
+
+    p = create_project()
+    task = p.add_todo()
+    step = task.add_todo()
+    sub_step = step.add_todo()
+
+    move_todo_to_bin(task)
+    restore_todo(step)
+
+    assert not task.is_binned
+    assert not step.is_binned
+    assert not sub_step.is_binned
+    assert binned_tasks() == []
+
+
+def test_restoring_a_step_binned_on_its_own_takes_only_it(create_project):
+    """Nothing binned above it means the step is the task that went in"""
+
+    p = create_project()
+    task = p.add_todo()
+    step = task.add_todo()
+
+    move_todo_to_bin(step)
+    restore_todo(step)
+
+    assert not step.is_binned
+    assert not task.is_binned
+    assert binned_tasks() == []
+
+
+def test_restoring_a_step_rebuilds_the_task_s_project(create_project):
+    """The project comes back for the task, not for the row that was pressed"""
+
+    p = create_project("home")
+    task = p.add_todo()
+    task.description = "water plants"
+    task.save()
+    step = task.add_todo()
+
+    move_project_to_bin(p)
+    created = restore_todo(step)
+
+    assert len(created) == 1
+    assert created[0].description == f"{REVIVED_PREFIX}home"
+    assert task.parent_project == created[0]
+    assert not step.is_binned
+
+
 def test_dropping_a_project_keeps_its_work(create_project):
     """The project row is the only thing that actually goes"""
 
