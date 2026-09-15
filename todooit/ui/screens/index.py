@@ -147,12 +147,16 @@ class MainScreen(BaseScreen):
             self.quick_add_done,
         )
 
-    def quick_add_done(self, result: Optional[QuickAdded]) -> None:
+    async def quick_add_done(self, result: Optional[QuickAdded]) -> None:
         """
-        Redraws the panes around a task that was added from somewhere else
+        Puts the cursor on a task that was added from somewhere else
 
-        The task can have landed in a project nobody is looking at, so the bar
-        says where it went: the row itself may be nowhere on screen.
+        The task can have landed in a project nobody is looking at, which is
+        the pane the cursor is taken to: a task typed in one line is one the
+        next keypress is meant for, so it is left pointed at the same way a
+        task found with the finder is. The bar still says where it went, since
+        the panes moving underneath is not on its own an answer to which
+        project took it.
         """
 
         if result is None:
@@ -165,6 +169,7 @@ class MainScreen(BaseScreen):
             self.reveal_project(project)
 
         self.post_message(TodoChanged(todo))
+        await self.reveal_todo(todo)
 
         where = escape(project.description) if project else ""
         what = escape(todo.description)
