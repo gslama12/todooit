@@ -352,6 +352,88 @@ async def test_tab_nests_a_bullet():
         assert Todo.all()[0].note == "• top\n• child"
 
 
+async def test_enter_in_front_of_a_bullet_opens_a_line_above():
+    """
+    The bug: `enter` from the head of a bullet wrote the marker out twice
+
+    The prefix is carried onto the new line, so from column 0 the line below
+    ended up as `• • item` - the marker it already had, behind a fresh one.
+    From anywhere in front of the words the line moves down whole instead,
+    with a blank one opening above it.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("ctrl+l")
+        await pilot.press(*list("one"))
+        await pilot.press("enter")
+        await pilot.press(*list("two"))
+        assert editor.text == "• one\n• two"
+
+        # At the very start of the second bullet
+        editor.move_cursor((1, 0))
+        await pilot.press("enter")
+
+        assert editor.text == "• one\n\n• two"
+        assert editor.cursor_location == (2, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_between_glyph_and_words_keeps_the_marker_whole():
+    """Inside the marker counts as in front of it: the glyph is not cut up"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("ctrl+l")
+        await pilot.press(*list("top"))
+        await pilot.press("enter")
+        await pilot.press(*list("child"))
+        await pilot.press("tab")
+        assert editor.text == "• top\n  ◦ child"
+
+        # In the indent of the nested line, short of its glyph
+        editor.move_cursor((1, 1))
+        await pilot.press("enter")
+
+        assert editor.text == "• top\n\n  ◦ child"
+        assert editor.cursor_location == (2, 1)
+
+        # And between the glyph and the space that follows it
+        editor.move_cursor((2, 3))
+        await pilot.press("enter")
+
+        assert editor.text == "• top\n\n\n  ◦ child"
+        assert editor.cursor_location == (3, 3)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_at_the_words_still_opens_an_empty_bullet_above():
+    """Past the marker is where `enter` goes back to carrying one on"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("ctrl+l")
+        await pilot.press(*list("item"))
+
+        editor.move_cursor((0, 2))
+        await pilot.press("enter")
+
+        assert editor.text == "• \n• item"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_tab_indents_a_plain_line_too():
     """Nesting is what tab is mostly for, but plain text indents as well"""
 
