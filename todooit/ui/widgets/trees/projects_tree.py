@@ -8,7 +8,7 @@ from todooit.ui.api.events import (
     ProjectSelected,
 )
 from .model_tree import ColumnRule, ModelTree
-from ._decorators import reject_fixed_node
+from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
 
 
@@ -160,6 +160,23 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
             return super().action_last()
 
         self.highlighted = indices[-1]
+
+    @require_highlighted_node
+    @reject_fixed_node(FIXED_MESSAGE)
+    def set_color(self, color: int) -> None:
+        """
+        Puts the highlighted project in a palette slot, or takes it back out
+
+        The key that colored a project is the one that uncolors it: pressing
+        the slot the project is already in clears it, so nothing extra has to
+        be learnt to undo a color that turned out to be the wrong one.
+        """
+
+        project = self.current_model
+        assert isinstance(project, Project)
+
+        project.set_color(None if project.color == color else color)
+        self.update_current_prompt()
 
     def _get_parent(self, id: str) -> Optional[Project]:
         return Project.from_id(id).parent_project

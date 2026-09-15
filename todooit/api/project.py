@@ -16,6 +16,12 @@ class Project(DooitModel):
     description: Mapped[str] = mapped_column(default="")
     is_root: Mapped[bool] = mapped_column(default=False)
 
+    # Which slot of the project palette this one is drawn in, or None for a
+    # project that was never given one. The slot is stored rather than the
+    # color itself, so a project keeps its place in the palette when the theme
+    # underneath it changes.
+    color: Mapped[Optional[int]] = mapped_column(default=None)
+
     # --------------------------------------------------------------
     # ------------------- Relationships ----------------------------
     # --------------------------------------------------------------
@@ -121,6 +127,14 @@ class Project(DooitModel):
 
         manager.commit()
 
+    def set_color(self, color: Optional[int]) -> None:
+        """
+        Put the project in a palette slot, or take it back out of one with None
+        """
+
+        self.color = color
+        self.save()
+
     def add_project(self) -> "Project":
         project = Project(parent_project=self)
         project.save()
@@ -154,7 +168,7 @@ class Project(DooitModel):
     @staticmethod
     def clone_from_id(id: int, order_index: int) -> "Project":
         project = Project.from_id(str(id))
-        fields = ["description"]
+        fields = ["description", "color"]
         attrs = {field: getattr(project, field) for field in fields}
         attrs["parent_project_id"] = project.parent_project_id
         attrs["order_index"] = order_index
@@ -194,7 +208,7 @@ class Project(DooitModel):
     def _clone_project_recursively(
         source_project: "Project", parent_clone: "Project"
     ) -> None:
-        fields = ["description", "order_index"]
+        fields = ["description", "order_index", "color"]
         attrs = {field: getattr(source_project, field) for field in fields}
         attrs["parent_project"] = parent_clone
 

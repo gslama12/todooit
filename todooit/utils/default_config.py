@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from rich.style import Style
 from todooit.api import Todo, Project
 from todooit.extras.formatters import (
@@ -400,6 +400,86 @@ def project_tasks_formatter(count: int, _: Project, api: DooitAPI) -> str:
     return f"[{count_color(api)}]{count}[/]"
 
 
+# Projects can be colored the way folders and labels are: ten slots, typed
+# straight in as c0 through c9, with the colors that get reached for first at
+# the low digits and the two a list of color names runs out on at the end.
+PROJECT_COLOR_NAMES = (
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "cyan",
+    "pink",
+    "brown",
+    "olive",
+)
+
+
+# A project's color is its own label and says nothing about the work inside
+# it -- which is exactly what a priority or an effort does say. So none of
+# these is a shade those are drawn in: every named color is pulled a quarter
+# of the way towards the pane's own text first, which lifts the whole family
+# clear of the signal colors without moving any of them off its hue.
+PROJECT_COLOR_LIFT = 0.25
+
+# The two the palette ends on are earth tones rather than hues of their own: an
+# orange and a green, each taken down towards the ground instead of lifted
+# towards the text. Neither has a signal color to be told apart from, and a
+# gray is deliberately not among them -- the pane already draws a project it is
+# done with in gray, and a project colored gray on purpose would be read as one
+# of those.
+PROJECT_MUTED_FADE = 0.45
+
+
+def project_palette(api: DooitAPI) -> Tuple[str, ...]:
+    """
+    The ten colors a project can be given, in the order the digits hand them out
+    """
+
+    theme = api.vars.theme
+
+    def lift(color: str) -> str:
+        return blend(color, theme.foreground3, PROJECT_COLOR_LIFT)
+
+    return (
+        lift(theme.red),
+        lift(theme.blue),
+        lift(theme.green),
+        lift(theme.yellow),
+        lift(theme.orange),
+        lift(theme.purple),
+        lift(theme.cyan),
+        # Halfway between the theme's magenta and its red, so the pink lands as
+        # a pink instead of as a second purple beside the one above it
+        lift(blend(theme.magenta, theme.red, 0.5)),
+        blend(theme.orange, theme.background1, PROJECT_MUTED_FADE),
+        blend(theme.green, theme.background1, PROJECT_MUTED_FADE),
+    )
+
+
+def project_color(project, api: DooitAPI) -> Optional[str]:
+    """
+    The color a project was given, or None for one that was never colored
+
+    A fixed project belongs to the app rather than to the database and has no
+    slot to be in, which reads here as never having picked one.
+    """
+
+    slot = getattr(project, "color", None)
+
+    if slot is None:
+        return None
+
+    palette = project_palette(api)
+
+    if not 0 <= slot < len(palette):
+        return None
+
+    return palette[slot]
+
+
 # The folder every stored project is drawn with, the same one the status bar
 # marks the current project with. A fixed project brings an icon of its own
 # instead, which is what tells the two kinds apart at a glance.
@@ -422,7 +502,12 @@ def project_icon_formatter(name: str, project, api: DooitAPI) -> str:
         icon, color = project.icon, theme.primary
     else:
         icon = PROJECT_ICON
-        color = blend(theme.foreground1, theme.background1, PROJECT_ICON_FADE)
+        # A colored project paints its folder in full: the quiet gray is what
+        # an uncolored one gets, and a color on the row is worth more than the
+        # fade that keeps a column of plain folders out of the way
+        color = project_color(project, api) or blend(
+            theme.foreground1, theme.background1, PROJECT_ICON_FADE
+        )
 
     return f"[{color}]{icon}[/] {name}"
 
@@ -470,6 +555,20 @@ def project_description_formatter(
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
+# Runs before the icon is put in front of the name, so the color wraps the name
+# alone and the folder is painted separately. The sub project count carries a
+# color of its own on an inner span and keeps it: it is the pane counting, not
+# part of what the project is called.
+@extra_formatter
+def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
+    color = project_color(project, api)
+
+    if color is None:
+        return None
+
+    return f"[{color}]{name}[/]"
+
+
 @subscribe(Startup)
 def key_setup(api: DooitAPI, _):
     # Groups show up as sections in the help screen, in this order
@@ -509,7 +608,11 @@ def key_setup(api: DooitAPI, _):
     # The scratchpad, next to the key that opens a todo's note: the same
     # window, for the thoughts that have no task to be written on yet
     api.keys.set("m", api.show_pinned_note, group=EDITING)
-    api.keys.set("c", api.toggle_complete, group=EDITING)
+    # Scoped to the todos, because over the projects the very same key opens
+    # the color chords below: a key that is the start of another one can never
+    # be pressed on its own, and there is nothing in the left pane to tick off
+    # anyway
+    api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
     # Throwing something away costs nothing and asks nothing: it goes to the
     # Bin, where "u" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
@@ -539,6 +642,30 @@ def key_setup(api: DooitAPI, _):
             description=PRIORITY_HELP,
             group=PRIORITY_EFFORT,
             label=PRIORITY_LABEL,
+        )
+
+    # A color is picked off the palette the way a priority is picked off its
+    # scale, and typed the same way: the chord says which slot, and pressing
+    # the slot a project is already in takes the color back off. The digits are
+    # named in the one row the whole run collapses to, which is where ten
+    # colors are looked up once instead of being learnt as ten bindings.
+    COLOR_LABEL = f"c0-c{len(PROJECT_COLOR_NAMES) - 1}"
+    COLOR_NAMED = ", ".join(
+        f"c{slot} {name}" for slot, name in enumerate(PROJECT_COLOR_NAMES)
+    )
+    COLOR_HELP = (
+        f"Color the project: {COLOR_NAMED} "
+        "(the same key again takes the color off)"
+    )
+
+    for slot in range(len(PROJECT_COLOR_NAMES)):
+        api.keys.set(
+            f"c{slot}",
+            partial(api.set_project_color, slot),
+            description=COLOR_HELP,
+            group=EDITING,
+            label=COLOR_LABEL,
+            scope="projects",
         )
 
     # Effort is picked off a fixed scale the same way priority is, so it is
@@ -702,8 +829,10 @@ def formatter_setup(api: DooitAPI, _):
     api.formatter.projects.tasks.add(gray_out_muted_project)
 
     # Added before the one below it => runs after it, so the icon ends up in
-    # front of everything that formatter appends to the name
+    # front of everything that formatter appends to the name, and the name is
+    # already colored by the time the icon joins it
     api.formatter.projects.description.add(project_icon_formatter)
+    api.formatter.projects.description.add(project_color_formatter)
     api.formatter.projects.description.add(project_description_formatter)
     api.formatter.projects.tasks.add(project_tasks_formatter)
 

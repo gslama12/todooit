@@ -171,6 +171,27 @@ def add_bin_columns(engine: Engine):
             connection.execute(text(statement))
 
 
+def add_project_color_column(engine: Engine):
+    """
+    Add the `color` column to a project table written before it existed.
+
+    Same story as `add_scheduled_column`: `create_all` never touches a table it
+    already found. Every project that was already in the database starts out
+    with no color, which is what an empty column means.
+    """
+
+    inspector = inspect(engine)
+    if "project" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("project")}
+    if "color" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE project ADD COLUMN color INTEGER"))
+
+
 def delete_all_data(session: Session):
     meta = MetaData()
     meta.reflect(bind=session.get_bind())
