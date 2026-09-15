@@ -79,6 +79,12 @@ class FixedTodosTree(TodosTree):
         # ends it in the project it came from
         self._last_rows: Dict[str, bool] = {}
 
+        # Of the rows a block reached its work through, which ones it drew
+        # anything under. A context row is only there for the sake of what
+        # hangs off it, but the block picked that, so whether there is
+        # anything is the block's answer to give and not the todo's
+        self._rows_under: Dict[str, bool] = {}
+
     @property
     def model(self) -> FixedProject:
         return self._model
@@ -86,6 +92,7 @@ class FixedTodosTree(TodosTree):
     def _body_options(self) -> List[Option]:
         self._row_roots = set()
         self._last_rows = {}
+        self._rows_under = {}
 
         for group in self.todo_groups:
             self._row_roots.update(row.todo.uuid for row in group.rows)
@@ -102,6 +109,8 @@ class FixedTodosTree(TodosTree):
             if not row.is_context:
                 continue
 
+            self._rows_under[row.todo.uuid] = bool(row.under)
+
             for index, child in enumerate(row.under):
                 self._last_rows[child.todo.uuid] = index == len(row.under) - 1
 
@@ -114,6 +123,11 @@ class FixedTodosTree(TodosTree):
         last = self._last_rows.get(model.uuid)
 
         return super().is_last_row(model) if last is None else last
+
+    def draws_rows_under(self, model: Any) -> bool:
+        under = self._rows_under.get(model.uuid)
+
+        return super().draws_rows_under(model) if under is None else under
 
     def _get_parent(self, id: str) -> Optional[Todo]:
         """

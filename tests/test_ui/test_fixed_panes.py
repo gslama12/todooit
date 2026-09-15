@@ -9,7 +9,7 @@ from rich.style import Style as RichStyle
 from textual.style import Style
 
 from todooit.api import Todo
-from todooit.ui.widgets.renderers.base_renderer import GUIDE_LAST_BRANCH
+from todooit.ui.widgets.renderers.base_renderer import GUIDE_BLANK, GUIDE_LAST_BRANCH
 from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 from tests.test_ui.ui_base import (
     boot,
@@ -216,8 +216,9 @@ async def test_a_guide_ends_at_the_last_row_the_pane_drew():
         assert planned.description == "planned"
         assert not planned.is_last_sibling()
 
-        guide = today._renderers[planned.uuid].tree_guide.plain
+        guide, below = today._renderers[planned.uuid].tree_guides
         assert guide == GUIDE_LAST_BRANCH
+        assert below == GUIDE_BLANK
 
 
 async def test_upcoming_repeats_a_task_over_the_days_it_has_work_in():

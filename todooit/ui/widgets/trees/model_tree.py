@@ -31,7 +31,11 @@ from todooit.ui.api.events import (
     StartSort,
     BarNotification,
 )
-from todooit.ui.widgets.renderers import BaseRenderer, COLUMN_PADDING
+from todooit.ui.widgets.renderers import (
+    BaseRenderer,
+    COLUMN_PADDING,
+    DESCRIPTION_OVERFLOW,
+)
 from todooit.utils import copy_text, paste_text
 from .base_tree import BaseTree
 from ._render_dict import RenderDict
@@ -46,6 +50,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters._model_formatter_base import (
         ModelFormatterBase,
     )
+
 
 class ColumnRule:
     """
@@ -265,7 +270,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             attr = item.value
 
             if attr == "description":
-                table.add_column(attr, ratio=1)
+                table.add_column(attr, ratio=1, overflow=DESCRIPTION_OVERFLOW)
             else:
                 width = self.get_column_width(attr)
 
@@ -434,13 +439,32 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         """
         Whether nothing else is drawn beside a row, under whatever it hangs off
 
-        What the elbow at the end of a row's guides is picked from. Usually
-        the same thing as being the last of its siblings; in a pane that shows
-        only some of what is filed under a row, it is the last of the ones
-        that made it in.
+        What the elbow at the end of a row's guides is picked from. Asked of
+        the rows this pane drew rather than of the order they are filed in:
+        a pane that leaves some of a family out, or reads it in an order of
+        its own, ends it on a different row than the database does, and an
+        elbow picked from the filing would land halfway up the family.
         """
 
-        return model.is_last_sibling()
+        parent = model.parent
+
+        if parent is None:
+            return model.is_last_sibling()
+
+        drawn = self.visible_children(parent)
+
+        return not drawn or drawn[-1].uuid == model.uuid
+
+    def draws_rows_under(self, model: Any) -> bool:
+        """
+        Whether this pane draws rows for what is filed under one, beneath it
+
+        What the line dropping out of a row's first column has to reach. A
+        row folded away, or one with nothing under it this pane has a row
+        for, is the end of its own branch however much is filed under it.
+        """
+
+        return self.is_node_expaned(model.uuid) and bool(self.visible_children(model))
 
     def visible_children(self, model: Any) -> List:
         """
