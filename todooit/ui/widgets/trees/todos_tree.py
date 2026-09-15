@@ -14,6 +14,7 @@ from todooit.api import (
     Project,
     TodoGroup,
     TodoRow,
+    freeze_sort_order,
     move_todo_to_bin,
     restore_todo,
     sort_todos,
@@ -181,6 +182,51 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             tree._refresh_and_restore_highlight()
 
         return True
+
+    def _drop_sort(self) -> None:
+        """
+        Hands the order of the pane back before a row is moved by hand
+
+        A pane being read by priority draws its rows wherever the priorities
+        put them, so a row shifted up one place in the filing would come
+        straight back down to where the sort wants it and the key would look
+        like it had missed. The order the rows are in is written into the
+        filing first and the sort is then dropped, which leaves the pane
+        looking exactly as it did and the rows finally free to be moved.
+
+        The rows only rearrange again when an order is asked for again, with
+        one of the sort chords.
+        """
+
+        mode = self.sort_mode
+
+        if mode is None:
+            return
+
+        freeze_sort_order(mode)
+        self.api.vars.todo_sort = None
+
+        # Every todos pane, the same way an order picked is taken by every
+        # pane: the switcher keeps one per project and they all read the
+        # setting that has just been cleared
+        for tree in self.app.screen.query(TodosTree):
+            if tree is not self:
+                tree._refresh_and_restore_highlight()
+
+        self.post_message(
+            BarNotification(
+                "Order is yours now — [b]SP[/b]/[b]SD[/b]/[b]SS[/b] sorts again",
+                "info",
+            )
+        )
+
+    def shift_up(self) -> None:
+        self._drop_sort()
+        super().shift_up()
+
+    def shift_down(self) -> None:
+        self._drop_sort()
+        super().shift_down()
 
     def _heading_id(self, index: int) -> str:
         return f"dooit-todo-group-{index}"
