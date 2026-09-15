@@ -1,13 +1,19 @@
 from enum import Enum
 from dataclasses import dataclass
 from collections import defaultdict
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Literal, Optional, Tuple, Union
 
 from ._base import ApiComponent
 from todooit.ui.api.events import ModeType
 
 KeyBindType = defaultdict[str, defaultdict[str, Optional["DooitFunction"]]]
 KeyType = Union[str, List[str]]
+
+# Which pane a binding is meant for. A binding with no scope works over either
+# of them; a scoped one is invisible everywhere else, which is what lets the
+# same key be a key of its own over one pane and the opening of a chord over
+# the other.
+KeyScopeType = Literal["projects", "todos"]
 
 
 @dataclass
@@ -24,6 +30,8 @@ class DooitFunction:
     # is a scale rather than four bindings, and reads as one row saying so;
     # every binding sharing a label and a description is listed once.
     label: str = ""
+    # The pane the binding belongs to, or None for one that works over both
+    scope: Optional[KeyScopeType] = None
 
     def __post_init__(self):
         self.description = self.description.strip("\n")
@@ -54,10 +62,11 @@ class KeyMatch:
 
 
 class KeyManager(ApiComponent):
-    def __init__(self, get_mode: Callable) -> None:
+    def __init__(self, get_mode: Callable, get_scope: Callable) -> None:
         self.keybinds: KeyBindType = defaultdict(lambda: defaultdict(lambda: None))
         self._inputs: List[str] = []
         self.get_mode = get_mode
+        self.get_scope = get_scope
 
     @property
     def groups(self) -> List[str]:
@@ -86,9 +95,10 @@ class KeyManager(ApiComponent):
         group: str,
         hidden: bool,
         label: str,
+        scope: Optional[KeyScopeType],
     ) -> None:
         self.keybinds[mode][key] = DooitFunction(
-            callback, description or callback.__doc__ or "", group, hidden, label
+            callback, description or callback.__doc__ or "", group, hidden, label, scope
         )
 
     def set(
@@ -99,12 +109,15 @@ class KeyManager(ApiComponent):
         group: str = "",
         hidden: bool = False,
         label: str = "",
+        scope: Optional[KeyScopeType] = None,
     ) -> None:
         if isinstance(keys, str):
             keys = [keys]
 
         for key in keys:
-            self.__set_key("NORMAL", key, callback, description, group, hidden, label)
+            self.__set_key(
+                "NORMAL", key, callback, description, group, hidden, label, scope
+            )
 
     @property
     def input(self) -> str:
@@ -120,9 +133,37 @@ class KeyManager(ApiComponent):
     def clear_input(self):
         self._inputs.clear()
 
+    def _in_scope(self, func: DooitFunction) -> bool:
+        """
+        Whether a binding is one the pane under the cursor answers to
+
+        A binding that names no pane answers everywhere. A pane that is not one
+        of the two -- nothing focused yet, or something that is not a tree --
+        hears only those, since a chord that is being typed over nothing has no
+        pane to be told apart from.
+        """
+
+        return func.scope is None or func.scope == self.get_scope()
+
     def _find_matched_functions(self) -> List[DooitFunction]:
         keybinds = self.keybinds[self.get_mode()].items()
-        return [func for key, func in keybinds if key.startswith(self.input) and func]
+        return [
+            func
+            for key, func in keybinds
+            if key.startswith(self.input) and func and self._in_scope(func)
+        ]
+
+    def _exact_match(self) -> Optional[DooitFunction]:
+        """
+        The binding for exactly what has been typed so far, if the pane has one
+        """
+
+        func = self.keybinds[self.get_mode()].get(self.input)
+
+        if func is None or not self._in_scope(func):
+            return None
+
+        return func
 
     def search_for_key(self) -> KeyMatch:
         matched = self._find_matched_functions()
@@ -130,11 +171,15 @@ class KeyManager(ApiComponent):
             self.clear_input()
             return KeyMatch.no_match()
 
-        if len(matched) > 1 or self.input not in self.keybinds[self.get_mode()]:
+        exact = self._exact_match()
+
+        # Something longer than what was typed still matches, so the chord is
+        # not finished: what has been typed waits for the key that ends it
+        if len(matched) > 1 or exact is None:
             return KeyMatch.multiple_match()
 
         self.clear_input()
-        return KeyMatch.match_found(matched[0])
+        return KeyMatch.match_found(exact)
 
     def register_key(self, key: str) -> KeyMatch:
         if key == "escape":
