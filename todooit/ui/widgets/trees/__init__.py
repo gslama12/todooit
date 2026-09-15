@@ -12,8 +12,8 @@ def make_todos_tree(project) -> TodosTree:
     A fixed project gathers its todos from all over the tree and wants them
     grouped; a stored one simply shows what is filed under it. One that gathers
     what has been thrown away needs a pane that draws the binned todos rather
-    than hiding them, and one that keeps a row after it has been unticked needs
-    a pane that can hold it.
+    than hiding them, and one whose rows leave it the moment they are unticked
+    needs a pane that follows them where they went.
     """
 
     if not getattr(project, "is_fixed", False):
@@ -22,7 +22,7 @@ def make_todos_tree(project) -> TodosTree:
     if getattr(project, "gathers_binned", False):
         return BinTodosTree(project)
 
-    if getattr(project, "holds_unticked_rows", False):
+    if getattr(project, "sends_unticked_home", False):
         return CompletedTodosTree(project)
 
     return FixedTodosTree(project)

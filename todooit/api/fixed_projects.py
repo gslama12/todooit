@@ -268,10 +268,10 @@ class FixedProject:
     # has no use for the hour, which only crowds the columns beside it
     day_only_columns: Tuple[str, ...] = ()
 
-    # Whether a row unticked in here is held in its place until the edit that
-    # follows has been confirmed, rather than leaving the moment it stops
-    # being what the project gathers
-    holds_unticked_rows: bool = False
+    # Whether a row unticked in here is followed: it is gone from the pane the
+    # moment it stops being what the project gathers, so the pane it belongs
+    # in again is opened and the cursor is put on it
+    sends_unticked_home: bool = False
 
     # Whether what the project gathers is the todos that have been thrown
     # away. Every other pane shows the ones that have not: a binned todo is in
@@ -566,9 +566,9 @@ class CompletedProject(FixedProject):
     # Nothing here says which project a row came out of, so the rows do
     show_owning_project = True
 
-    # A row unticked in here is on its way back to its own project, and what
-    # sends it there is typed into the row: it stays put until that is done
-    holds_unticked_rows = True
+    # A row unticked in here goes straight back to its own project, and the
+    # app goes with it: the log keeps nothing to show for a row it has lost
+    sends_unticked_home = True
 
     # Nothing in here is planned or owed any more; what is worth knowing is
     # when it was finished, which takes the place of both date columns. They

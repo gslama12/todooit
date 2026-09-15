@@ -26,6 +26,7 @@ from todooit.ui.api.events import (
     ProjectDescriptionChanged,
     ProjectRemoved,
     ProjectSelected,
+    RevealTodo,
     GotoFixedProject,
     SwitchTab,
     SpawnHelp,
@@ -202,6 +203,20 @@ class MainScreen(BaseScreen):
     async def search_done(self, todo: Optional[Todo]) -> None:
         if todo is not None:
             await self.reveal_todo(todo)
+
+    @on(RevealTodo)
+    async def reveal_moved_todo(self, event: RevealTodo) -> None:
+        """
+        Goes after a task that has just left the pane it was being read in
+
+        Unticking a row in the completion log, or taking one back out of the
+        Bin, drops it out of the only pane it was in: what the key did is off
+        screen the moment it lands. So the same arrival the finder makes is
+        made for it — the project is opened, the cursor put on the row, the
+        row flashed — and where the task went is where the cursor now is.
+        """
+
+        await self.reveal_todo(event.todo)
 
     async def reveal_todo(self, todo: Todo) -> None:
         """
