@@ -25,28 +25,26 @@ constraint — this is a personal project meant to be customized.
 - Structural/rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.
 
-## Git worktrees
+## Git Worktree Workflow
 
 This repo runs multiple parallel Claude Code sessions via git worktrees, one
 branch each, under `../<repo>-trees/<branch-name>`.
 
-- At the start of a new change/feature request, create its worktree without
-  asking first: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`.
-  Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
-  `feat-recurring-todos`). Then do all work for that request inside it.
-- Branches always branch from `dev`, never `main` or another feature branch.
-- Assume you're in one worktree, not the main checkout — check with
+- For every user session you will work only **inside** a defined worktree that will be specified
+  and created by the user.
+- If the user does not specify a worktree path in the request, you 
+  are allowed to create a worktree yourself with: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
+  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch.
+- Assume you're in one worktree, not the main checkout - check with
   `git worktree list` / `git branch --show-current` before assuming repo state.
-- Never switch branches inside a worktree; each is pinned to one branch. If
+- Never switch branches inside a worktree: each is pinned to one branch. If
   the request clearly belongs to work already in progress on an existing
   worktree, reuse that one instead of creating a new one.
-- Removing a worktree (`git worktree remove`) still needs user confirmation —
-  only creation is autonomous.
+- Commiting change or removing a worktree (`git worktree remove`) is **not allowed**.
 - Don't read/edit files outside the current worktree unless asked.
-- Confirm you're not on `main`/`dev` before committing.
-- `node_modules`, `.env`, build artifacts, and dev-server ports are **not**
-  shared between worktrees — check/set up per worktree, don't assume. DB
-  migrations *are* shared project-wide (`docs/db.md`) — be careful running
+- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are **not**
+  shared between worktrees. Make sure there is a working `.venv` in the worktree. This should be used to check changes and for me to inspect the changes later. Use `uv sync` to install the dependencies. 
+- DB migrations *are* shared project-wide (`docs/db.md`) — be careful running
   destructive ones from a feature worktree.
 
 ## Data locations
