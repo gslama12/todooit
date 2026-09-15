@@ -21,10 +21,21 @@ OWNER_ICON = "󰉋"
 # read, never to be scanned down the pane.
 OWNER_FADE = 0.55
 
-# What leads a row that was planned for a day already gone by. A word rather
-# than a symbol, and the word for what the row is here to have done to it: the
-# pane it is sitting in is the one it gets rescheduled from
-RESCHEDULE_MARK = "Reschedule: "
+# What leads a row that was planned for a day already gone by: the day it was
+# planned for. Carrying the row onto today is what takes that day away from it
+# — the heading it sits under is no longer its own — so the mark hands the day
+# back, and how far back it reads is how far the row has slipped. Day and
+# month only: a day near enough to still be worth picking again is this year's
+RESCHEDULE_FORMAT = "(%d.%m.) "
+
+
+def reschedule_mark(day: datetime) -> str:
+    """
+    The day a slipped row was planned for, as the row says it
+    """
+
+    return day.strftime(RESCHEDULE_FORMAT)
+
 
 # How much of a row a trailing project name may take before it is cut short.
 # It shares a column with the description, which is the one thing on the row
@@ -208,13 +219,13 @@ class FixedTodosTree(TodosTree):
 
     def row_mark(self, model) -> Text:
         """
-        What is to be done with a row that slipped in from a day gone by
+        The day a row that slipped in from a day gone by was planned for
 
         Only in the panes that carry such work onto today, where the row sits
         among the day's own work with nothing on it to say it does not belong
         to the day. In front of the description rather than after it: it is
         not another thing known about the row, it is what the row is doing in
-        a pane it was never planned into.
+        a pane it was never planned into, and the day it is to be picked off.
 
         Every row of a family says it, not just the gathered one: a step that
         was left behind was left behind whether or not the task above it was.
@@ -228,9 +239,11 @@ class FixedTodosTree(TodosTree):
 
         theme = self.api.vars.theme
 
+        mark = reschedule_mark(model.scheduled)
+
         # Assembled rather than styled as a whole, so that the red stays on
         # the mark instead of bleeding into the description behind it
-        return Text.assemble((RESCHEDULE_MARK, Style(color=theme.red)))
+        return Text.assemble((mark, Style(color=theme.red)))
 
     def row_note(self, model) -> Text:
         """
