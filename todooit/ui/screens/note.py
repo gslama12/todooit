@@ -60,8 +60,23 @@ HEADER_WIDTH = 40
 QUOTE_GLYPH = "▎ "
 QUOTE_MARK = ">"
 
+# What a list item is typed as before it becomes the bullet: markdown's own
+# `-`, which is what the fingers reach for whether or not this window is the
+# one they learned it in
+BULLET_MARK = "-"
+
+# The marks a following space turns into the glyph they stand for, and the
+# space is what says they mean it: a `-` in the middle of a word is a hyphen,
+# and only a mark with nothing but indent in front of it and a space behind
+# it is opening a line. `>` becomes the quote bar; `-` becomes the bullet for
+# however deep the line is already indented, so the glyph is looked up rather
+# than stored here
+MARKDOWN_MARKS = (QUOTE_MARK, BULLET_MARK)
+
 # What `---` is typed as before it becomes the rule. Two dashes and a third
-# on the way, which is the moment the line is swapped for the rule itself
+# on the way, which is the moment the line is swapped for the rule itself.
+# A `-` alone is a bullet on the way instead, and the two never meet: the
+# rule is three dashes running, the bullet is one with a space after it
 DASHES = "--"
 
 # What the styled spans are tagged with; the theme below maps them to styles
@@ -342,6 +357,8 @@ class NoteEditor(TextArea):
         # note, and its old meaning is the nearest thing to this one: both are
         # what you press to make a line stand apart from the ones around it
         Binding("ctrl+b", "toggle_quote", "Quote", show=False),
+        # The keys for a line that is already written; a line being written
+        # reaches both by typing what markdown types - `> ` and `- `
         Binding("ctrl+l", "toggle_bullet", "Bullet", show=False),
         # `tab` and nothing else: `ctrl+i` is the same byte on every terminal
         # that does not speak the kitty protocol, so naming it too would be
@@ -519,6 +536,9 @@ class NoteEditor(TextArea):
         Which glyph it gets follows how far the line is already indented, so a
         bullet put on a line that has been tabbed in arrives as the marker for
         the level it is actually at.
+
+        The same thing `- ` does in markdown, and typing that is the other way
+        to reach it; this is the key for a line that is already written.
         """
 
         row, _ = self.cursor_location
@@ -968,18 +988,28 @@ class NoteEditor(TextArea):
 
         if event.character == " ":
             row, column = self.cursor_location
+            line = self.document[row]
+            indent = line[: len(line) - len(line.lstrip(" \t"))]
 
-            # The space of a markdown `> `, which is where the quote is known
-            # to be one and not a stray angle bracket
-            if self.document[row] == QUOTE_MARK and column == len(QUOTE_MARK):
+            # The space of a markdown `> ` or `- `, which is where the mark is
+            # known to be one and not a stray angle bracket or a hyphen. The
+            # indent is allowed to come first and is kept, so a mark typed on
+            # a line already tabbed in opens at the level it is standing on
+            if column == len(line) and line[len(indent) :] in MARKDOWN_MARKS:
                 event.stop()
                 event.prevent_default()
 
+                glyph = (
+                    QUOTE_GLYPH
+                    if line[len(indent) :] == QUOTE_MARK
+                    else bullet_glyph(indent_depth(indent))
+                )
+
                 self.replace(
-                    QUOTE_GLYPH, (row, 0), (row, column),
+                    glyph, (row, len(indent)), (row, column),
                     maintain_selection_offset=False,
                 )
-                self.move_cursor((row, len(QUOTE_GLYPH)))
+                self.move_cursor((row, len(indent) + len(glyph)))
                 return
 
         await super()._on_key(event)

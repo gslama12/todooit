@@ -290,6 +290,86 @@ async def test_typing_a_quote_marker():
         await pilot.pause()
 
 
+async def test_typing_a_quote_marker_after_an_indent():
+    """markdown puts the mark after the indent; so does this"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("tab")
+        await pilot.press(*list("> indented"))
+        assert screen.editor.text == "  " + QUOTE_GLYPH + "indented"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_typing_a_bullet_marker():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        # markdown's `- ` goes in, the bullet it stands for comes out
+        await pilot.press(*list("- "))
+        assert screen.editor.text == "\u2022 "
+
+        await pilot.press(*list("first"))
+
+        # Enter carries it on, the way it carries a typed bullet on
+        await pilot.press("enter")
+        await pilot.press(*list("second"))
+        assert screen.editor.text == "\u2022 first\n\u2022 second"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
+    """The glyph says how deep the line sits, however the bullet got there"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("tab")
+        await pilot.press(*list("- nested"))
+        assert screen.editor.text == "  \u25e6 nested"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_dash_mid_line_stays_a_hyphen():
+    """Only a mark at the head of a line is opening one"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("well - almost"))
+        assert screen.editor.text == "well - almost"
+
+        # And an angle bracket in the middle of a line is just as literal
+        await pilot.press("enter")
+        await pilot.press(*list("a > b"))
+        assert screen.editor.text.splitlines()[1] == "a > b"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_dashes_still_reach_the_separator():
+    """`- ` is a bullet, `---` is still a rule: the two never meet"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("---"))
+        await pilot.pause()
+
+        assert set(screen.editor.text) == {RULE}
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_ctrl_b_quotes_a_written_line():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
