@@ -30,8 +30,7 @@ constraint — this is a personal project meant to be customized.
 This repo runs multiple parallel Claude Code sessions via git worktrees, one
 branch each, under `../<repo>-trees/<branch-name>`.
 
-- For every user session you will work only **inside** a defined worktree that will be specified
-  and created by the user.
+- For every user session you will work only **inside** a defined worktree that will be specified and created by the user.
 - If the user does not specify a worktree path in the request, you 
   are allowed to create a worktree yourself with: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
   `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch.
@@ -46,6 +45,9 @@ branch each, under `../<repo>-trees/<branch-name>`.
   shared between worktrees. Make sure there is a working `.venv` in the worktree. This should be used to check changes and for me to inspect the changes later. Use `uv sync` to install the dependencies. 
 - DB migrations *are* shared project-wide (`docs/db.md`) — be careful running
   destructive ones from a feature worktree.
+- If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, never Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
+- If you are on a Mac or Linux machine, you can use the regular shell.
+
 
 ## Data locations
 
