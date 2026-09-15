@@ -53,6 +53,23 @@ class Input:
         return self._value
 
     @property
+    def cursor_position(self) -> int:
+        return self._cursor_position
+
+    def replace(self, start: int, end: int, text: str) -> None:
+        """
+        Swap a span of the buffer for something else, cursor left after it
+
+        What a completion does to the line: the span is worked out from the
+        value rather than from where the cursor happens to be, so the caller
+        says outright which characters it means to spend.
+        """
+
+        self._value = self._value[:start] + text + self._value[end:]
+        self._cursor_position = start + len(text)
+        self._selection_anchor = None
+
+    @property
     def selection(self) -> Optional[Tuple[int, int]]:
         """
         The selected span as (start, end), or None when nothing is selected
