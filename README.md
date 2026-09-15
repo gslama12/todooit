@@ -1,8 +1,8 @@
 # todooit
 
-A beautiful, versatile todo app in your terminal for a keyboard based workflow. Started as a fork of "Dooit" extended with many features of "Todoist".
+A beautiful, versatile todo app in your terminal for a keyboard based workflow. For those wanting a fancy TUI todo list that can do more than just add/complete tasks. Started as a fork of "Dooit" extended with many features of "Todoist".
 
-## Added Features (mainly from Todoist)
+## Added Features (inspired by Todoist)
 
 - **Today / Upcoming / Completed / Bin** — fixed projects built from the real ones, jumped to with `gt`, `gu`, `gc`, `gb`, each with its own grouping.
 - **Bin instead of deletion** — `xx` throws a task away, `u` fetches it back, `yy` deletes one for good and `YY` empties the whole Bin.
