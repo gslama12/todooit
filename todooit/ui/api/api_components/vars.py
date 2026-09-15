@@ -21,10 +21,10 @@ class VarManager(ApiComponent):
         self._always_expand_projects = False
         self._always_expand_todos = False
         self._row_shading = False
-        self._todo_sort: TodoSortModeType = "priority"
+        self._todo_sort: Optional[TodoSortModeType] = "priority"
 
     @property
-    def todo_sort(self) -> TodoSortModeType:
+    def todo_sort(self) -> Optional[TodoSortModeType]:
         """
         The order the todos of a stored project are read in
 
@@ -33,13 +33,18 @@ class VarManager(ApiComponent):
         to the pane rather than to the project that was open at the time, and
         holds until it is switched again.
 
+        None means no order is being worked out over the rows at all and they
+        are read in the order they are filed in — which is where moving a row
+        by hand puts the pane, since a row dragged up a sorted pane would
+        otherwise drop straight back where the sort wants it.
+
         Fixed projects order their own rows and are left alone by this.
         """
 
         return self._todo_sort
 
     @todo_sort.setter
-    def todo_sort(self, value: TodoSortModeType):
+    def todo_sort(self, value: Optional[TodoSortModeType]):
         self._todo_sort = value
 
     @property

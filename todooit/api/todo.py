@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
 from datetime import date, datetime, timedelta
 from typing import List
@@ -50,6 +51,37 @@ SORT_KEYS: Dict[str, Callable[["Todo"], tuple]] = {
     "due": _date_key("due"),
     "scheduled": _date_key("scheduled"),
 }
+
+
+def freeze_sort_order(mode: Optional[str]) -> None:
+    """
+    Writes the order a sort reads the todos in back into the filing
+
+    What hands a pane back to the hand that filed it. The rows keep the places
+    they were just drawn in, and from here on they are in those places because
+    that is where they are filed rather than because an order is being worked
+    out over them on every redraw — which is what makes a row moved by hand
+    stay where it was put.
+
+    Every run of siblings in the database is written, not just the one being
+    moved in: the order belongs to the pane rather than to the row, so dropping
+    it for one run while the rest of the pane still read by priority would
+    shuffle the blocks the cursor is nowhere near.
+    """
+
+    if SORT_KEYS.get(mode or "") is None:
+        return
+
+    groups: Dict[tuple, List["Todo"]] = defaultdict(list)
+
+    for todo in manager.session.query(Todo).all():
+        groups[(todo.parent_project_id, todo.parent_todo_id)].append(todo)
+
+    for todos in groups.values():
+        for index, todo in enumerate(sort_todos(todos, mode)):
+            todo.order_index = index
+
+    manager.commit()
 
 
 def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
