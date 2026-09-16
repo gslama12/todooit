@@ -34,7 +34,7 @@ async def test_a_task_s_whole_life():
         await commit_line(pilot, "ship the release")
 
         await pilot.press("p", "1")
-        await pilot.press("e", "3")
+        await pilot.press("a")
         await pilot.press("d")
         await commit_line(pilot, "in 3 days")
         await pilot.press("s")
@@ -43,7 +43,6 @@ async def test_a_task_s_whole_life():
 
         await pilot.press(" ")
         await pilot.pause()
-        await pilot.press("i")
         await pilot.press(*list("remember the changelog"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -51,7 +50,7 @@ async def test_a_task_s_whole_life():
         todo = Todo.all()[0]
         assert todo.description == "ship the release"
         assert todo.priority == 1
-        assert todo.effort == 3
+        assert todo.agent is True
         assert todo.due is not None and todo.due.date() == date.today() + timedelta(days=3)
         assert todo.scheduled is not None
         assert todo.scheduled.date() == date.today() + timedelta(days=1)
@@ -78,8 +77,9 @@ async def test_a_task_s_whole_life():
 async def test_planning_a_day_across_projects():
     """
     Two projects, three scheduled tasks: Today gathers this day's two into a
-    block per project, Upcoming holds the third, and finishing one from the
-    Today pane empties its block.
+    block per project, Upcoming holds all three — the day being planned off
+    among the days ahead — and finishing one from the Today pane empties its
+    block.
     """
 
     async with run_pilot() as pilot:
@@ -104,7 +104,14 @@ async def test_planning_a_day_across_projects():
             "water plants",
             "write report",
         ]
-        assert [t.description for t in UPCOMING.todos] == ["plan sprint"]
+        # Upcoming reads a day at a time, and opens with the one being planned
+        upcoming = UPCOMING.todo_groups
+        assert [g.label for g in upcoming] == ["Today", "Tomorrow"]
+        assert {t.description for t in upcoming[0].todos} == {
+            "water plants",
+            "write report",
+        }
+        assert [t.description for t in upcoming[1].todos] == ["plan sprint"]
 
         # Work the day off its own pane
         await pilot.press("g", "t")
@@ -120,11 +127,11 @@ async def test_planning_a_day_across_projects():
         assert len(tree_options(today_tree)) == 1
 
 
-async def test_steps_of_a_task_finish_the_task():
+async def test_steps_of_a_task_leave_the_task_to_be_ticked():
     """
-    Steps added with N, finished one by one from the pane: the parent ticks
-    itself the moment the last one is done, and the whole family shows in
-    the log together.
+    Steps added with N, finished one by one from the pane: the parent waits
+    to be ticked itself however few steps are left, and once it is the whole
+    family shows in the log together.
     """
 
     async with run_pilot() as pilot:
@@ -140,6 +147,7 @@ async def test_steps_of_a_task_finish_the_task():
         await commit_line(pilot, "book van")
 
         parent = next(t for t in Todo.all() if t.description == "move house")
+        steps = list(parent.todos)
         assert len(tree_options(tree)) == 3  # parent expanded, both steps
 
         # Finish the steps; the cursor sits on "book van"
@@ -148,6 +156,17 @@ async def test_steps_of_a_task_finish_the_task():
         assert parent.is_pending
 
         await pilot.press("k")  # up to "pack boxes"
+        await pilot.press("c")
+        await pilot.pause()
+
+        # Every step is done and the task is still standing there with them
+        # under it, waiting for the tick it only ever gets by hand
+        assert all(step.is_completed for step in steps)
+        assert parent.is_pending
+        assert len(tree_options(tree)) == 3
+
+        # Tick it, and the whole family leaves for the log
+        await pilot.press("k", "k")  # back up onto the task itself
         await pilot.press("c")
         await pilot.pause()
 
@@ -302,6 +321,44 @@ async def test_a_recurring_chore_through_the_day():
         from todooit.api import UPCOMING
 
         assert UPCOMING.todos == [todo]
+
+
+async def test_priority_on_a_repeating_task_leaves_its_day_alone():
+    """
+    A weekly task ticked off comes round again there and then, and setting a
+    priority on it afterwards does not move the day again.
+    """
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "water the plants")
+        await pilot.press("s")
+        await commit_line(pilot, "today")
+        await pilot.press("r")
+        await commit_line(pilot, "1w")
+
+        task = Todo.all()[0]
+        assert task.recurrence == timedelta(days=7)
+
+        # Ticked off: it repeats, so it comes round again instead of being
+        # left completed
+        await pilot.press("c")
+        await pilot.pause()
+
+        assert task.is_pending
+        assert task.scheduled is not None
+        next_time = task.scheduled
+        assert next_time.date() == date.today() + timedelta(days=7)
+
+        # Setting a priority is not ticking it off
+        await pilot.press("p", "2")
+        await pilot.pause()
+
+        assert task.priority == 2
+        assert task.scheduled == next_time
 
 
 async def test_indenting_builds_a_task_out_of_rows():

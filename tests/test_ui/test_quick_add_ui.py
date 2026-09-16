@@ -11,6 +11,7 @@ from tests.test_ui.ui_base import (
     new_project,
     notification_message,
     run_pilot,
+    visible_todos,
 )
 
 
@@ -55,15 +56,13 @@ async def test_quick_add_names_another_project():
 
         # The panes sit on "work"; the line files it under "inbox"
         await open_quick_add(pilot)
-        await pilot.press(*list("file taxes #inbox @paper"))
+        await pilot.press(*list("file taxes #inbox"))
         await pilot.press("enter")
         await pilot.pause()
 
         (todo,) = Todo.all()
         assert todo.parent_project.description == "inbox"
-        # The label rides along in the description, as a tag
-        assert todo.description == "file taxes @paper"
-        assert todo.tags == ["@paper"]
+        assert todo.description == "file taxes"
 
 
 async def test_quick_add_asks_before_building_a_project():
@@ -181,3 +180,63 @@ async def test_quick_add_app_keys_are_letters_here():
         (todo,) = Todo.all()
         assert todo.description == "quiet quality quest"
         assert app.api.vars.row_shading == shading
+
+
+async def test_quick_add_leaves_the_cursor_on_the_task():
+    """The task just typed is the one the next keypress is meant for"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "inbox")
+
+        await open_quick_add(pilot)
+        await pilot.press(*list("call the dentist"))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        tree = visible_todos(app)
+        assert tree.current_model.description == "call the dentist"
+        assert app.focused is tree
+
+
+async def test_quick_add_elsewhere_takes_the_cursor_with_it():
+    """Filed under another project, the cursor follows it into that pane"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        inbox = await new_project(pilot, "inbox")
+        await new_project(pilot, "work")
+
+        # The panes sit on "work"; the line files it under "inbox"
+        await open_quick_add(pilot)
+        await pilot.press(*list("file taxes #inbox"))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        tree = visible_todos(app)
+        assert tree.model.uuid == inbox.uuid
+        assert tree.current_model.description == "file taxes"
+        assert app.focused is tree
+
+
+async def test_quick_add_into_a_new_project_points_at_the_task():
+    """A project built on the way in is opened, and its one task pointed at"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "inbox")
+
+        await open_quick_add(pilot)
+        await pilot.press(*list("buy nails #diy"))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        await pilot.press("y")  # yes, build "diy"
+        await pilot.pause()
+
+        diy = next(p for p in Project.all() if p.description == "diy")
+
+        tree = visible_todos(app)
+        assert tree.model.uuid == diy.uuid
+        assert tree.current_model.description == "buy nails"
+        assert app.focused is tree

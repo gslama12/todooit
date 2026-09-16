@@ -84,7 +84,7 @@ def test_comparable_fields():
         "description",
         "due",
         "scheduled",
-        "effort",
+        "agent",
         "recurrence",
         "priority",
         "pending",
@@ -125,6 +125,8 @@ def test_toggle_complete(todo1):
 
 
 def test_toggle_complete_parent(create_project, create_todo):
+    """A task is ticked by hand, never by its steps running out"""
+
     p = create_project()
     t = p.add_todo()
     t1 = t.add_todo()
@@ -134,6 +136,9 @@ def test_toggle_complete_parent(create_project, create_todo):
     assert not t.is_completed
 
     t2.toggle_complete()
+    assert not t.is_completed
+
+    t.toggle_complete()
     assert t.is_completed
 
     t1.toggle_complete()
@@ -165,19 +170,6 @@ def test_due_date_util(create_project, create_todo):
 
     t.toggle_complete()
     assert t.status == "completed"
-
-
-def test_tags(create_project, create_todo):
-    p = create_project()
-    t = p.add_todo()
-    t.description = "This is a @tag"
-    assert t.tags == ["@tag"]
-
-    t.description = "This is a @tag and @another"
-    assert t.tags == ["@tag", "@another"]
-
-    t.description = "This is a tag"
-    assert t.tags == []
 
 
 def test_priority(create_project, create_todo):
@@ -255,7 +247,7 @@ def test_sort_invalid(create_project, create_todo):
         ),
         ("description", lambda x: x.description, None, False),
         ("recurrence", lambda x: x.recurrence, lambda x: x.recurrence, False),
-        ("effort", lambda x: x.effort, None, False),
+        ("agent", lambda x: x.agent, None, False),
         ("priority", lambda x: x.priority, None, False),
         ("due", lambda x: x.due, lambda x: x.due, True),
     ],
@@ -291,18 +283,16 @@ def test_completion_is_stamped(create_project):
     assert t.completed_at is None
 
 
-def test_effort_is_clamped(create_project):
+def test_agent_toggles(create_project):
     p = create_project()
     t = p.add_todo()
+    assert t.agent is False
 
-    t.set_effort(2)
-    assert t.effort == 2
+    t.toggle_agent()
+    assert t.agent is True
 
-    t.set_effort(99)
-    assert t.effort == 3
-
-    t.set_effort(-5)
-    assert t.effort == 0
+    t.toggle_agent()
+    assert t.agent is False
 
 
 def test_descendants(create_project):
@@ -424,14 +414,6 @@ def test_unindent_at_top_level(create_project):
 
     assert t.unindent() is None
     assert t.parent_project == p
-
-
-def test_tags_ignore_emails(create_project):
-    p = create_project()
-    t = p.add_todo()
-    t.description = "mail bob@example.com about @work"
-
-    assert t.tags == ["@work"]
 
 
 def test_is_binned(create_project):

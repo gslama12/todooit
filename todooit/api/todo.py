@@ -1,5 +1,6 @@
+from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List
 from sqlalchemy import ForeignKey, select, nulls_last
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -11,13 +12,9 @@ if TYPE_CHECKING:  # pragma: no cover
     from todooit.api.project import Project
 
 
-# Effort is a rough estimate of how much work a todo is, on a 1-3 scale;
-# 0 means no estimate was made
-MAX_EFFORT = 3
-
-# Priority runs the other way round: 1 is the most urgent and 3 the least, and
-# 0 means none was set. Written down beside the effort scale so that anything
-# reading a priority off typed text has one place to ask how far the scale goes
+# Priority runs from 1, the most urgent, down to 3, the least, and 0 means
+# none was set. Written down here so that anything reading a priority off
+# typed text has one place to ask how far the scale goes
 MAX_PRIORITY = 3
 
 # The orders a pane of todos can be read in. Every one of them ends on the
@@ -52,6 +49,37 @@ SORT_KEYS: Dict[str, Callable[["Todo"], tuple]] = {
 }
 
 
+def freeze_sort_order(mode: Optional[str]) -> None:
+    """
+    Writes the order a sort reads the todos in back into the filing
+
+    What hands a pane back to the hand that filed it. The rows keep the places
+    they were just drawn in, and from here on they are in those places because
+    that is where they are filed rather than because an order is being worked
+    out over them on every redraw — which is what makes a row moved by hand
+    stay where it was put.
+
+    Every run of siblings in the database is written, not just the one being
+    moved in: the order belongs to the pane rather than to the row, so dropping
+    it for one run while the rest of the pane still read by priority would
+    shuffle the blocks the cursor is nowhere near.
+    """
+
+    if SORT_KEYS.get(mode or "") is None:
+        return
+
+    groups: Dict[tuple, List["Todo"]] = defaultdict(list)
+
+    for todo in manager.session.query(Todo).all():
+        groups[(todo.parent_project_id, todo.parent_todo_id)].append(todo)
+
+    for todos in groups.values():
+        for index, todo in enumerate(sort_todos(todos, mode)):
+            todo.order_index = index
+
+    manager.commit()
+
+
 def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
     """
     A run of todos in the order the pane reads them in
@@ -77,7 +105,10 @@ class Todo(DooitModel):
     # The day the todo is planned to be worked on, as opposed to the deadline
     # that `due` sets
     scheduled: Mapped[Optional[datetime]] = mapped_column(default=None)
-    effort: Mapped[int] = mapped_column(default=0)
+    # Whether the todo has been handed to an AI that is off working on it.
+    # Nothing but a marker: it says the job is out of your hands for the
+    # moment, and says nothing about how far along it is or when it comes back
+    agent: Mapped[bool] = mapped_column(default=False)
     recurrence: Mapped[Optional[timedelta]] = mapped_column(default=None)
     priority: Mapped[int] = mapped_column(default=0)
     pending: Mapped[bool] = mapped_column(default=True)
@@ -207,10 +238,6 @@ class Todo(DooitModel):
     @property
     def has_same_parent_kind(self) -> bool:
         return self.parent_todo is not None
-
-    @property
-    def tags(self) -> List[str]:
-        return [i for i in self.description.split() if i[0] == "@"]
 
     @property
     def status(self) -> str:
@@ -396,8 +423,8 @@ class Todo(DooitModel):
         self.priority = priority
         self.save()
 
-    def set_effort(self, effort: int) -> None:
-        self.effort = max(0, min(effort, MAX_EFFORT))
+    def toggle_agent(self) -> None:
+        self.agent = not self.agent
         self.save()
 
     def toggle_complete(self) -> None:
@@ -425,6 +452,28 @@ class Todo(DooitModel):
 
         return self.pending and self.due < datetime.now()
 
+    @property
+    def is_overscheduled(self) -> bool:
+        """
+        Whether the day this was planned to be worked on has already gone by
+
+        The other half of `is_overdue`: a deadline that has passed says the
+        work is late, where a planning day that has passed says only that the
+        plan did not survive the day it was made for. That is a day-at-a-time
+        question, so the hour a todo was scheduled at has no say in it: work
+        planned for this morning is still today's work this evening.
+
+        What it is for are the panes work is planned in. They carry what has
+        slipped onto today rather than leaving it behind in a week nobody
+        opens again, and mark it as having slipped, since a day that was
+        missed is a day to be picked again.
+        """
+
+        if not self.scheduled:
+            return False
+
+        return self.pending and self.scheduled.date() < date.today()
+
     @classmethod
     def all(cls) -> List["Todo"]:
         query = select(Todo)
@@ -437,7 +486,7 @@ class Todo(DooitModel):
             "description",
             "due",
             "scheduled",
-            "effort",
+            "agent",
             "recurrence",
             "priority",
             "pending",
@@ -474,7 +523,7 @@ class Todo(DooitModel):
             "description",
             "due",
             "scheduled",
-            "effort",
+            "agent",
             "recurrence",
             "priority",
             "pending",

@@ -61,8 +61,15 @@ def test_todo_add(create_project):
 
 
 def test_comparable_fields():
+    """
+    What the sort bar offers to order a project's siblings by
+
+    Color is in there on purpose: coloring projects is how they get grouped,
+    and sorting by it is what puts a group together.
+    """
+
     fields = Project.comparable_fields()
-    expected_fields = ["description"]
+    expected_fields = ["description", "color"]
     assert fields == expected_fields
 
 

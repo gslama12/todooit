@@ -69,15 +69,40 @@ def move_todo_to_bin(todo: Todo) -> None:
     todo.save()
 
 
+def binned_root(todo: Todo) -> Todo:
+    """
+    The row the Bin offers for a binned todo: the task it went in as
+
+    A task is thrown away whole, so the thing there is to put back is the
+    whole of it: the topmost binned todo of the family, which is the row the
+    Bin draws and the row it counts. A step thrown away on its own has no
+    binned todo above it and is that row itself.
+    """
+
+    node = todo
+
+    while node.parent_todo is not None and node.parent_todo.is_binned:
+        node = node.parent_todo
+
+    return node
+
+
 def restore_todo(todo: Todo) -> List[Project]:
     """
     Takes a todo back out of the Bin, and says which projects that rebuilt
 
-    The family comes out together, the way it went in. Anything still to be
-    done needs somewhere to be done in, so a todo that outlived its project
-    gets it back here; one that is already finished has the completion log to
-    live in and is left as it is until it is unticked.
+    The family comes out together, the way it went in, from whichever of its
+    rows the key was pressed on. Half a task is not a thing that can be put
+    back: a step let out on its own is drawn nowhere at all — the Bin has
+    stopped holding it, and the project it belongs to is still hiding the
+    task it hangs off — so it would be gone from the app entirely.
+
+    Anything still to be done needs somewhere to be done in, so a todo that
+    outlived its project gets it back here; one that is already finished has
+    the completion log to live in and is left as it is until it is unticked.
     """
+
+    todo = binned_root(todo)
 
     for node in _family(todo):
         node.binned_at = None

@@ -1,13 +1,12 @@
 from datetime import date, datetime, timedelta
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 from rich.style import Style
 from todooit.api import Todo, Project
 from todooit.extras.formatters import (
+    agent_icon,
     description_highlight_link,
-    description_highlight_tags,
     due_danger_today,
-    effort_icon,
     recurrence_icon,
 )
 from todooit.extras.bar_widgets import (
@@ -67,25 +66,6 @@ def priority_color(priority: int, api: DooitAPI) -> str:
 # are there for the stretches of work that are run off a calendar instead, and
 # hold until they are switched back — the order is the pane's, not a project's.
 SORT_MODES = ("priority", "due", "scheduled")
-
-
-# Effort runs the opposite way to priority: e1 is a quick job, e3 a big one.
-# 0 means no estimate was made, and shows as an empty column.
-EFFORTS = (1, 2, 3)
-
-
-# The traffic light everyone reads without being told: cheap is green, costly
-# is red. It says the same thing as the due column's colors do, which is what
-# lets both be scanned in one pass down the row.
-def effort_color(effort: int, api: DooitAPI) -> str:
-    theme = api.vars.theme
-    colors = {
-        1: theme.green,
-        2: theme.yellow,
-        3: theme.red,
-    }
-
-    return colors.get(effort, theme.foreground1)
 
 
 CHECKBOX_EMPTY = "󰄱"
@@ -236,11 +216,13 @@ def todo_description_formatter(description: str, todo: Todo, api: DooitAPI) -> s
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
-def todo_effort_formatter(effort: int, _: Todo) -> str:
-    if not effort:
-        return ""
-
-    return str(effort)
+# The agent column has no text of its own: the flag is either set, and the
+# hourglass below draws it, or it is not, and the column is left blank. A
+# space rather than an empty string, for the same reason the note column
+# returns one -- the formatter store turns anything falsy into a dim, centered
+# "-", which is not the same as nothing.
+def todo_agent_formatter(agent: bool, _: Todo) -> str:
+    return " "
 
 
 # A sheet of paper on the rows that carry a note, and nothing at all on the
@@ -256,18 +238,6 @@ def todo_note_formatter(note: str, _: Todo, api: DooitAPI) -> str:
         return " "
 
     return f"[{api.vars.theme.foreground3}]{NOTE_ICON}[/]"
-
-
-# Runs after the flame icon has been prepended, so icon and number come out in
-# one shared color instead of the icon keeping the orange it arrives with. Same
-# trick the due column uses: the result goes back as a markup string, since a
-# Text would get escaped by the formatter store.
-@extra_formatter
-def todo_effort_color_formatter(effort: str, todo: Todo, api: DooitAPI) -> str:
-    if not todo.effort:
-        return effort
-
-    return f"[{effort_color(todo.effort, api)}]{_strip_markup(effort)}[/]"
 
 
 def todo_recurrence_formatter(recurrence: Optional[timedelta], _):
@@ -400,6 +370,86 @@ def project_tasks_formatter(count: int, _: Project, api: DooitAPI) -> str:
     return f"[{count_color(api)}]{count}[/]"
 
 
+# Projects can be colored the way folders and labels are: ten slots, typed
+# straight in as c0 through c9, with the colors that get reached for first at
+# the low digits and the two a list of color names runs out on at the end.
+PROJECT_COLOR_NAMES = (
+    "red",
+    "blue",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "cyan",
+    "pink",
+    "brown",
+    "olive",
+)
+
+
+# A project's color is its own label and says nothing about the work inside
+# it -- which is exactly what a priority or a due date does say. So none of
+# these is a shade those are drawn in: every named color is pulled a quarter
+# of the way towards the pane's own text first, which lifts the whole family
+# clear of the signal colors without moving any of them off its hue.
+PROJECT_COLOR_LIFT = 0.25
+
+# The two the palette ends on are earth tones rather than hues of their own: an
+# orange and a green, each taken down towards the ground instead of lifted
+# towards the text. Neither has a signal color to be told apart from, and a
+# gray is deliberately not among them -- the pane already draws a project it is
+# done with in gray, and a project colored gray on purpose would be read as one
+# of those.
+PROJECT_MUTED_FADE = 0.45
+
+
+def project_palette(api: DooitAPI) -> Tuple[str, ...]:
+    """
+    The ten colors a project can be given, in the order the digits hand them out
+    """
+
+    theme = api.vars.theme
+
+    def lift(color: str) -> str:
+        return blend(color, theme.foreground3, PROJECT_COLOR_LIFT)
+
+    return (
+        lift(theme.red),
+        lift(theme.blue),
+        lift(theme.green),
+        lift(theme.yellow),
+        lift(theme.orange),
+        lift(theme.purple),
+        lift(theme.cyan),
+        # Halfway between the theme's magenta and its red, so the pink lands as
+        # a pink instead of as a second purple beside the one above it
+        lift(blend(theme.magenta, theme.red, 0.5)),
+        blend(theme.orange, theme.background1, PROJECT_MUTED_FADE),
+        blend(theme.green, theme.background1, PROJECT_MUTED_FADE),
+    )
+
+
+def project_color(project, api: DooitAPI) -> Optional[str]:
+    """
+    The color a project was given, or None for one that was never colored
+
+    A fixed project belongs to the app rather than to the database and has no
+    slot to be in, which reads here as never having picked one.
+    """
+
+    slot = getattr(project, "color", None)
+
+    if slot is None:
+        return None
+
+    palette = project_palette(api)
+
+    if not 0 <= slot < len(palette):
+        return None
+
+    return palette[slot]
+
+
 # The folder every stored project is drawn with, the same one the status bar
 # marks the current project with. A fixed project brings an icon of its own
 # instead, which is what tells the two kinds apart at a glance.
@@ -422,7 +472,12 @@ def project_icon_formatter(name: str, project, api: DooitAPI) -> str:
         icon, color = project.icon, theme.primary
     else:
         icon = PROJECT_ICON
-        color = blend(theme.foreground1, theme.background1, PROJECT_ICON_FADE)
+        # A colored project paints its folder in full: the quiet gray is what
+        # an uncolored one gets, and a color on the row is worth more than the
+        # fade that keeps a column of plain folders out of the way
+        color = project_color(project, api) or blend(
+            theme.foreground1, theme.background1, PROJECT_ICON_FADE
+        )
 
     return f"[{color}]{icon}[/] {name}"
 
@@ -470,15 +525,27 @@ def project_description_formatter(
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
+# Runs before the icon is put in front of the name, so the color wraps the name
+# alone and the folder is painted separately. The sub project count carries a
+# color of its own on an inner span and keeps it: it is the pane counting, not
+# part of what the project is called.
+@extra_formatter
+def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
+    color = project_color(project, api)
+
+    if color is None:
+        return None
+
+    return f"[{color}]{name}[/]"
+
+
 @subscribe(Startup)
 def key_setup(api: DooitAPI, _):
     # Groups show up as sections in the help screen, in this order
     NAVIGATION = "Navigation"
     EDITING = "Editing"
-    PRIORITY_EFFORT = "Priority & Effort"
     MOVING = "Moving & Clipboard"
     VIEW = "Search & View"
-    APP = "App"
 
     api.keys.set("j", api.focus_projects, group=NAVIGATION)
     api.keys.set("ö", api.focus_todos, group=NAVIGATION)
@@ -509,7 +576,16 @@ def key_setup(api: DooitAPI, _):
     # The scratchpad, next to the key that opens a todo's note: the same
     # window, for the thoughts that have no task to be written on yet
     api.keys.set("m", api.show_pinned_note, group=EDITING)
-    api.keys.set("c", api.toggle_complete, group=EDITING)
+    # Scoped to the todos, because over the projects the very same key opens
+    # the color chords below: a key that is the start of another one can never
+    # be pressed on its own, and there is nothing in the left pane to tick off
+    # anyway
+    api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
+    # The hourglass, on the key it is named after: pressed when a task goes
+    # out to an AI, and pressed again when it comes back. It says nothing
+    # about the task being done -- that is still the tick above -- only that
+    # it is somebody else's to move for the moment
+    api.keys.set("a", api.toggle_agent, group=EDITING)
     # Throwing something away costs nothing and asks nothing: it goes to the
     # Bin, where "u" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
@@ -537,26 +613,34 @@ def key_setup(api: DooitAPI, _):
             f"p{priority}",
             partial(api.set_priority, priority),
             description=PRIORITY_HELP,
-            group=PRIORITY_EFFORT,
+            group=EDITING,
             label=PRIORITY_LABEL,
         )
 
-    # Effort is picked off a fixed scale the same way priority is, so it is
-    # typed the same way: a chord, not a text field. "e" on its own is only a
-    # prefix of these, so it stays unbound and waits for the digit.
-    EFFORT_LABEL = f"e0-e{max(EFFORTS)}"
-    EFFORT_HELP = (
-        f"Set the todo effort, e1 the quickest "
-        f"and e{max(EFFORTS)} the biggest job (e0 clears it)"
+    # A color is picked off the palette the way a priority is picked off its
+    # scale, and typed the same way: the chord says which slot, and pressing
+    # the slot a project is already in takes the color back off. What it is
+    # given to is the whole tree the highlighted project is in, since a color
+    # labels a project and everything filed under it. The digits are
+    # named in the one row the whole run collapses to, which is where ten
+    # colors are looked up once instead of being learnt as ten bindings.
+    COLOR_LABEL = f"c0-c{len(PROJECT_COLOR_NAMES) - 1}"
+    COLOR_NAMED = ", ".join(
+        f"c{slot} {name}" for slot, name in enumerate(PROJECT_COLOR_NAMES)
+    )
+    COLOR_HELP = (
+        f"Color the project and everything filed under it: {COLOR_NAMED} "
+        "(the same key again takes the color off)"
     )
 
-    for effort in [0, *EFFORTS]:
+    for slot in range(len(PROJECT_COLOR_NAMES)):
         api.keys.set(
-            f"e{effort}",
-            partial(api.set_effort, effort),
-            description=EFFORT_HELP,
-            group=PRIORITY_EFFORT,
-            label=EFFORT_LABEL,
+            f"c{slot}",
+            partial(api.set_project_color, slot),
+            description=COLOR_HELP,
+            group=EDITING,
+            label=COLOR_LABEL,
+            scope="projects",
         )
 
     api.keys.set("L", api.shift_down, group=MOVING)
@@ -569,6 +653,9 @@ def key_setup(api: DooitAPI, _):
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)
+    # The note beside the description, on the key it is named after: the whole
+    # of a task's note, taken without the note screen ever coming up
+    api.keys.set("<ctrl+n>", api.copy_note_to_clipboard, group=MOVING)
     api.keys.set("<ctrl+v>", api.paste_as_sibling, group=MOVING)
 
     # "o" for open, on the row and inside the note alike: the same key opens
@@ -579,6 +666,9 @@ def key_setup(api: DooitAPI, _):
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
     api.keys.set("q", api.toggle_row_shading, group=VIEW)
+    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
+    # else, and nothing else quits
+    api.keys.set("<ctrl+q>", api.quit, group=VIEW)
 
     # The order a project is read in, typed as one chord per order: shifted
     # "S" then the shifted initial of the thing sorted by. Shifted, so that
@@ -604,12 +694,9 @@ def key_setup(api: DooitAPI, _):
         "?",
         lambda: show_help_while_held(api),
         description="Show the help screen (while held)",
-        group=APP,
+        group=VIEW,
         hidden=True,
     )
-    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
-    # else, and nothing else quits
-    api.keys.set("<ctrl+q>", api.quit, group=APP)
 
 
 @subscribe(Startup)
@@ -626,7 +713,7 @@ def layout_setup(api: DooitAPI, _):
         # the deadline are read as the pair they are
         TodoWidget.scheduled,
         TodoWidget.due,
-        TodoWidget.effort,
+        TodoWidget.agent,
         TodoWidget.recurrence,
         # Last on the row: a note is something a todo either has or has not,
         # read in one glance and never scanned against the columns beside it
@@ -642,18 +729,15 @@ def formatter_setup(api: DooitAPI, _):
         api.formatter.todos.description.add(gray_out(strike=True))
         api.formatter.todos.due.add(gray_out())
         api.formatter.todos.scheduled.add(gray_out())
-        api.formatter.todos.effort.add(gray_out())
+        api.formatter.todos.agent.add(gray_out())
         api.formatter.todos.recurrence.add(gray_out())
         api.formatter.todos.note.add(gray_out())
 
     api.formatter.todos.status.add(todo_status_formatter)
     api.formatter.todos.description.add(todo_description_formatter)
 
-    # Tags and URLs are picked out of the raw description, so they have to run
-    # before the child count appends its own markup: added last => runs first.
-    # The link goes on ahead of the tags, so an "@" inside a URL is already
-    # sealed inside the link span by the time the tag regex comes past.
-    api.formatter.todos.description.add(description_highlight_tags())
+    # URLs are picked out of the raw description, so this has to run before
+    # the child count appends its own markup: added last => runs first.
     api.formatter.todos.description.add(description_highlight_link())
 
     # Every date column is built the same way, out of the same formatters. The
@@ -681,13 +765,10 @@ def formatter_setup(api: DooitAPI, _):
     api.formatter.todos.binned.add(due_danger_today())
     api.formatter.todos.binned.add(binned_date_formatter)
 
-    api.formatter.todos.effort.add(todo_effort_formatter)
-    api.formatter.todos.effort.add(todo_effort_color_formatter)
-    # The flame is what tells a lone digit in the effort column apart from the
-    # numbers elsewhere on the row; added last => runs first, so the color
-    # formatter above gets to paint it in the same shade as the number.
-    # Effort 0 is left as an empty column rather than a flame with nothing on it.
-    api.formatter.todos.effort.add(effort_icon(show_on_zero=False))
+    api.formatter.todos.agent.add(todo_agent_formatter)
+    # The hourglass is the column: it goes on over the blank the formatter
+    # above hands back, and only on the rows carrying the flag
+    api.formatter.todos.agent.add(agent_icon())
     api.formatter.todos.note.add(todo_note_formatter)
     api.formatter.todos.recurrence.add(todo_recurrence_formatter)
     # Marks the repeating todos, whose interval is easy to miss as bare text
@@ -699,8 +780,10 @@ def formatter_setup(api: DooitAPI, _):
     api.formatter.projects.tasks.add(gray_out_muted_project)
 
     # Added before the one below it => runs after it, so the icon ends up in
-    # front of everything that formatter appends to the name
+    # front of everything that formatter appends to the name, and the name is
+    # already colored by the time the icon joins it
     api.formatter.projects.description.add(project_icon_formatter)
+    api.formatter.projects.description.add(project_color_formatter)
     api.formatter.projects.description.add(project_description_formatter)
     api.formatter.projects.tasks.add(project_tasks_formatter)
 

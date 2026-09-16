@@ -6,6 +6,9 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.timer import Timer
+from textual.document._document import Document, EditResult
+from textual.document._document_navigator import DocumentNavigator
+from textual.document._wrapped_document import WrappedDocument
 from textual.widgets import Static, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
@@ -15,50 +18,110 @@ from todooit.utils import (
     blend,
     copy_text,
     find_links,
-    link_at,
+    fold_links,
     link_label,
     open_url,
     paste_text,
 )
+from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
+from todooit.utils.links import drawn_column, folded_link_at, stored_range
 
 from .base import BaseScreen
 
 
 # Bullets are stored as the glyph itself rather than a "- " swapped out at
 # render time: a TextArea draws exactly the text it holds, so a marker can
-# never stand in for a different character without the columns drifting apart
-BULLET = "• "
+# never stand in for a different character without the columns drifting apart.
+#
+# One glyph per level of nesting, the way a printed list changes its marker
+# rather than only moving it right: the glyph is what says how deep a line
+# sits when the indent in front of it is too narrow to count by eye. Past the
+# last one the deepest glyph is simply reused, since a list that far in is
+# read off its indent anyway
+BULLET_GLYPHS = ("•", "◦", "▪")
+
+# What one level of nesting is worth. Two columns: wide enough to see, narrow
+# enough that a list several levels deep still has room for words
+INDENT = "  "
 
 # A header is the help window's section break brought into the note: a title
 # with a rule drawn across underneath it. Stored as the glyph for the same
 # reason the bullet is, and kept on a line of its own rather than sized to the
-# words, so that retyping the title can never leave the rule the wrong length
+# words, so that retyping the title can never leave the rule the wrong length.
+#
+# The same rule on a line with nothing above it to be a title is a separator:
+# a break in ordinary text. One glyph, two meanings, told apart by whether
+# there are words directly over it
 RULE = "─"
 
 # How wide the rule is drawn, before a narrow window is allowed to shorten it.
 # Long enough to read as a divider, short enough not to wrap in a small note
 HEADER_WIDTH = 40
 
+# What a quoted line opens with: markdown's `>` drawn as the bar it means.
+# Stored as the glyph for the same reason the bullet is, and typed as the `>`
+# it stands for - the conversion happens on the way in, so what is kept on
+# disk is already what the window draws
+QUOTE_GLYPH = "▎ "
+QUOTE_MARK = ">"
+
+# What a list item is typed as before it becomes the bullet: markdown's own
+# `-`, which is what the fingers reach for whether or not this window is the
+# one they learned it in
+BULLET_MARK = "-"
+
+# The marks a following space turns into the glyph they stand for, and the
+# space is what says they mean it: a `-` in the middle of a word is a hyphen,
+# and only a mark with nothing but indent in front of it and a space behind
+# it is opening a line. `>` becomes the quote bar; `-` becomes the bullet for
+# however deep the line is already indented, so the glyph is looked up rather
+# than stored here
+MARKDOWN_MARKS = (QUOTE_MARK, BULLET_MARK)
+
+# What `---` is typed as before it becomes the rule. Two dashes and a third
+# on the way, which is the moment the line is swapped for the rule itself.
+# A `-` alone is a bullet on the way instead, and the two never meet: the
+# rule is three dashes running, the bullet is one with a space after it
+DASHES = "--"
+
 # What the styled spans are tagged with; the theme below maps them to styles
-BOLD = "note-bold"
-ITALIC = "note-italic"
+EMPH = "note-emph"
 MARKER = "note-marker"
-BULLET_SPAN = "note-bullet"
+BULLET_SPANS = tuple(f"note-bullet-{depth}" for depth in range(len(BULLET_GLYPHS)))
 RULE_SPAN = "note-rule"
 HEADER = "note-header"
 LINK = "note-link"
+QUOTE = "note-quote"
+QUOTE_BAR = "note-quote-bar"
 
-# `**bold**` wins over `*italic*` by sitting first in the alternation
-MARKUP_RE = re.compile(r"\*\*(?P<bold>[^*]+)\*\*|\*(?P<italic>[^*]+)\*")
-BULLET_RE = re.compile(r"^[ \t]*(• )")
+# What emphasis is delimited by: a zero-width space either side of the words.
+#
+# A heading needs nothing written on its own line to say it is one, because
+# what says so is the rule underneath it - a whole line of its own. Emphasis
+# is a phrase inside a line, so something in the line has to say where it
+# starts and stops, and a TextArea draws exactly the text it holds. The way
+# out is a character that is real to the document and worth no columns to the
+# terminal: the marks are there to be found, deleted and paired up, and take
+# up no more room on the page than the rule under a heading takes out of it
+EMPH_MARK = "\N{ZERO WIDTH SPACE}"
+
+# Either mark, so that emphasis written before this - or pasted in from
+# somewhere that speaks markdown - goes on being emphasis. `ctrl+e` only ever
+# writes the zero-width one; the `*` are painted the color of the paper, which
+# is the most that can be done for a marker that already costs a column
+EMPH_RE = re.compile(
+    rf"{EMPH_MARK}(?P<emph>[^{EMPH_MARK}]+){EMPH_MARK}" r"|\*(?P<star>[^*]+)\*"
+)
+
+BULLET_RE = re.compile(
+    rf"^(?P<indent>[ \t]*)(?P<marker>[{''.join(BULLET_GLYPHS)}] )"
+)
+
+QUOTE_RE = re.compile(rf"^(?P<indent>[ \t]*)(?P<marker>{QUOTE_GLYPH})")
 
 # A line that is nothing but rule. Three is the shortest run that reads as one
 # on purpose rather than as a stray character
 RULE_RE = re.compile(rf"^{RULE}{{3,}}[ \t]*$")
-
-# How far the `*` markers are pulled towards the background: still there to be
-# seen and deleted, but out of the way of the words they wrap
-MARKER_FADE = 0.6
 
 THEME_NAME = "dooit-note"
 
@@ -95,7 +158,60 @@ NORMAL_MOTIONS = {
 INSERT_ENTRIES = ("i", "a", "I", "A")
 
 
-def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]]:
+def indent_depth(indent: str) -> int:
+    """
+    How many levels of nesting a run of leading whitespace is worth
+
+    Tabs are counted as one level each, which is what a tab is for; spaces are
+    counted in `INDENT`-wide steps and anything left over is rounded down, so
+    a line indented by hand lands on the nearest level rather than nowhere.
+    """
+
+    return len(indent.expandtabs(len(INDENT))) // len(INDENT)
+
+
+def bullet_glyph(depth: int) -> str:
+    """
+    The marker a bullet at `depth` wears, with the space that follows it
+    """
+
+    return BULLET_GLYPHS[min(depth, len(BULLET_GLYPHS) - 1)] + " "
+
+
+def line_prefix(line: str) -> str:
+    """
+    What a line opens with before its words start: its indent and the bullet
+    or quote glyph after it, or "" when it opens with neither
+
+    This is what `enter` carries onto the next line, so that a list goes on
+    being a list and a quote goes on being a quote.
+    """
+
+    match = BULLET_RE.match(line) or QUOTE_RE.match(line)
+
+    return line[: match.end()] if match else ""
+
+
+def split_indent(line: str) -> Tuple[str, str, str]:
+    """
+    One line as (indent, bullet, the rest), with an empty bullet when there
+    is none - the three pieces a line is re-indented out of
+    """
+
+    match = BULLET_RE.match(line)
+
+    if match:
+        return match.group("indent"), match.group("marker"), line[match.end() :]
+
+    stripped = line.lstrip(" \t")
+    return line[: len(line) - len(stripped)], "", stripped
+
+
+def scan_markup(
+    line: str,
+    following: str = "",
+    links: Optional[list] = None,
+) -> Iterator[Tuple[int, int, str]]:
     """
     The styled spans of one line, measured in UTF-8 bytes
 
@@ -105,6 +221,12 @@ def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]
 
     `following` is the line below, which is all a header needs to be
     recognised: the rule is what says the words above it are a title.
+
+    `line` is the line as it is *drawn*, which is not always the line as it is
+    stored - a link folded down to its name is shorter on the page than in the
+    note. `links` is where the links ended up in what was drawn; handed
+    nothing, the scan reads them off the line itself, which is right for any
+    line that is drawn as it stands.
     """
 
     def byte(index: int) -> int:
@@ -116,34 +238,207 @@ def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]
 
     if RULE_RE.match(following) and line.strip():
         # The whole line is the header, and that is the end of it: a title is
-        # already as loud as the window can draw it, so bold and bullets
+        # already as loud as the window can draw it, so emphasis and bullets
         # inside one would be markers with nothing left to mark
         yield 0, byte(len(line)), HEADER
         return
 
+    quote = QUOTE_RE.match(line)
+    if quote:
+        # The whole line goes green and the bar over the top of it, and then
+        # the ordinary scans run on afterwards: a quoted line is still a line
+        # of the note, so a link in one is still underlined and still opens
+        yield 0, byte(len(line)), QUOTE
+        yield byte(quote.start("marker")), byte(quote.end("marker")), QUOTE_BAR
+
     bullet = BULLET_RE.match(line)
     if bullet:
-        yield byte(bullet.start(1)), byte(bullet.end(1)), BULLET_SPAN
+        depth = indent_depth(bullet.group("indent"))
+        span = BULLET_SPANS[min(depth, len(BULLET_SPANS) - 1)]
+
+        yield byte(bullet.start("marker")), byte(bullet.end("marker")), span
 
     # Drawn the same way the trees draw a link in a description, and read off
     # the same scan the `o` key opens one with: what is underlined here is
     # exactly what standing on it will open
-    for link in find_links(line):
+    for link in find_links(line) if links is None else links:
         yield byte(link.start), byte(link.end), LINK
 
-    for match in MARKUP_RE.finditer(line):
-        if match.group("bold") is not None:
-            name, width = BOLD, 2
-        else:
-            name, width = ITALIC, 1
-
-        start, end = match.start(), match.end()
+    for match in EMPH_RE.finditer(line):
+        start, end = match.span()
 
         # The words first and the markers over the top: the spans are applied
         # in the order they are handed over
-        yield byte(start + width), byte(end - width), name
-        yield byte(start), byte(start + width), MARKER
-        yield byte(end - width), byte(end), MARKER
+        yield byte(start + 1), byte(end - 1), EMPH
+        yield byte(start), byte(start + 1), MARKER
+        yield byte(end - 1), byte(end), MARKER
+
+
+def scan_note(lines) -> Iterator[list]:
+    """
+    The styled spans of every line of a note, one list per line
+
+    Walks the note as a whole rather than styling each line on its own,
+    because the line below is what says whether the one above it is a title.
+
+    `lines` are the lines as they are *stored*; the spans handed back are into
+    the lines as they are *drawn*, with every link folded down to its name.
+    The folding is done here rather than taken on trust, so the spans and the
+    text they land on are always the same fold.
+    """
+
+    drawn = []
+    found = []
+
+    for line in lines:
+        text, links = fold_links(line)
+
+        drawn.append(text)
+        found.append(links)
+
+    for row, line in enumerate(drawn):
+        following = drawn[row + 1] if row + 1 < len(drawn) else ""
+
+        yield list(scan_markup(line, following, found[row]))
+
+
+# What a name for a link may not hold, since the brackets are what say where
+# the name stops
+_NO_BRACKETS = str.maketrans("", "", "[]")
+
+
+def _pasted_link(text: str):
+    """
+    The address a paste is, when the whole of the paste is one and it is long
+    enough to be worth naming; None for anything else
+
+    A sentence with a link in it is text and goes in as text. So does an
+    address short enough to read where it stands: wrapping that one in
+    brackets would cost a name to write and save no room at all.
+    """
+
+    stripped = text.strip()
+    links = find_links(stripped)
+
+    if len(links) != 1:
+        return None
+
+    link = links[0]
+
+    if link.title or (link.start, link.end) != (0, len(stripped)):
+        return None
+
+    return link if len(stripped) > LINK_TITLE_MAX else None
+
+
+class FoldedDocument(Document):
+    """
+    The note as it is stored, handed out as the note is drawn
+
+    A TextArea draws exactly the text its document gives it, and the note is
+    stored with the whole of every URL written out in it. The two have to
+    differ for a long link to fit on the line it was written on, and this is
+    the one place they are allowed to.
+
+    Everything above here - the cursor, the wrapping, the styling, every
+    range an edit is asked for - is counted in the columns of the page, and
+    the page is the folded text. Everything below here is the note as it was
+    typed. The translating is done in this class and nowhere else, so nothing
+    upstairs has to know that a line is drawn shorter than it is written, and
+    the note on disk is never anything but what was typed into it.
+
+    A folded link is one thing on the page. There is no column inside the name
+    to put a cursor in, because the name stands in for the whole of
+    `[name](url)`, so an edit reaching into a link is widened to take all of
+    it. That is what keeps an address from being cut in half by a keystroke
+    aimed at the middle of a word that is not really there.
+    """
+
+    def _line(self, row: int) -> str:
+        """
+        One stored line, for a row that may have been clamped out of range
+        """
+
+        return self._lines[max(0, min(row, len(self._lines) - 1))]
+
+    @property
+    def lines(self) -> list:
+        return [fold_links(line)[0] for line in self._lines]
+
+    @property
+    def stored_lines(self) -> list:
+        """
+        The note as it is written, which is what a save writes out
+        """
+
+        return self._lines
+
+    def stored_line(self, row: int) -> str:
+        """
+        One line as it is written, for the rewrites that have to keep the
+        markup they are moving about
+        """
+
+        return self._line(row)
+
+    def get_line(self, index: int) -> str:
+        return fold_links(self._lines[index])[0]
+
+    def __getitem__(self, line_index):
+        if isinstance(line_index, slice):
+            return [fold_links(line)[0] for line in self._lines[line_index]]
+
+        return fold_links(self._lines[line_index])[0]
+
+    @property
+    def end(self) -> tuple:
+        return (self.line_count - 1, len(self.get_line(self.line_count - 1)))
+
+    def _drawn(self, location: tuple) -> tuple:
+        row, column = location
+
+        return row, drawn_column(self._line(row), column)
+
+    def _stored_span(self, start: tuple, end: tuple) -> tuple:
+        """
+        A run of the page, as the run of the note behind it
+
+        A run inside one line is handed over whole, since which columns of it
+        a link wants depends on both ends at once. A run across several is cut
+        at the line ends, each piece asked for on its own: the first runs to
+        the end of its line and the last from the start of its own, which is
+        what they mean on the page.
+        """
+
+        (top_row, top_column), (bottom_row, bottom_column) = start, end
+        top_line = self._line(top_row)
+        bottom_line = self._line(bottom_row)
+
+        if top_row == bottom_row:
+            opening, closing = stored_range(top_line, top_column, bottom_column)
+        else:
+            opening, _ = stored_range(
+                top_line, top_column, len(fold_links(top_line)[0])
+            )
+            _, closing = stored_range(bottom_line, 0, bottom_column)
+
+        return (top_row, opening), (bottom_row, closing)
+
+    def replace_range(self, start: tuple, end: tuple, text: str):
+        top, bottom = self._stored_span(*sorted((start, end)))
+
+        result = super().replace_range(top, bottom, text)
+
+        # The end of the edit goes back out in the columns it came in with:
+        # what asked for it will put the cursor there
+        return EditResult(self._drawn(result.end_location), result.replaced_text)
+
+    def get_text_range(self, start: tuple, end: tuple) -> str:
+        # What is picked out on the page comes back as what is written behind
+        # it, so a copied link carries its address and not just its name
+        top, bottom = self._stored_span(*sorted((start, end)))
+
+        return super().get_text_range(top, bottom)
 
 
 def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
@@ -151,7 +446,14 @@ def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
     The editor painted in the dooit theme rather than a TextArea default
     """
 
-    marker = blend(theme.foreground1, theme.background2, MARKER_FADE)
+    # One color per level of nesting, walking away from the accent as the list
+    # goes in: the eye finds the top level first, which is the one that says
+    # what the list is about
+    bullet_colors = (
+        theme.primary,
+        theme.secondary,
+        blend(theme.foreground1, theme.background2, 0.35),
+    )
 
     return TextAreaTheme(
         name=THEME_NAME,
@@ -162,10 +464,23 @@ def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
         cursor_line_style=Style(),
         selection_style=Style(bgcolor=theme.background3),
         syntax_styles={
-            BOLD: Style(bold=True, color=theme.foreground1),
-            ITALIC: Style(italic=True),
-            MARKER: Style(color=marker),
-            BULLET_SPAN: Style(color=theme.primary, bold=True),
+            # The one kind of emphasis the note has, and orange because that is
+            # the loudest color in the palette that means nothing else in here
+            EMPH: Style(color=theme.orange, bold=True),
+            # For the `*` of anything written before the mark went zero-width,
+            # or pasted in from somewhere that speaks markdown: the paper's own
+            # color, which is as close to gone as a marker can get once it has
+            # already taken a column. The zero-width mark takes none, so this
+            # does nothing at all to it
+            MARKER: Style(color=theme.background2),
+            # A quoted line, drawn the way markdown draws one: the text set
+            # off in green, and a bar down the left where the `>` was typed
+            QUOTE: Style(color=theme.green),
+            QUOTE_BAR: Style(color=blend(theme.green, theme.background2, 0.45)),
+            **{
+                span: Style(color=color, bold=True)
+                for span, color in zip(BULLET_SPANS, bullet_colors)
+            },
             # The two halves of the help window's section break: a faint rule,
             # and the title over it in the accent color.
             #
@@ -185,12 +500,16 @@ def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
 
 class NoteEditor(TextArea):
     """
-    A plain text editor that styles `**bold**`, `*italic*` and bullets as typed
+    A plain text editor that styles emphasis, quotes and bullets as typed
 
-    Two modes, the way the rest of dooit has two. The window opens in NORMAL,
-    where the letters move the cursor about and nothing typed reaches the note,
-    and `i` drops into INSERT, where they land in it. `escape` climbs back out
-    one step at a time: INSERT to NORMAL, NORMAL to the todo the note is on.
+    Two modes, the way the rest of dooit has two. NORMAL is where the letters
+    move the cursor about and nothing typed reaches the note, and `i` drops
+    into INSERT, where they land in it. `escape` climbs back out one step at a
+    time: INSERT to NORMAL, NORMAL to the todo the note is on.
+
+    Which mode the window opens in follows what there is to open on: a note
+    with something written in it opens in NORMAL, to be read; an empty one in
+    INSERT, since reading a blank page is not what it was opened for.
 
     Selecting, copying and pasting work the same in either mode - shift with a
     motion picks text out, `ctrl+a` takes the lot, and `ctrl+c`/`ctrl+x`/`ctrl+v`
@@ -199,16 +518,23 @@ class NoteEditor(TextArea):
     """
 
     BINDINGS = [
-        Binding("ctrl+b", "wrap('**')", "Bold", show=False),
-        # Two spellings of the same keystroke. A terminal that speaks the kitty
-        # protocol reports `ctrl+i` as itself; every other one sends a plain
-        # tab, and textual expands aliases on the binding rather than on the
-        # event, so `tab` has to be named here as well to catch it. Nothing is
-        # given up for it: this window holds one focusable widget, so a real
-        # tab has nowhere to move the focus to anyway.
-        Binding("ctrl+i", "wrap('*')", "Italic", show=False),
-        Binding("tab", "wrap('*')", "Italic", show=False),
+        # Takes the key off TextArea, where it walks the cursor to the end of
+        # the line - which `end` and `$` both already do
+        Binding("ctrl+e", "toggle_emph", "Emphasis", show=False),
+        # `b` for block quote. The key is free because bold is gone from the
+        # note, and its old meaning is the nearest thing to this one: both are
+        # what you press to make a line stand apart from the ones around it
+        Binding("ctrl+b", "toggle_quote", "Quote", show=False),
+        # The keys for a line that is already written; a line being written
+        # reaches both by typing what markdown types - `> ` and `- `
         Binding("ctrl+l", "toggle_bullet", "Bullet", show=False),
+        # `tab` and nothing else: `ctrl+i` is the same byte on every terminal
+        # that does not speak the kitty protocol, so naming it too would be
+        # naming this key twice. Nothing is given up by taking the key: this
+        # window holds one focusable widget, so a tab has nowhere to move the
+        # focus to anyway
+        Binding("tab", "indent", "Indent", show=False),
+        Binding("shift+tab", "dedent", "Unindent", show=False),
         # `ctrl+h` would be the mnemonic, but every terminal that does not
         # speak the kitty protocol sends it as a backspace; `t` for title is
         # the next letter along and is spent on nothing else here
@@ -227,8 +553,10 @@ class NoteEditor(TextArea):
         #
         # `read_only` is what NORMAL mode *is*: keystrokes still move the
         # cursor and pick text out, but none of them reach the document, so
-        # the letters are free to mean motions instead of themselves
-        super().__init__(text, read_only=True)
+        # the letters are free to mean motions instead of themselves. An empty
+        # note has nothing to read, so it starts out of it - and whitespace
+        # alone counts as empty, being nothing anyone opened the note to see
+        super().__init__(text, read_only=bool(text.strip()))
 
         # Raised by the first `g` of a `gg` and by nothing else
         self._pending_g = False
@@ -251,6 +579,41 @@ class NoteEditor(TextArea):
         self.read_only = True
         self.note_screen.mode_changed()
 
+    def _set_document(self, text: str, language) -> None:
+        """
+        Put a folding document behind the editor in place of a plain one
+
+        Upstream builds the document here and wires the wrapping and the
+        navigation onto it, so this is the one place the swap can be made
+        without any of them being left pointed at the document it replaced.
+        """
+
+        super()._set_document(text, language)
+
+        self.document = FoldedDocument(text)
+        self.wrapped_document = WrappedDocument(
+            self.document, tab_width=self.indent_width
+        )
+        self.navigator = DocumentNavigator(self.wrapped_document)
+
+        self._build_highlight_map()
+        self._rewrap_and_refresh_virtual_size()
+        self.move_cursor((0, 0))
+
+    def _stored_line(self, row: int) -> str:
+        """
+        One line as the note holds it, markup and addresses and all
+
+        Almost nothing in here wants this - the editor is written in the
+        columns of the page, and the page is the folded text - but a rewrite
+        that puts a whole line back has to put back what was really on it.
+        """
+
+        document = self.document
+        stored_line = getattr(document, "stored_line", None)
+
+        return stored_line(row) if stored_line else document[row]
+
     def _build_highlight_map(self) -> None:
         """
         Fill the map `render_line` styles from, out of our own markers
@@ -264,17 +627,42 @@ class NoteEditor(TextArea):
         highlights = self._highlights
         highlights.clear()
 
-        lines = self.document.lines
+        document = self.document
+        lines = getattr(document, "stored_lines", document.lines)
 
-        for row, line in enumerate(lines):
-            following = lines[row + 1] if row + 1 < len(lines) else ""
+        for row, spans in enumerate(scan_note(lines)):
+            highlights[row].extend(spans)
 
-            for start, end, name in scan_markup(line, following):
-                highlights[row].append((start, end, name))
-
-    def action_wrap(self, marker: str) -> None:
+    def _marks_around(self, start, end) -> Optional[Tuple[tuple, tuple]]:
         """
-        Put `marker` either side of the selection, or take it away again
+        Where the emphasis marks either side of `start`..`end` are, if it is
+        already emphasised from just outside itself
+
+        The marks take up no room, so they are never what is picked out: a
+        selection made by eye stops at the last letter, with the closing mark
+        sitting just past it. Toggling has to look one character further out
+        than it was handed, or it would wrap what is already wrapped.
+        """
+
+        (top, left), (bottom, right) = start, end
+
+        opens = left and self.document[top][left - 1] == EMPH_MARK
+        closes = right < len(self.document[bottom]) and (
+            self.document[bottom][right] == EMPH_MARK
+        )
+
+        if not (opens and closes):
+            return None
+
+        return ((top, left - 1), (top, left)), ((bottom, right), (bottom, right + 1))
+
+    def action_toggle_emph(self) -> None:
+        """
+        Emphasise what is picked out, or take the emphasis away again
+
+        The marks are zero-width, so what this writes is the words going
+        orange and nothing else appearing around them - which is the whole of
+        why the mark is the character it is.
         """
 
         # Marking text up is writing it: the note is being edited from here on
@@ -284,42 +672,149 @@ class NoteEditor(TextArea):
         selected = self.selected_text
 
         if not selected:
-            # Nothing picked out: drop an empty pair in and sit between them
+            # Nothing picked out: drop an empty pair in and sit between them,
+            # so that what is typed next arrives already emphasised
             row, column = self.cursor_location
-            self.insert(marker * 2, (row, column))
-            self.move_cursor((row, column + len(marker)))
+            self.insert(EMPH_MARK * 2, (row, column))
+            self.move_cursor((row, column + 1))
             return
 
-        wrapped = (
-            selected.startswith(marker)
-            and selected.endswith(marker)
-            and len(selected) > 2 * len(marker)
-        )
+        if (
+            selected.startswith(EMPH_MARK)
+            and selected.endswith(EMPH_MARK)
+            and len(selected) > 2
+        ):
+            self.replace(selected[1:-1], start, end)
+            return
 
-        if wrapped:
-            self.replace(selected[len(marker) : -len(marker)], start, end)
-        else:
-            self.replace(marker + selected + marker, start, end)
+        marks = self._marks_around(start, end)
 
-    def action_toggle_bullet(self) -> None:
+        if marks is not None:
+            opening, closing = marks
+
+            # The closing one first: taking the opening one out would move it
+            self.replace("", *closing, maintain_selection_offset=False)
+            self.replace("", *opening, maintain_selection_offset=False)
+            return
+
+        self.replace(EMPH_MARK + selected + EMPH_MARK, start, end)
+
+    def _toggle_marker(self, pattern: "re.Pattern", glyph: str) -> None:
         """
-        Put a bullet at the head of the current line, or take it away again
+        Put `glyph` at the head of the current line, or take it away again
+
+        What a bullet and a quote both are: one glyph in front of the words,
+        after whatever indent the line already carries.
         """
 
         self.enter_insert()
 
         row, column = self.cursor_location
         line = self.document[row]
-        match = BULLET_RE.match(line)
+        match = pattern.match(line)
 
         if match:
-            self.replace("", (row, match.start(1)), (row, match.end(1)))
-            self.move_cursor((row, max(match.start(1), column - len(BULLET))))
+            marker = match.group("marker")
+
+            self.replace("", (row, match.start("marker")), (row, match.end("marker")))
+            self.move_cursor((row, max(match.start("marker"), column - len(marker))))
             return
 
-        indent = len(line) - len(line.lstrip(" \t"))
-        self.insert(BULLET, (row, indent))
-        self.move_cursor((row, column + len(BULLET)))
+        indent = line[: len(line) - len(line.lstrip(" \t"))]
+
+        self.insert(glyph, (row, len(indent)))
+        self.move_cursor((row, column + len(glyph)))
+
+    def action_toggle_quote(self) -> None:
+        """
+        Set the current line off as a quote, or take it back out again
+
+        The same thing `> ` does in markdown, and typing that is the other way
+        to reach it; this is the key for a line that is already written.
+        """
+
+        self._toggle_marker(QUOTE_RE, QUOTE_GLYPH)
+
+    def action_toggle_bullet(self) -> None:
+        """
+        Put a bullet at the head of the current line, or take it away again
+
+        Which glyph it gets follows how far the line is already indented, so a
+        bullet put on a line that has been tabbed in arrives as the marker for
+        the level it is actually at.
+
+        The same thing `- ` does in markdown, and typing that is the other way
+        to reach it; this is the key for a line that is already written.
+        """
+
+        row, _ = self.cursor_location
+        line = self.document[row]
+        indent = line[: len(line) - len(line.lstrip(" \t"))]
+
+        self._toggle_marker(BULLET_RE, bullet_glyph(indent_depth(indent)))
+
+    def _set_depth(self, row: int, levels: int) -> None:
+        """
+        Move one line `levels` steps in or out
+
+        The indent is rewritten rather than nudged, so a line typed with three
+        spaces in front of it lands on a level instead of staying between two;
+        and a bullet is re-glyphed on the way, since the marker is half of what
+        says how deep a line sits.
+        """
+
+        # The one rewrite that puts a whole line back the way it found it, so
+        # the one that has to read the line as it is *written*: handed the
+        # folded text it would write the names of the links back over the
+        # addresses behind them, and the addresses would be gone
+        line = self._stored_line(row)
+        indent, bullet, rest = split_indent(line)
+
+        depth = max(0, indent_depth(indent) + levels)
+        head = INDENT * depth + (bullet_glyph(depth) if bullet else "")
+
+        if head + rest == line:
+            return
+
+        _, column = self.cursor_location
+        self.replace(
+            head + rest,
+            (row, 0),
+            (row, len(self.document[row])),
+            maintain_selection_offset=False,
+        )
+
+        # The cursor keeps its place in the words rather than its column: the
+        # point of indenting a line is to move the words, not to leave the
+        # cursor standing on a different one of them
+        self.move_cursor((row, max(0, column + len(head) - len(indent + bullet))))
+
+    def action_indent(self) -> None:
+        """
+        Take the current line one level in - which is how a bullet is nested
+
+        Refused in NORMAL rather than dropping into INSERT the way the other
+        formatting keys do: `tab` is one keystroke with no modifier on it, and
+        a bare key that rewrites the note is exactly what NORMAL is for not
+        having.
+        """
+
+        if self.read_only:
+            return
+
+        row, _ = self.cursor_location
+        self._set_depth(row, 1)
+
+    def action_dedent(self) -> None:
+        """
+        Take the current line one level back out again
+        """
+
+        if self.read_only:
+            return
+
+        row, _ = self.cursor_location
+        self._set_depth(row, -1)
 
     @property
     def rule(self) -> str:
@@ -346,23 +841,38 @@ class NoteEditor(TextArea):
 
         self.replace("", start, end, maintain_selection_offset=False)
 
+    def _title_above(self, row: int) -> bool:
+        """
+        Whether there are words directly over `row` for it to be the rule of
+
+        This is the whole of what tells a header's rule from a separator, and
+        it is read exactly the same way here as it is drawn: a rule with a
+        line of text over it closes a title, and one with a blank line - or
+        the top of the note - over it is a break in the text.
+        """
+
+        return row > 0 and bool(self.document[row - 1].strip())
+
     def _rule_row(self, row: int) -> Optional[int]:
         """
         Where the rule of the header `row` belongs to is, if there is one
 
         Standing on the rule counts as standing on the header it closes, so
         the key undoes a header from either of the two lines it is made of.
+        A separator belongs to no title and is left for its own key.
         """
 
         if RULE_RE.match(self.document[row]):
-            return row
+            return row if self._title_above(row) else None
 
         below = row + 1
+        closed = (
+            self.document[row].strip()
+            and below < self.document.line_count
+            and RULE_RE.match(self.document[below])
+        )
 
-        if below < self.document.line_count and RULE_RE.match(self.document[below]):
-            return below
-
-        return None
+        return below if closed else None
 
     def action_toggle_header(self) -> None:
         """
@@ -392,6 +902,27 @@ class NoteEditor(TextArea):
         line = self.document[row]
         self.insert("\n" + self.rule, (row, len(line)), maintain_selection_offset=False)
         self.move_cursor((row, column))
+
+    def _draw_separator(self, row: int) -> None:
+        """
+        Swap the `---` on `row` for the rule it stands for
+
+        A blank line is put above it when there are words directly over it,
+        because a rule tight under a line of words is not a separator at all -
+        it is a header, and would be drawn as one the moment it was written.
+        `ctrl+t` is the key for meaning that.
+        """
+
+        line = self.document[row]
+        lead = "\n" if self._title_above(row) else ""
+
+        self.replace(
+            lead + self.rule,
+            (row, 0),
+            (row, len(line)),
+            maintain_selection_offset=False,
+        )
+        self.move_cursor((row + len(lead), len(self.rule)))
 
     def action_copy(self) -> None:
         """
@@ -424,8 +955,45 @@ class NoteEditor(TextArea):
 
         self.enter_insert()
 
+        if self._paste_as_link(text):
+            return
+
         if result := self._replace_via_keyboard(text, *self.selection):
             self.move_cursor(result.end_location)
+
+    def _paste_as_link(self, text: str) -> bool:
+        """
+        Drop a pasted address in folded; False when the paste was not one
+
+        The one paste worth rewriting on the way in. A long URL pasted on its
+        own is about to be the longest thing in the note and the least worth
+        reading, so what goes in is the markdown for it with the brackets left
+        empty, which is drawn as a shortened form of its own address.
+
+        What is picked out at the time is the name: pasting an address over a
+        phrase is how the phrase becomes the link, which is what the gesture
+        means in every editor that has it - and the only way a link here comes
+        by a name that was not read off its own address.
+        """
+
+        link = _pasted_link(text)
+
+        if link is None:
+            return False
+
+        # Onto one line, and with the brackets taken out of it: a name holding
+        # the bracket that ends it would be read back as ending there
+        title = " ".join(self.selected_text.split()).translate(_NO_BRACKETS)
+        markdown = f"[{title}]({link.url})"
+
+        result = self._replace_via_keyboard(markdown, *self.selection)
+
+        if result is None:
+            return True
+
+        self.move_cursor(result.end_location)
+
+        return True
 
     def action_cut(self) -> None:
         """
@@ -511,7 +1079,7 @@ class NoteEditor(TextArea):
         """
 
         row, column = self.cursor_location
-        link = link_at(self.document[row], column)
+        link = folded_link_at(self._stored_line(row), column)
 
         if link is None:
             self.note_screen.report("No link under the cursor")
@@ -531,10 +1099,9 @@ class NoteEditor(TextArea):
             self.move_cursor((row, min(column + 1, len(line))))
 
         elif key == "I":
-            # Past the bullet rather than in front of it: on a bullet line the
-            # text starts where the glyph ends
-            bullet = BULLET_RE.match(line)
-            self.move_cursor((row, bullet.end(1) if bullet else 0))
+            # Past the marker rather than in front of it: on a bullet or a
+            # quoted line the text starts where the glyph ends
+            self.move_cursor((row, len(line_prefix(line))))
 
         elif key == "A":
             self.move_cursor((row, len(line)))
@@ -551,12 +1118,12 @@ class NoteEditor(TextArea):
 
         A line opened under a bullet gets a bullet of its own, the same way
         `enter` carries one on: this is how the next item of a list is written.
+        A quoted line carries its bar over for the same reason.
         """
 
         row, _ = self.cursor_location
         line = self.document[row]
-        bullet = BULLET_RE.match(line)
-        prefix = line[: bullet.end(1)] if bullet else ""
+        prefix = line_prefix(line)
 
         self.enter_insert()
 
@@ -629,23 +1196,70 @@ class NoteEditor(TextArea):
                 self.move_cursor((below + 1, 0))
                 return
 
-            match = BULLET_RE.match(line)
+            prefix = line_prefix(line)
 
-            if match:
+            if prefix:
                 event.stop()
                 event.prevent_default()
 
-                if line[match.end(1) :].strip():
-                    self.insert(
-                        "\n" + line[: match.end(1)],
-                        maintain_selection_offset=False,
-                    )
-                else:
-                    # An empty bullet is where the list ends: the bullet goes,
-                    # rather than another one arriving underneath it
-                    self.replace("", (row, match.start(1)), (row, len(line)))
-                    self.move_cursor((row, match.start(1)))
+                glyph_at = len(prefix) - len(prefix.lstrip(" \t"))
 
+                if column < len(prefix):
+                    # The cursor is still in front of the words, somewhere in
+                    # the indent or in the marker itself: what opens here is a
+                    # blank line above, with the item moving down whole. A
+                    # prefix carried on from here would hand that item a second
+                    # marker and cut the one it already wears in half
+                    self.insert("\n", (row, 0), maintain_selection_offset=False)
+                    self.move_cursor((row + 1, column))
+                elif line[len(prefix) :].strip():
+                    self.insert("\n" + prefix, maintain_selection_offset=False)
+                else:
+                    # An empty bullet is where the list ends: the marker goes,
+                    # rather than another one arriving underneath it. A quote
+                    # with nothing in it ends the same way
+                    self.replace("", (row, glyph_at), (row, len(line)))
+                    self.move_cursor((row, glyph_at))
+
+                return
+
+        if event.character == DASHES[0]:
+            row, column = self.cursor_location
+
+            # The third dash of a `---` on a line of its own. Swapped for the
+            # rule the moment it is finished, rather than being left as three
+            # dashes that only look like one: what the note holds is what the
+            # window draws, here as everywhere else in it
+            if self.document[row] == DASHES and column == len(DASHES):
+                event.stop()
+                event.prevent_default()
+                self._draw_separator(row)
+                return
+
+        if event.character == " ":
+            row, column = self.cursor_location
+            line = self.document[row]
+            indent = line[: len(line) - len(line.lstrip(" \t"))]
+
+            # The space of a markdown `> ` or `- `, which is where the mark is
+            # known to be one and not a stray angle bracket or a hyphen. The
+            # indent is allowed to come first and is kept, so a mark typed on
+            # a line already tabbed in opens at the level it is standing on
+            if column == len(line) and line[len(indent) :] in MARKDOWN_MARKS:
+                event.stop()
+                event.prevent_default()
+
+                glyph = (
+                    QUOTE_GLYPH
+                    if line[len(indent) :] == QUOTE_MARK
+                    else bullet_glyph(indent_depth(indent))
+                )
+
+                self.replace(
+                    glyph, (row, len(indent)), (row, column),
+                    maintain_selection_offset=False,
+                )
+                self.move_cursor((row, len(indent) + len(glyph)))
                 return
 
         await super()._on_key(event)
@@ -688,12 +1302,17 @@ class NoteScreenBase(BaseScreen):
             "i insert    jklö move    o link    gg/G ends    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
-        # The formatting keys are what is worth advertising here; `ctrl+v` had
-        # to go to make room for the header, and is the one key on the line
-        # that every other text field in the world already taught
+        # The formatting keys are what is worth advertising here; the
+        # clipboard keys had to go to make room for them, and are the ones on
+        # the line that every other text field in the world already taught.
+        #
+        # Kept to eighty columns, which is what the window is wide in a
+        # terminal of the usual size: a hint line that has to wrap breaks
+        # wherever it runs out of room, and where it runs out of room is
+        # between a key and the word saying what it does as often as not
         MODE_INSERT: (
-            "ctrl+b bold   ctrl+i italic   ctrl+l bullet   "
-            "ctrl+t header   esc normal"
+            "ctrl+e emph   ctrl+b quote   ctrl+l bullet   tab nest   "
+            "ctrl+t head   esc normal"
         ),
     }
 
@@ -750,15 +1369,15 @@ class NoteScreenBase(BaseScreen):
         editor.border_title = self.title_text
 
         yield editor
-        yield Static(self.HINTS[MODE_NORMAL], id="note-hint")
+        yield Static(self.HINTS[editor.mode], id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
         editor.register_theme(build_theme(self.api.vars.theme))
         editor.theme = THEME_NAME
 
-        # The window takes the keyboard, but in NORMAL mode: the note opens to
-        # be read, and `i` is what says it is about to be written
+        # The window takes the keyboard, in whichever of the two modes the
+        # editor picked out of the text it was handed
         editor.focus()
         self.mode_changed()
 

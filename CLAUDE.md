@@ -2,86 +2,153 @@
 
 ## What this is
 
-A standalone TUI todo manager: the personal dooit fork (upstream v3.3.4) and
-the parts of dooit-extras its config actually uses, merged into one
-installable package. Built on [Textual](https://textual.textualize.io/): todos
-are grouped into a tree of projects, navigated with vim-like keybindings, and
-stored in a SQLite database via SQLAlchemy. It is configured through a Python
-config file, which makes bar, dashboard, colors, formatters and keybinds fully
-scriptable. Both source histories are preserved in this repo's git log.
+A standalone TUI todo manager: the personal dooit fork (upstream v3.3.4) plus
+the parts of dooit-extras its config uses, merged into one installable
+package. Built on [Textual](https://textual.textualize.io/): todos are grouped
+into a tree of projects, navigated with vim-like keybindings, stored in
+SQLite via SQLAlchemy, and configured through a scriptable Python config
+file. Both source histories are preserved in this repo's git log.
 
 - `todooit/` — the app itself (was `dooit/dooit`)
-- `todooit/extras/` — the companion widget/formatter library (was
-  `dooit_extras`), trimmed to the formatters and bar widgets the config uses
+- `todooit/extras/` — companion widget/formatter library (was `dooit_extras`),
+  trimmed to what the config uses
 
 ## Goal
 
-Extend todooit in **appearance** and **functionality** — better visuals
-(layout, colors, tree rendering, bar/dashboard, formatters) and new behaviour
-(keybinds, commands, todo/project features). Upstream parity is not a
-constraint; this is a personal project meant to be customized.
+Extend todooit in **appearance and functionality**. Upstream parity is not a
+constraint — this is a personal project meant to be customized.
 
-Where changes go:
-
-- Config-level customization (keybinds, formatters, layout, status bar, colors)
-  → `todooit/utils/default_config.py`. There is **no** config file in
-  `~/.config`; the plugin manager always loads `default_config.py`, so that
-  file *is* the user's config.
-- Structural / rendering changes → the package itself, e.g.
+- Config-level changes (keybinds, formatters, layout, bar, colors) →
+  `todooit/utils/default_config.py`. There is no `~/.config` file — the
+  plugin manager always loads `default_config.py`, so that file *is* the
+  user's config.
+- Structural/rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.
+
+## Git Worktree Workflow
+
+This repo is a **bare repo** at `<repo>.git` (no working tree of its own).
+All work happens in worktrees living side by side at `<repo>.git/<branch-name>`,
+including `dev` and `main`. There is no "main checkout" anymore, so `dev` and `main` must
+also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
+
+- For every user session you will work only **inside** a defined worktree that will be specified and created by the user.
+- If the user does not specify a worktree path in the request, you 
+  are allowed to create a worktree yourself with: `git worktree add <branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
+  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch. Never implement directly in `dev` or `main`.
+- Assume you're in one worktree, not the main checkout - check with
+  `git worktree list` / `git branch --show-current` before assuming repo state.
+- Never switch branches inside a worktree: each is pinned to one branch. If
+  the request clearly belongs to work already in progress on an existing
+  worktree, reuse that one instead of creating a new one.
+- Commiting change or removing a worktree (`git worktree remove`) is **not allowed**.
+- Don't read/edit files outside the current worktree unless asked.
+- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are not shared between worktrees. DB migrations *are* shared project-wide (`docs/db.md`) - be careful running
+  destructive ones from a feature worktree.
+- Every worktree gets its **own todooit instance** (database, cache and venv)
+  — see [Worktree instances](#worktree-instances). Use it for everything you
+  run; never touch the live instance or another worktree's.
+- If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, **never** Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
+- If you are on a Mac or Linux machine, you can use the regular shell.
+
+### Helper scripts
+
+All three are tracked in the repo, so every worktree carries its own copy.
+They are the user's tools, not yours — you never call them — but what they do
+decides where you put things:
+
+- `bash test.sh`, run **from inside a worktree** with no arguments, launches
+  the app from that worktree against that worktree's instance and leaves the
+  user standing there. This is how the user tries out your change, and it
+  opens **the same database you seeded**.
+- `bash clean.sh`, run from anywhere inside the repo, deletes every
+  `feat-*`/`fix-*` worktree that has no uncommitted changes, force-deletes its
+  branch, and removes its instance directory; it prints the plan as a table
+  and aborts untouched if the directory it was run from is on the remove list.
+  Uncommitted work is always kept, so leaving your change uncommitted (as
+  required above) also keeps it safe from cleanup.
+- `bash push.sh`, run **from inside a worktree**, stages and commits
+  everything there, merges the current `origin/dev` into the branch, and
+  pushes after asking; on conflicts it stops and lists them. This is how the
+  user ships your change — you still never commit yourself.
+
 
 ## Data locations
 
-todooit keeps its own data, separate from any dooit install:
+todooit's data is separate from any dooit install (paths resolved in
+[todooit/paths.py](todooit/paths.py)):
 
-- database: `~/.local/share/todooit/todooit.db` **inside WSL**
-- CSS cache: `~/.cache/todooit` (generated `todooit.tcss`)
-- config dir: `~/.config/todooit` (unused - the plugin manager always loads
-  `default_config.py`)
+- DB: `~/.local/share/todooit/todooit.db` **inside WSL**
+- CSS cache: `~/.cache/todooit`
+- config dir: `~/.config/todooit` (unused, see above)
 
-It was seeded on 2026-09-09 with a copy of the old dooit database and the two
-have diverged independently since. Nothing todooit does touches
-`~/.local/share/dooit/`.
+Seeded 2026-09-09 from the old dooit database; the two have diverged since.
+Nothing here touches `~/.local/share/dooit/`.
 
-### The dev instance
+**Dev instance:** `TODOOIT_HOME=<dir>` relocates DB/cache/config into one
+self-contained directory, so development never touches the live data. Unset,
+`todooit` is the real instance. `todooit --dev` is shorthand for
+`~/.local/share/todooit-dev`, but an explicit `TODOOIT_HOME` always wins over
+it — which is what gives each worktree an instance of its own.
 
-`TODOOIT_HOME` relocates all three of those into one self-contained directory,
-which is how development stays off the live data:
+### Worktree instances
+
+One instance per worktree, named after the worktree directory:
 
 ```
-$TODOOIT_HOME/
-  todooit.db        # database
-  cache/            # todooit.tcss + stylesheets/
-  config.py         # user config (unused, as above)
+~/.local/share/todooit-wt/<worktree>/     # = TODOOIT_HOME
+    todooit.db                            # that worktree's database
+    cache/
+    venv/                                 # that worktree's uv environment
 ```
 
-`todooit --dev` is shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev`. Run
-it to inspect the demo project a change ships; it can sit next to a running
-production instance without either touching the other. With `TODOOIT_HOME`
-unset, everything resolves exactly as it always has, so plain `todooit` is
-still the real instance.
+**Derive it, never hardcode it.** From inside a worktree:
 
-Paths are resolved in [todooit/paths.py](todooit/paths.py) — the single place
-any of them is computed.
+```bash
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+```
+
+Export those two at the top of every shell session you work in, and every
+`uv run`, `uv sync`, seeding script and manual launch below lands in the right
+place. Both directories are created on first use — there is nothing to set up
+— and `./clean.sh` deletes them along with the worktree.
+
+Two things that are easy to get wrong:
+
+- **Never use the bare `~/.local/share/todooit-dev`.** It is shared across
+  branches, so it carries whatever schema the last branch left behind, and a
+  branch that changes the model will meet a database that does not match it.
+  Plain `todooit --dev` with no `TODOOIT_HOME` set lands there — don't run it.
+- **Keep the venv off `/mnt/c`.** `UV_PROJECT_ENVIRONMENT` points into the
+  instance dir on ext4 for a reason: installing onto the drvfs mount is slow
+  and can silently truncate packages, producing import errors (`module 'click'
+  has no attribute 'group'`) that `uv sync` will not repair, because the
+  recorded metadata still looks complete. A `.venv` inside a worktree is a
+  leftover from the old layout; ignore it.
 
 ## Testing a change
 
-Python tooling only works from WSL here, not from Windows. To try a change:
+Python tooling only works from WSL, not Windows.
 
 ```bash
-wsl                     # from the todooit folder
-uv venv .venv && source .venv/bin/activate    # first time only
-uv pip install -e .                           # first time only
-todooit                 # launches the real instance (live database!)
+wsl
+cd <the worktree you are working in>
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+
+uv run todooit --dev     # this worktree's code against this worktree's database
 ```
 
-Then test the change in that running instance. **Every change must be
-exercised this way** before it counts as done — a change that only
-type-checks is not done.
+The first `uv run` builds the venv; after that it is instant. Nothing there
+touches the live instance — that is plain `todooit` with `TODOOIT_HOME` unset,
+which you should not run.
 
-The dev dependency group cannot be synced inside WSL (`textual-dev` pulls
-`aiohttp`, which needs a C compiler WSL lacks), so run the test suite from a
-throwaway venv:
+Exercise every change in that running instance — type-checking alone doesn't
+count as done.
+
+`textual-dev` (dev dep group) needs a C compiler WSL lacks, so run tests from
+a throwaway venv instead:
 
 ```bash
 uv venv /tmp/ttest --python 3.14
@@ -89,26 +156,30 @@ VIRTUAL_ENV=/tmp/ttest uv pip install -e . pytest pytest-asyncio faker
 /tmp/ttest/bin/python -m pytest tests -q
 ```
 
-## Every change ships a demo project
+`/tmp` is inside WSL, so that venv sits on ext4 as well — keep it there rather
+than in the worktree, for the same reason.
 
-At the end of each change, seed a project into the **dev** database that
-demonstrates the change, so it can be verified by just opening the dev
-instance — never leave the user to type in example items by hand. Name it after
-the change (e.g. `demo: priority icons`) and fill it with todos that actually
-hit the new code path (overdue, high priority, nested, recurring, … — whatever
-the change touches). Refresh or replace the demo project when iterating instead
-of piling up new ones.
+**Only run tests relevant to the change** — not the whole suite — for small
+changes.
 
-Demos never go into the live database. Seed with the API rather than raw SQL,
-from the same activated venv, pointing `TODOOIT_HOME` at the dev instance:
+## Every change ships a demo
+
+Seed a project into **this worktree's** database (never live) that exercises
+the new code path, named after the change (e.g. `demo: priority icons`).
+Refresh/replace it when iterating rather than piling up new ones. This is the
+same database the user opens with `bash test.sh` in this worktree, so what you seed is
+exactly what they will see. Seed via the API, not raw SQL:
 
 ```bash
-TODOOIT_HOME=~/.local/share/todooit-dev python - <<'PY'
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+
+uv run python - <<'PY'
 from todooit.api import manager, Project
-manager.connect()               # no arg -> resolves to the dev database
+manager.connect()               # no arg -> resolves to $TODOOIT_HOME's database
 
 p = Project()
-p.save()                        # attaches to the root project
+p.save()
 p.description = "demo: <what changed>"
 p.save()
 
@@ -119,7 +190,14 @@ t.save()
 PY
 ```
 
-Then launch `todooit --dev` and confirm the demo project shows the change.
+Then launch `uv run todooit --dev` and confirm it. Before touching any DB any
+other way, copy it to `/tmp` first.
 
-Before touching a database in any other way, copy it to `/tmp` first and work
-on the copy.
+If a schema change leaves the instance database stale, throw it away instead of
+migrating it by hand: `rm -rf "$TODOOIT_HOME"`, then re-seed. It is disposable
+by design, which is the whole point of one per worktree.
+
+## Every new feature needs tests
+
+New functionality must be covered by the test suite; keep existing tests
+up-to-date.

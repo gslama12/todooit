@@ -2,10 +2,10 @@
 A whole task read out of one typed line, in the style of Todoist's quick add
 
 The line is written the way the task would be said -- "call the dentist #Home
-@phone p1 e1 tomorrow 09:00" -- and the markers below pick the fields out of
-it: which project it is filed under, what it is tagged with, how urgent it is,
-how big a job it is, and the day it is planned for. Everything none of them
-claims is the description, so the sentence survives having been read.
+p1 tomorrow 09:00" -- and the markers below pick the fields out of it: which
+project it is filed under, how urgent it is, and the day it is planned for.
+Everything none of them claims is the description, so the sentence survives
+having been read.
 
 A todo carries two dates, and a line saying one date means the day the work is
 planned for: that is the one there is a day-to-day answer to, and the one the
@@ -19,33 +19,25 @@ database is.
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Sequence, Tuple
 
-from todooit.api.todo import MAX_EFFORT, MAX_PRIORITY
+from todooit.api.todo import MAX_PRIORITY
 
 from .date_parser import looks_like_date_start, parse
 
 # The project the task is filed under
 PROJECT_MARKER = "#"
 
-# A label is written into the description under dooit's own tag marker, which
-# is what the row highlights and what `Todo.tags` reads back
-TAG_MARKER = "@"
-
-# A tag hung on the task. The same marker it is stored under, so a label is
-# typed the way it will read back on the row.
-LABEL_MARKER = TAG_MARKER
-
 # What separates the steps of a project path, for the times a name alone is
 # not enough to say which project is meant
 PATH_SEPARATOR = "/"
 
-# `#name` or `@name`, taken only where a word starts: an `@` in the middle of
-# one is part of the word ("bob@example.com") rather than a marker. The quoted
-# form is what lets a project name have a space in it.
-MARKED = re.compile(r'(?:(?<=\s)|\A)([#@])(?:"([^"]+)"|(\S+))')
+# `#name`, taken only where a word starts: a `#` in the middle of one is part
+# of the word rather than a marker. The quoted form is what lets a project
+# name have a space in it.
+MARKED = re.compile(rf'(?:(?<=\s)|\A){PROJECT_MARKER}(?:"([^"]+)"|(\S+))')
 
 # The deadline, named because the bare date in a line is the other one. What
 # follows the `=` is a date expression like any other, and can run past the
@@ -53,19 +45,16 @@ MARKED = re.compile(r'(?:(?<=\s)|\A)([#@])(?:"([^"]+)"|(\S+))')
 DUE_MARKER = "due="
 DUE = re.compile(rf"^{DUE_MARKER}(.*)$", re.IGNORECASE)
 
-# `p2`, `e3`: the letter names the scale and the digit the step on it
-SCALE = re.compile(r"^([pe])(\d+)$", re.IGNORECASE)
+# `p2`: the letter names the scale and the digit the step on it. Written as a
+# family of scales rather than as the one there is, since that is the shape the
+# line has always been read in and the next scale would only be another row.
+SCALE = re.compile(r"^([p])(\d+)$", re.IGNORECASE)
 
 # The scales, by the letter they are typed under: what the field is called and
 # how far it runs
 SCALES = {
     "p": ("priority", MAX_PRIORITY),
-    "e": ("effort", MAX_EFFORT),
 }
-
-# A label is one word, so that it can be written into the description as a tag
-# and read back out of it again
-LABEL = re.compile(r"^\w+$")
 
 # The longest a date expression is looked for. "next monday at 16:00" is four
 # words, and nothing in the grammar runs longer than that.
@@ -108,28 +97,13 @@ class QuickAddSpec:
     # The project as it was typed, which may be a name or a path. Empty when
     # the line said nothing about it, and the task goes wherever the pane is.
     project: str = ""
-    labels: List[str] = field(default_factory=list)
     priority: int = 0
-    effort: int = 0
     scheduled: Optional[datetime] = None
     # The deadline, which is only ever there because the line asked for it by
     # name: a date said in passing is the day the work is planned for
     due: Optional[datetime] = None
     # The words the date was read out of, so the overlay can show what it took
     date_text: str = ""
-
-    @property
-    def described(self) -> str:
-        """
-        The description as it is stored: the text, with the tags after it
-
-        A label is not a field of its own on a todo; it is a tag in the
-        description, which is where dooit has always kept them and what the
-        row already knows how to draw.
-        """
-
-        tags = [f"{TAG_MARKER}{label}" for label in self.labels]
-        return " ".join([self.description, *tags]).strip()
 
 
 def parse_quick_add(line: str, now: Optional[datetime] = None) -> QuickAddSpec:
@@ -156,31 +130,24 @@ def parse_quick_add(line: str, now: Optional[datetime] = None) -> QuickAddSpec:
 
 def _take_marked(line: str, spec: QuickAddSpec) -> str:
     """
-    Pulls the `#project` and `@label` out, and hands back what is left
+    Pulls the `#project` out, and hands back what is left
     """
 
     kept: List[str] = []
     end = 0
 
     for match in MARKED.finditer(line):
-        marker, quoted, bare = match.groups()
+        quoted, bare = match.groups()
         name = (quoted or bare).strip()
 
         # A doubled marker is a slip of the finger, not a project called `#x`
-        if name.startswith((PROJECT_MARKER, LABEL_MARKER)):
-            raise QuickAddError(f"Nothing named after {marker}")
+        if name.startswith(PROJECT_MARKER):
+            raise QuickAddError(f"Nothing named after {PROJECT_MARKER}")
 
-        if marker == PROJECT_MARKER:
-            if spec.project:
-                raise QuickAddError("A task goes in one project")
+        if spec.project:
+            raise QuickAddError("A task goes in one project")
 
-            spec.project = name
-        else:
-            if not LABEL.match(name):
-                raise QuickAddError(f"{LABEL_MARKER}{name} is not one word")
-
-            if name not in spec.labels:
-                spec.labels.append(name)
+        spec.project = name
 
         kept.append(line[end : match.start()])
         end = match.end()
@@ -192,7 +159,7 @@ def _take_marked(line: str, spec: QuickAddSpec) -> str:
     # A marker with nothing after it never matched above, and is a half typed
     # field rather than a word of the description
     for word in rest.split():
-        if word in (PROJECT_MARKER, LABEL_MARKER):
+        if word == PROJECT_MARKER:
             raise QuickAddError(f"Nothing named after {word}")
 
     return rest
@@ -282,7 +249,7 @@ def _due_expression(
 
 def _take_scales(words: List[str], spec: QuickAddSpec) -> List[str]:
     """
-    Pulls the `p1` and `e2` out, and hands back what is left
+    Pulls the `p1` out, and hands back what is left
     """
 
     kept: List[str] = []

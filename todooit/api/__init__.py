@@ -1,10 +1,17 @@
 from .model import DooitModel, BaseModel
-from .todo import SORT_KEYS, Todo, TodoSortModeType, sort_todos
+from .todo import (
+    SORT_KEYS,
+    Todo,
+    TodoSortModeType,
+    freeze_sort_order,
+    sort_todos,
+)
 from .project import Project
 from .pinned_note import PINNED_NOTE_ID, PinnedNote
 from .fixed_projects import (
     FixedProject,
     TodoGroup,
+    TodoRow,
     TODAY,
     UPCOMING,
     COMPLETED,
@@ -55,11 +62,13 @@ __all__ = [
     "TodoSortModeType",
     "SORT_KEYS",
     "sort_todos",
+    "freeze_sort_order",
     "Project",
     "PinnedNote",
     "PINNED_NOTE_ID",
     "FixedProject",
     "TodoGroup",
+    "TodoRow",
     "TODAY",
     "UPCOMING",
     "COMPLETED",

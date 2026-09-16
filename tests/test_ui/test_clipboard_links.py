@@ -4,6 +4,8 @@ The system clipboard on the tasks pane, and the `o` that opens a row's link
 
 from unittest.mock import patch
 
+from todooit.ui.screens.note import NoteScreen
+
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -140,3 +142,67 @@ async def test_open_link_with_no_browser_reports_it():
 
             message = notification_message(app)
             assert message is not None and "browser" in message
+
+
+async def test_copy_todo_note():
+    """ctrl+n takes the whole note without the note window coming up"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "task with a note")
+
+        todo = tree.current_model
+        todo.note = "first line\nsecond line"
+        todo.save()
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+
+        assert app.clipboard == "first line\nsecond line"
+        assert not isinstance(app.screen, NoteScreen)
+
+        message = notification_message(app)
+        assert message is not None and "copied" in message.lower()
+
+
+async def test_copy_note_without_one_warns():
+    async with run_pilot() as pilot:
+        app = pilot.app
+
+        await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "no note here")
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+
+        assert app.clipboard == ""
+        message = notification_message(app)
+        assert message is not None and "no note" in message.lower()
+
+
+async def test_copy_note_on_the_projects_pane_does_nothing():
+    """A project has no note, so the key is not its key"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "task with a note")
+
+        todo = tree.current_model
+        todo.note = "not this"
+        todo.save()
+
+        await pilot.press("j")
+        await pilot.pause()
+
+        await pilot.press("ctrl+n")
+        await pilot.pause()
+
+        assert app.clipboard == ""

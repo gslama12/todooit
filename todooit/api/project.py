@@ -16,6 +16,12 @@ class Project(DooitModel):
     description: Mapped[str] = mapped_column(default="")
     is_root: Mapped[bool] = mapped_column(default=False)
 
+    # Which slot of the project palette this one is drawn in, or None for a
+    # project that was never given one. The slot is stored rather than the
+    # color itself, so a project keeps its place in the palette when the theme
+    # underneath it changes.
+    color: Mapped[Optional[int]] = mapped_column(default=None)
+
     # --------------------------------------------------------------
     # ------------------- Relationships ----------------------------
     # --------------------------------------------------------------
@@ -121,6 +127,57 @@ class Project(DooitModel):
 
         manager.commit()
 
+    @property
+    def color_root(self) -> "Project":
+        """
+        The project this one takes its color from
+
+        A color labels a whole tree rather than a single row, so it is held by
+        the project at the top of that tree and handed down from there. For a
+        top level project that is the project itself.
+        """
+
+        project = self
+
+        while project.parent_project is not None and not project.parent_project.is_root:
+            project = project.parent_project
+
+        return project
+
+    @property
+    def descendants(self) -> List["Project"]:
+        """
+        Every project filed under this one, at every depth
+        """
+
+        found: List["Project"] = []
+
+        for child in self.projects:
+            found.append(child)
+            found += child.descendants
+
+        return found
+
+    def set_color(self, color: Optional[int]) -> None:
+        """
+        Put the whole project tree in a palette slot, or take it back out
+
+        The slot belongs to the tree rather than to the row it was typed over:
+        it is written to the project at the top of the tree and handed down to
+        everything filed under it, so a sub project is never a different color
+        from the project it sits in. Clearing works the same way round, which
+        is why `None` empties the tree and not just the one row.
+        """
+
+        top = self.color_root
+
+        for project in [top, *top.descendants]:
+            project.color = color
+
+        # One commit writes the whole tree: the sub projects are already in
+        # the session, so saving the top of it puts all of them away together
+        top.save()
+
     def add_project(self) -> "Project":
         project = Project(parent_project=self)
         project.save()
@@ -140,9 +197,24 @@ class Project(DooitModel):
         return project
 
     def save(self) -> None:
-        if not self.parent_project and not self.is_root:
-            root = self._get_or_create_root()
-            self.parent_project = root
+        # A sub project is always drawn in the color of the project it sits
+        # in, so the slot is taken off the parent here rather than being
+        # copied at each of the places a project can come into being -- added,
+        # cloned, or built back out of a binned todo's path. Asked before the
+        # root is filled in below, since a project that is about to be given
+        # the root has no color to take from it anyway, and the root at that
+        # point may not be in the session to be asked.
+        parent = self.parent_project
+
+        # A parent that the last commit expired is read back from the
+        # database here, and the project being saved is not in the session yet
+        # for that read to try and flush half of it on the way past
+        with self.session.no_autoflush:
+            if parent is not None and not parent.is_root:
+                self.color = parent.color
+
+        if not parent and not self.is_root:
+            self.parent_project = self._get_or_create_root()
 
         return super().save()
 
@@ -154,7 +226,7 @@ class Project(DooitModel):
     @staticmethod
     def clone_from_id(id: int, order_index: int) -> "Project":
         project = Project.from_id(str(id))
-        fields = ["description"]
+        fields = ["description", "color"]
         attrs = {field: getattr(project, field) for field in fields}
         attrs["parent_project_id"] = project.parent_project_id
         attrs["order_index"] = order_index
@@ -172,7 +244,7 @@ class Project(DooitModel):
                 "description",
                 "due",
                 "scheduled",
-                "effort",
+                "agent",
                 "recurrence",
                 "priority",
                 "pending",
@@ -194,7 +266,7 @@ class Project(DooitModel):
     def _clone_project_recursively(
         source_project: "Project", parent_clone: "Project"
     ) -> None:
-        fields = ["description", "order_index"]
+        fields = ["description", "order_index", "color"]
         attrs = {field: getattr(source_project, field) for field in fields}
         attrs["parent_project"] = parent_clone
 
@@ -211,7 +283,7 @@ class Project(DooitModel):
                 "description",
                 "due",
                 "scheduled",
-                "effort",
+                "agent",
                 "recurrence",
                 "priority",
                 "pending",

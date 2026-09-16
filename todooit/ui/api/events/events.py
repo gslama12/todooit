@@ -210,6 +210,19 @@ class TodoSelected(TodoEvent):
         super().__init__(todo)
 
 
+class RevealTodo(TodoEvent):
+    """
+    Emitted when a task has to be shown wherever it now lives
+
+    A task that leaves the pane it was being read in — unticked in the
+    completion log, taken back out of the Bin — is gone from the rows in front
+    the moment the key lands, and there is nothing left on screen to say where
+    it went. So the app goes with it: the pane it moved into is opened, the
+    cursor is put on the row, and the row flashes, exactly the way the finder
+    arrives at a task picked out of the whole tree.
+    """
+
+
 class TodoRemoved(TodoChanged):
     """
     Emitted when user removes a todo
@@ -267,12 +280,12 @@ class TodoStatusChanged(TodoChanged):
         self.new = new
 
 
-class TodoEffortChanged(TodoChanged):
+class TodoAgentChanged(TodoChanged):
     """
-    Emitted when user changes the effort of a todo
+    Emitted when a todo is handed to an AI, or taken back off one
     """
 
-    def __init__(self, old: Optional[int], new: Optional[int], todo: Todo) -> None:
+    def __init__(self, old: bool, new: bool, todo: Todo) -> None:
         super().__init__(todo)
         self.old = old
         self.new = new

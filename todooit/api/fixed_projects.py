@@ -14,9 +14,9 @@ To add another one: subclass `FixedProject`, give it a key, a title, an icon
 and a `todo_groups`, and register an instance of it below.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterator, List, Optional, Tuple
 
 from sqlalchemy import select
 
@@ -33,15 +33,44 @@ PATH_SEPARATOR = " › "
 
 
 @dataclass
+class TodoRow:
+    """
+    One row of a block, and whatever the block draws underneath it
+
+    A row that is the work itself is drawn like a todo anywhere else: the
+    steps filed under it hang off it, as far as it is expanded, and `under`
+    is empty because the pane works that out for itself.
+
+    A context row is a task carrying no day of its own, drawn only to say
+    what the work beneath it belongs to. There the block picked what hangs
+    off it — the way down to the todos it gathered, and nothing else — which
+    is what `under` holds.
+    """
+
+    todo: Todo
+    under: List["TodoRow"] = field(default_factory=list)
+    is_context: bool = False
+
+
+@dataclass
 class TodoGroup:
     """
     A block of todos shown under one heading
 
     A blank label means the block stands on its own and needs no heading.
+
+    `todos` is the work the block gathered; `rows` is how that work is drawn,
+    which is the same thing flat unless the block had to reach it through
+    tasks that carry no day of their own.
     """
 
     todos: List[Todo]
     label: str = ""
+    rows: List[TodoRow] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.rows:
+            self.rows = [TodoRow(todo) for todo in self.todos]
 
 
 def owning_project(todo: Todo) -> Optional[Project]:
@@ -54,6 +83,114 @@ def owning_project(todo: Todo) -> Optional[Project]:
         node = node.parent_todo
 
     return node.parent_project
+
+
+def _ancestor_todos(todo: Todo) -> Iterator[Todo]:
+    """
+    Every todo the given one is a step of, the nearest one first
+    """
+
+    node = todo.parent_todo
+
+    while node is not None:
+        yield node
+        node = node.parent_todo
+
+
+def task_roots(todos: List[Todo]) -> List[Todo]:
+    """
+    The gathered todos that no other gathered todo is filed under
+
+    A pane draws a row with the steps of it underneath, so a step whose task
+    was gathered too is already on screen inside that task; gathering it again
+    would draw it twice over, once under its parent and once beside it. What
+    comes back is one row per family, and every other match is reached by
+    opening the row it belongs to.
+
+    A step whose task was *not* gathered stands as a row of its own: nothing
+    above it was scheduled, so nothing above it is in the pane, and the step
+    is the whole of what the day has to say about that task.
+    """
+
+    gathered = {todo.id for todo in todos}
+
+    return [
+        todo
+        for todo in todos
+        if not any(parent.id in gathered for parent in _ancestor_todos(todo))
+    ]
+
+
+def _rows_with_context(gathered: List[Todo]) -> List[TodoRow]:
+    """
+    The gathered todos, each drawn under the tasks it is a step of
+
+    A step planned on its own is still its task's work, and a pane that
+    dropped the task would show a row with nothing to say what it is part of.
+    So the tasks above it come along, drawn for context alone, with only the
+    steps the block actually gathered underneath them.
+
+    Nothing gathered is ever context: a task that was planned itself was
+    gathered, and everything filed under it came along with it rather than
+    being picked out one step at a time.
+
+    A task two of whose steps land in the same block is drawn once, with both
+    of them under it, and keeps the place of whichever came first.
+    """
+
+    rows: Dict[int, TodoRow] = {}
+    tops: List[TodoRow] = []
+
+    def row_for(todo: Todo, is_context: bool) -> TodoRow:
+        row = rows.get(todo.id)
+
+        if row is not None:
+            return row
+
+        row = TodoRow(todo, is_context=is_context)
+        rows[todo.id] = row
+
+        parent = todo.parent_todo
+
+        if parent is None:
+            tops.append(row)
+        else:
+            row_for(parent, True).under.append(row)
+
+        return row
+
+    for todo in gathered:
+        row_for(todo, False)
+
+    return tops
+
+
+# How a day's work is read: whatever slipped into it first, and each of the
+# two runs by priority. Work that was planned for a day already gone by is the
+# first thing the day has to decide about — pick it up now, or plan it for
+# another day — and it is what the panes are opened to be rid of, so it is not
+# left to be hunted for among the work that belongs to the day
+def slipped_first(todo: Todo) -> tuple:
+    return (not todo.is_overscheduled,) + priority_key(todo)
+
+
+def scheduled_group(todos: List[Todo], label: str = "") -> TodoGroup:
+    """
+    A block of the work planned for one day, the most pressing of it first
+
+    What a day asks is what to do first, so the rows it gathered are read by
+    what has already slipped and then by priority; the tasks drawn above them
+    for context keep the place of the most pressing thing underneath them,
+    since that is what the block is really ordering.
+    """
+
+    gathered = sorted(task_roots(todos), key=slipped_first)
+
+    return TodoGroup(
+        todos=gathered,
+        label=label,
+        rows=_rows_with_context(gathered),
+    )
 
 
 def project_path(project: Project) -> str:
@@ -131,15 +268,21 @@ class FixedProject:
     # has no use for the hour, which only crowds the columns beside it
     day_only_columns: Tuple[str, ...] = ()
 
-    # Whether a row unticked in here is held in its place until the edit that
-    # follows has been confirmed, rather than leaving the moment it stops
-    # being what the project gathers
-    holds_unticked_rows: bool = False
+    # Whether a row unticked in here is followed: it is gone from the pane the
+    # moment it stops being what the project gathers, so the pane it belongs
+    # in again is opened and the cursor is put on it
+    sends_unticked_home: bool = False
 
     # Whether what the project gathers is the todos that have been thrown
     # away. Every other pane shows the ones that have not: a binned todo is in
     # here and nowhere else, until it is restored or deleted for good
     gathers_binned: bool = False
+
+    # Whether a row planned for a day already gone by is marked as such. Only
+    # the panes that carry such work onto today have anything to mark: they
+    # draw it among the day's own work, and the mark is what tells the two
+    # apart — and says which day it was that the row was missed on
+    marks_overscheduled: bool = False
 
     # --- the parts of `Project` the trees and the bar read ---
 
@@ -226,11 +369,14 @@ def binned_tasks() -> List[Todo]:
 
 def _day_heading(day: date) -> str:
     """
-    What opens a day's block: the day itself, or "Tomorrow" for the next one
+    What opens a day's block: the day itself, or a name for the nearest two
 
-    The nearest day is the one plans are made against, so it gets named rather
-    than dated, the same way the date columns say "Today" instead of a date.
+    The days plans are made against get named rather than dated, the same way
+    the date columns say "Today" instead of writing it out.
     """
+
+    if day == date.today():
+        return "Today"
 
     if day == date.today() + timedelta(days=1):
         return "Tomorrow"
@@ -245,34 +391,52 @@ class TodayProject(FixedProject):
     What the day view adds is a block per project, so a row can still be
     placed at a glance; what it drops is the day itself, which every row here
     shares with the pane it is sitting in.
+
+    A row is a whole task: scheduling a task puts its steps on the day with
+    it, drawn underneath it the way its own project draws them, whatever
+    dates they carry themselves. Scheduling a single step of an unscheduled
+    task puts that step here on its own, since that step is all the day was
+    asked for.
+
+    Work planned for a day already gone by is here too, at the top of the
+    block it belongs to and marked as having slipped. A plan nobody got to is
+    not finished with the moment its day runs out — it is today's problem,
+    and the day it was missed on is the last place it would be found in.
     """
 
     key = "today"
     title = "Today"
     icon = "󰃭"
 
-    # Every row in here is scheduled for today by definition, so the column
-    # would say "Today" the whole way down the pane
+    # Every task in here is scheduled for today or earlier, and the steps
+    # under one are read against the task rather than against the pane, so the
+    # column would say "Today" nearly the whole way down. The day a row that
+    # slipped was planned for is on the row itself instead
     hidden_columns = ("scheduled",)
 
+    marks_overscheduled = True
+
     @staticmethod
-    def _scheduled_today() -> List[Todo]:
-        start = datetime.combine(date.today(), time.min)
+    def _scheduled_by_today() -> List[Todo]:
+        """
+        Everything planned for today or for a day that has already gone by
+        """
+
+        end = datetime.combine(date.today(), time.min) + timedelta(days=1)
         query = select(Todo).where(
             Todo.pending == True,
             Todo.binned_at.is_(None),
-            Todo.scheduled >= start,
-            Todo.scheduled < start + timedelta(days=1),
+            Todo.scheduled < end,
         )
 
-        return list(manager.session.execute(query).scalars().all())
+        return task_roots(list(manager.session.execute(query).scalars().all()))
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
         groups: Dict[int, List[Todo]] = {}
         projects: Dict[int, Project] = {}
 
-        for todo in self._scheduled_today():
+        for todo in self._scheduled_by_today():
             project = owning_project(todo)
 
             # A todo hanging off nothing has no block to go in
@@ -285,8 +449,8 @@ class TodayProject(FixedProject):
         order = _project_order()
 
         return [
-            TodoGroup(
-                todos=sorted(groups[project_id], key=priority_key),
+            scheduled_group(
+                groups[project_id],
                 label=project_path(projects[project_id]),
             )
             for project_id in sorted(groups, key=lambda i: order.get(i, 0))
@@ -295,13 +459,22 @@ class TodayProject(FixedProject):
 
 class UpcomingProject(FixedProject):
     """
-    Everything scheduled for the days still ahead, a block per day
+    Everything scheduled from today on, a block per day
 
     Where Today opens a block per project, this one is grouped by the day the
     work is planned for, nearest day first, so the week ahead reads top to
-    bottom. Today itself is left out: it has a project of its own right above.
+    bottom. Today opens it rather than being left to the project above: this
+    is the pane work is moved around in, and a day that cannot be seen is a
+    day nothing can be moved off or onto.
+
     The project a row is filed under is no longer in the heading here, so the
-    rows carry it themselves.
+    rows carry it themselves. A row is a whole task, the same way it is in
+    Today: the steps of a scheduled task come along with it.
+
+    Nothing is grouped under a day that has gone by. Work planned for one is
+    drawn at the top of today's block, marked as having slipped: a day in the
+    past is a day nothing can be done on, and the pane exists to move that
+    work onto a day something can.
     """
 
     key = "upcoming"
@@ -312,38 +485,51 @@ class UpcomingProject(FixedProject):
 
     show_owning_project = True
 
-    # Every row under a heading is scheduled for the day it names, so the
-    # column would say the same thing over and over
+    # Every row under a heading is scheduled for the day it names — bar the
+    # ones that slipped into today, which say the day they were planned for
+    # themselves — so the column would say the same thing over and over
     hidden_columns = ("scheduled",)
 
     # The deadline is read against those headings, and a day either side of it
     # is what matters there rather than the hour
     day_only_columns = ("due",)
 
+    marks_overscheduled = True
+
     @staticmethod
-    def _scheduled_ahead() -> List[Todo]:
-        tomorrow = datetime.combine(date.today() + timedelta(days=1), time.min)
+    def _scheduled() -> List[Todo]:
         query = select(Todo).where(
             Todo.pending == True,
             Todo.binned_at.is_(None),
-            Todo.scheduled >= tomorrow,
+            Todo.scheduled.is_not(None),
         )
 
-        return list(manager.session.execute(query).scalars().all())
+        # Cut down across the whole pane rather than a day at a time: a step
+        # planned for a different day than the task it belongs to is drawn
+        # inside that task, in the task's own block, and a pane draws no todo
+        # twice. The two of them can only be that far apart in work planned
+        # before a day meant the whole of a task
+        return task_roots(list(manager.session.execute(query).scalars().all()))
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
         groups: Dict[date, List[Todo]] = {}
+        today = date.today()
 
-        for todo in self._scheduled_ahead():
+        for todo in self._scheduled():
             assert todo.scheduled is not None
-            groups.setdefault(todo.scheduled.date(), []).append(todo)
 
+            # A day that has gone by is no day to plan against, so what was
+            # left on one is carried into today rather than opening a block
+            # behind the pane that nothing can be moved onto
+            day = max(todo.scheduled.date(), today)
+            groups.setdefault(day, []).append(todo)
+
+        # A block at a time, each gathering only what falls on its own day:
+        # a task whose steps are spread over the week is drawn for context in
+        # every day it has work in, with that day's steps alone under it
         return [
-            TodoGroup(
-                todos=sorted(groups[day], key=priority_key),
-                label=_day_heading(day),
-            )
+            scheduled_group(groups[day], label=_day_heading(day))
             for day in sorted(groups)
         ]
 
@@ -380,9 +566,9 @@ class CompletedProject(FixedProject):
     # Nothing here says which project a row came out of, so the rows do
     show_owning_project = True
 
-    # A row unticked in here is on its way back to its own project, and what
-    # sends it there is typed into the row: it stays put until that is done
-    holds_unticked_rows = True
+    # A row unticked in here goes straight back to its own project, and the
+    # app goes with it: the log keeps nothing to show for a row it has lost
+    sends_unticked_home = True
 
     # Nothing in here is planned or owed any more; what is worth knowing is
     # when it was finished, which takes the place of both date columns. They

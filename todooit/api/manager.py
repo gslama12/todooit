@@ -24,9 +24,12 @@ class Manager:
             add_bin_columns,
             add_completed_at_column,
             add_note_column,
+            add_project_color_column,
             add_scheduled_column,
+            migrate_effort_to_agent,
             migrate_urgency_to_priority,
             rename_workspace_to_project,
+            sync_project_colors,
         )
 
         path = str(path or database_file())
@@ -46,6 +49,9 @@ class Manager:
         add_note_column(self.engine)
         add_completed_at_column(self.engine)
         add_bin_columns(self.engine)
+        add_project_color_column(self.engine)
+        migrate_effort_to_agent(self.engine)
+        sync_project_colors(self.engine)
         BaseModel.metadata.create_all(bind=self.engine)
         self._db_last_modified = self._get_db_last_modified()
 

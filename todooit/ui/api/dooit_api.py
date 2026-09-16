@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
 from todooit.ui.api.plug import PluginManager
 from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, binned_tasks, empty_bin
@@ -12,12 +12,13 @@ from .events import (
     QuitApp,
 )
 from todooit.ui.widgets import ModelTree
-from todooit.ui.widgets.trees import TodosTree
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.utils import CssManager, first_link, link_label, open_url
 
 from .api_components import (
     KeyManager,
     KeyMatchType,
+    KeyScopeType,
     LayoutManager,
     Formatter,
     BarManager,
@@ -47,7 +48,7 @@ class DooitAPI:
         self.app = app
         self.plugin_manager = PluginManager(self, app.config)
         self.css = CssManager()
-        self.keys = KeyManager(self.app.get_dooit_mode)
+        self.keys = KeyManager(self.app.get_dooit_mode, self.key_scope)
         self.layouts = LayoutManager(self.app)
         self.formatter = Formatter(self)
         self.bar = BarManager(self)
@@ -66,6 +67,26 @@ class DooitAPI:
 
     def notify(self, message: str, level: NotificationType = "info") -> None:
         self.app.bar_switcher.switch_to_notification(BarNotification(message, level))
+
+    def key_scope(self) -> Optional[KeyScopeType]:
+        """
+        The pane a key is being pressed over, for the bindings that are one
+        pane's alone
+
+        Anything that is not one of the two trees -- a bar being typed into,
+        or nothing focused at all -- belongs to neither, and only the bindings
+        that name no pane answer there.
+        """
+
+        focused = self.app.focused
+
+        if isinstance(focused, TodosTree):
+            return "todos"
+
+        if isinstance(focused, ProjectsTree):
+            return "projects"
+
+        return None
 
     async def handle_key(self, key: str) -> None:
         keymatch = self.keys.register_key(key)
@@ -102,6 +123,12 @@ class DooitAPI:
         """Copy the description of the focused item to the clipboard"""
 
         self.focused.copy_description_to_clipboard()
+
+    def copy_note_to_clipboard(self):
+        """Copy the note of the highlighted todo to the clipboard"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.copy_note_to_clipboard()
 
     def paste_as_sibling(self):
         """Add an item described by whatever is on the clipboard"""
@@ -150,7 +177,7 @@ class DooitAPI:
         self.goto_fixed_project(TODAY.key)
 
     def goto_upcoming(self):
-        """Jump to Upcoming and start on the first task scheduled ahead"""
+        """Jump to Upcoming and start on the nearest day's first task"""
 
         self.goto_fixed_project(UPCOMING.key)
 
@@ -224,16 +251,12 @@ class DooitAPI:
         """Start editing the recurrence of the todo"""
         return self.edit("recurrence")
 
-    def edit_effort(self):
-        """Start editing the effort of the todo"""
-        return self.edit("effort")
-
     def add_sibling(self):
         """Add a sibling to highlighted item"""
         self.focused.add_sibling()
 
     def quick_add(self):
-        """Type a whole task in one line: project, labels, priority and day"""
+        """Type a whole task in one line: project, priority and day"""
 
         if self.app.bar_switcher.is_focused:
             return
@@ -333,10 +356,15 @@ class DooitAPI:
         if isinstance(self.focused, TodosTree):
             self.focused.set_priority(priority)
 
-    def set_effort(self, effort: int):
-        """Set the effort of the todo (1 is the lightest, 0 clears it)"""
+    def toggle_agent(self):
+        """Mark the todo as handed to an AI, or take the mark back off"""
         if isinstance(self.focused, TodosTree):
-            self.focused.set_effort(effort)
+            self.focused.toggle_agent()
+
+    def set_project_color(self, color: int):
+        """Color the project (the same key again takes the color back off)"""
+        if isinstance(self.focused, ProjectsTree):
+            self.focused.set_color(color)
 
     def sort_todos(self, mode: str):
         """Order the todos of a project by priority, due date or scheduled date"""
