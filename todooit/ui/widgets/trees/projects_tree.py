@@ -165,18 +165,24 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def set_color(self, color: int) -> None:
         """
-        Puts the highlighted project in a palette slot, or takes it back out
+        Puts the highlighted project's tree in a palette slot, or takes it out
 
         The key that colored a project is the one that uncolors it: pressing
         the slot the project is already in clears it, so nothing extra has to
         be learnt to undo a color that turned out to be the wrong one.
+
+        The color labels the whole tree, so the row it is typed over is only
+        the way into that tree: the project at the top of it and everything
+        filed under it are repainted together, and the pane redraws in full
+        rather than just the one row.
         """
 
         project = self.current_model
         assert isinstance(project, Project)
 
         project.set_color(None if project.color == color else color)
-        self.update_current_prompt()
+        self.refresh_options()
+        self.scroll_to_highlight()
 
     def _get_parent(self, id: str) -> Optional[Project]:
         return Project.from_id(id).parent_project
