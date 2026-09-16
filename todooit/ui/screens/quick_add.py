@@ -45,10 +45,8 @@ from todooit.utils.project_complete import (
 )
 from todooit.utils.quick_add import (
     DUE_MARKER,
-    LABEL_MARKER,
     PATH_SEPARATOR,
     PROJECT_MARKER,
-    TAG_MARKER,
     QuickAddError,
     QuickAddSpec,
     parse_quick_add,
@@ -91,7 +89,6 @@ HINT_GAP = "  "
 HINT = HINT_GAP.join(
     (
         f"{PROJECT_MARKER}project",
-        f"{LABEL_MARKER}label",
         "p1-p3",
         "e1-e3",
         "date",
@@ -631,11 +628,6 @@ class QuickAddScreen(BaseScreen, ModalScreen):
         theme = self.theme
         chips = [self._project_chip(spec)]
 
-        for label in spec.labels:
-            chips.append(
-                Text(f"{TAG_MARKER}{label}", style=Style(color=theme.magenta))
-            )
-
         if spec.priority:
             chips.append(
                 Text(
@@ -780,7 +772,7 @@ class QuickAddScreen(BaseScreen, ModalScreen):
     def _create(spec: QuickAddSpec, project: Project) -> Todo:
         todo = project.add_todo()
 
-        todo.description = spec.described
+        todo.description = spec.description
         todo.scheduled = spec.scheduled
         todo.due = spec.due
         todo.priority = spec.priority

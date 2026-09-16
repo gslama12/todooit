@@ -542,10 +542,8 @@ def test_completed_shows_whole_tasks_not_steps(create_project):
 
     assert COMPLETED.todos == []
 
-    # Only once the whole task is done does it arrive, as the task
-    for child in task.todos:
-        if child.is_pending:
-            child.toggle_complete()
+    # Only once the task itself is ticked does it arrive, as the task
+    task.toggle_complete()
 
     assert COMPLETED.todos == [task]
 

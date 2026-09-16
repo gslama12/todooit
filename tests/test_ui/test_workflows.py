@@ -127,11 +127,11 @@ async def test_planning_a_day_across_projects():
         assert len(tree_options(today_tree)) == 1
 
 
-async def test_steps_of_a_task_finish_the_task():
+async def test_steps_of_a_task_leave_the_task_to_be_ticked():
     """
-    Steps added with N, finished one by one from the pane: the parent ticks
-    itself the moment the last one is done, and the whole family shows in
-    the log together.
+    Steps added with N, finished one by one from the pane: the parent waits
+    to be ticked itself however few steps are left, and once it is the whole
+    family shows in the log together.
     """
 
     async with run_pilot() as pilot:
@@ -147,6 +147,7 @@ async def test_steps_of_a_task_finish_the_task():
         await commit_line(pilot, "book van")
 
         parent = next(t for t in Todo.all() if t.description == "move house")
+        steps = list(parent.todos)
         assert len(tree_options(tree)) == 3  # parent expanded, both steps
 
         # Finish the steps; the cursor sits on "book van"
@@ -155,6 +156,17 @@ async def test_steps_of_a_task_finish_the_task():
         assert parent.is_pending
 
         await pilot.press("k")  # up to "pack boxes"
+        await pilot.press("c")
+        await pilot.pause()
+
+        # Every step is done and the task is still standing there with them
+        # under it, waiting for the tick it only ever gets by hand
+        assert all(step.is_completed for step in steps)
+        assert parent.is_pending
+        assert len(tree_options(tree)) == 3
+
+        # Tick it, and the whole family leaves for the log
+        await pilot.press("k", "k")  # back up onto the task itself
         await pilot.press("c")
         await pilot.pause()
 
@@ -313,8 +325,8 @@ async def test_a_recurring_chore_through_the_day():
 
 async def test_priority_on_a_repeating_task_leaves_its_day_alone():
     """
-    A weekly task whose last step is ticked comes round again there and then,
-    and setting a priority on it afterwards does not move the day again.
+    A weekly task ticked off comes round again there and then, and setting a
+    priority on it afterwards does not move the day again.
     """
 
     async with run_pilot() as pilot:
@@ -331,12 +343,8 @@ async def test_priority_on_a_repeating_task_leaves_its_day_alone():
         task = Todo.all()[0]
         assert task.recurrence == timedelta(days=7)
 
-        # A step of its own, ticked off: the task it finishes repeats, so it
-        # comes round again instead of being left completed
-        await pilot.press("n")
-        await commit_line(pilot, "fill the can")
-        await pilot.press("I")
-        await pilot.pause()
+        # Ticked off: it repeats, so it comes round again instead of being
+        # left completed
         await pilot.press("c")
         await pilot.pause()
 
@@ -346,8 +354,6 @@ async def test_priority_on_a_repeating_task_leaves_its_day_alone():
         assert next_time.date() == date.today() + timedelta(days=7)
 
         # Setting a priority is not ticking it off
-        await pilot.press("k")
-        await pilot.pause()
         await pilot.press("p", "2")
         await pilot.pause()
 

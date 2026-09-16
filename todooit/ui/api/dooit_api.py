@@ -256,7 +256,7 @@ class DooitAPI:
         self.focused.add_sibling()
 
     def quick_add(self):
-        """Type a whole task in one line: project, labels, priority and day"""
+        """Type a whole task in one line: project, priority and day"""
 
         if self.app.bar_switcher.is_focused:
             return
