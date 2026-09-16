@@ -27,12 +27,14 @@ constraint — this is a personal project meant to be customized.
 
 ## Git Worktree Workflow
 
-This repo runs multiple parallel Claude Code sessions via git worktrees, one
-branch each, under `../<repo>-trees/<branch-name>`.
+This repo is a **bare repo** at `<repo>.git` (no working tree of its own).
+All work happens in worktrees living side by side at `<repo>.git/<branch-name>`,
+including `dev` and `main`. There is no "main checkout" anymore, so `dev` and `main` must
+also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 
 - For every user session you will work only **inside** a defined worktree that will be specified and created by the user.
 - If the user does not specify a worktree path in the request, you 
-  are allowed to create a worktree yourself with: `git worktree add ../<repo>-trees/<branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
+  are allowed to create a worktree yourself with: `git worktree add <branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
   `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch.
 - Assume you're in one worktree, not the main checkout - check with
   `git worktree list` / `git branch --show-current` before assuming repo state.
@@ -41,11 +43,9 @@ branch each, under `../<repo>-trees/<branch-name>`.
   worktree, reuse that one instead of creating a new one.
 - Commiting change or removing a worktree (`git worktree remove`) is **not allowed**.
 - Don't read/edit files outside the current worktree unless asked.
-- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are **not**
-  shared between worktrees. Make sure there is a working `.venv` in the worktree. This should be used to check changes and for me to inspect the changes later. Use `uv sync` to install the dependencies. 
-- DB migrations *are* shared project-wide (`docs/db.md`) — be careful running
+- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are not shared between worktrees. DB migrations *are* shared project-wide (`docs/db.md`) - be careful running
   destructive ones from a feature worktree.
-- If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, never Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
+- If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, **never** Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
 - If you are on a Mac or Linux machine, you can use the regular shell.
 
 
