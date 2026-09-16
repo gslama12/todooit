@@ -35,7 +35,7 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 - For every user session you will work only **inside** a defined worktree that will be specified and created by the user.
 - If the user does not specify a worktree path in the request, you 
   are allowed to create a worktree yourself with: `git worktree add <branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
-  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch.
+  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch. Never implement directly in `dev` or `main`!
 - Assume you're in one worktree, not the main checkout - check with
   `git worktree list` / `git branch --show-current` before assuming repo state.
 - Never switch branches inside a worktree: each is pinned to one branch. If

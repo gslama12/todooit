@@ -12,13 +12,9 @@ if TYPE_CHECKING:  # pragma: no cover
     from todooit.api.project import Project
 
 
-# Effort is a rough estimate of how much work a todo is, on a 1-3 scale;
-# 0 means no estimate was made
-MAX_EFFORT = 3
-
-# Priority runs the other way round: 1 is the most urgent and 3 the least, and
-# 0 means none was set. Written down beside the effort scale so that anything
-# reading a priority off typed text has one place to ask how far the scale goes
+# Priority runs from 1, the most urgent, down to 3, the least, and 0 means
+# none was set. Written down here so that anything reading a priority off
+# typed text has one place to ask how far the scale goes
 MAX_PRIORITY = 3
 
 # The orders a pane of todos can be read in. Every one of them ends on the
@@ -109,7 +105,10 @@ class Todo(DooitModel):
     # The day the todo is planned to be worked on, as opposed to the deadline
     # that `due` sets
     scheduled: Mapped[Optional[datetime]] = mapped_column(default=None)
-    effort: Mapped[int] = mapped_column(default=0)
+    # Whether the todo has been handed to an AI that is off working on it.
+    # Nothing but a marker: it says the job is out of your hands for the
+    # moment, and says nothing about how far along it is or when it comes back
+    agent: Mapped[bool] = mapped_column(default=False)
     recurrence: Mapped[Optional[timedelta]] = mapped_column(default=None)
     priority: Mapped[int] = mapped_column(default=0)
     pending: Mapped[bool] = mapped_column(default=True)
@@ -428,8 +427,8 @@ class Todo(DooitModel):
         self.priority = priority
         self.save()
 
-    def set_effort(self, effort: int) -> None:
-        self.effort = max(0, min(effort, MAX_EFFORT))
+    def toggle_agent(self) -> None:
+        self.agent = not self.agent
         self.save()
 
     def toggle_complete(self) -> None:
@@ -491,7 +490,7 @@ class Todo(DooitModel):
             "description",
             "due",
             "scheduled",
-            "effort",
+            "agent",
             "recurrence",
             "priority",
             "pending",
@@ -528,7 +527,7 @@ class Todo(DooitModel):
             "description",
             "due",
             "scheduled",
-            "effort",
+            "agent",
             "recurrence",
             "priority",
             "pending",

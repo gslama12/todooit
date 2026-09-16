@@ -35,10 +35,10 @@ def test_palette_has_a_color_per_digit():
     assert len(set(palette)) == 10
 
 
-def test_palette_avoids_the_priority_and_effort_colors():
+def test_palette_avoids_the_signal_colors():
     """
     A project's color is a label, not a signal, so it never wears the shade
-    that means "urgent" or "a big job" over in the tasks pane
+    that means "urgent" or "late" over in the tasks pane
     """
 
     theme = TokyoNight()

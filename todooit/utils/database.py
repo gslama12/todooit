@@ -171,6 +171,45 @@ def add_bin_columns(engine: Engine):
             connection.execute(text(statement))
 
 
+def migrate_effort_to_agent(engine: Engine):
+    """
+    Trade a todo table's legacy `effort` column for the `agent` flag.
+
+    Effort was an estimate of how big a job is, on a 1-3 scale; the column that
+    took its place says something else entirely -- that the task has been
+    handed to an AI which is off working on it -- so nothing is carried over
+    and every existing row starts out unflagged.
+
+    The old column has to go rather than being left lying there: it was written
+    `NOT NULL` with no default of its own, and the model no longer has anything
+    to say about it, so a single row added after the upgrade would be rejected
+    by a column nothing is filling in any more.
+    """
+
+    inspector = inspect(engine)
+    if "todo" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("todo")}
+
+    statements = []
+
+    if "agent" not in columns:
+        statements.append(
+            "ALTER TABLE todo ADD COLUMN agent BOOLEAN NOT NULL DEFAULT 0"
+        )
+
+    if "effort" in columns:
+        statements.append("ALTER TABLE todo DROP COLUMN effort")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def add_project_color_column(engine: Engine):
     """
     Add the `color` column to a project table written before it existed.

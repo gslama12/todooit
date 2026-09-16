@@ -8,7 +8,6 @@ from rich.text import Text
 from .simple_input import SimpleInput
 from todooit.api import Todo, Project
 from todooit.api.theme import DooitThemeBase
-from todooit.api.todo import MAX_EFFORT
 from todooit.utils import parse
 
 
@@ -194,14 +193,19 @@ class Priority(SimpleInput[Todo, int]):
         return int(value)
 
 
-class Effort(SimpleInput[Todo, int]):
-    def _typecast_value(self, value: str) -> Any:
-        # Anything that isn't a number on the scale clears the effort, rather
-        # than throwing out of the edit and leaving the todo half-updated
-        if not value.isdigit():
-            return 0
+class Agent(SimpleInput[Todo, bool]):
+    """
+    Whether an AI has been handed the todo and is off working on it
 
-        return min(int(value), MAX_EFFORT)
+    A flag rather than a field: it is turned on and off with a key, never
+    typed into, so the column is read-only and its buffer is kept empty the
+    way the note column's is -- there is no text behind it to measure.
+    """
+
+    editable = False
+
+    def _get_default_value(self) -> str:
+        return ""
 
 
 class Status(SimpleInput[Todo, str]):

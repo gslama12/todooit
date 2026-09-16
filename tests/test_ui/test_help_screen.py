@@ -42,7 +42,7 @@ async def test_help_lists_the_config_groups_in_order():
         assert app.api.keys.groups == [
             "Navigation",
             "Editing",
-            "Priority & Effort",
+            "Priority",
             "Moving & Clipboard",
             "Search & View",
             "App",
@@ -66,10 +66,12 @@ async def test_every_visible_keybind_has_a_row():
         for label in ("j", "gt", "n", "C", "space", "xx", "YY", "/", "o", "q"):
             assert label in rows, label
 
-        # The scales collapse to one row each instead of four
+        # The priority scale collapses to one row instead of four
         assert "p0-p3" in rows
         assert "p1" not in rows
-        assert "e0-e3" in rows
+
+        # The agent flag is one key rather than a scale, so it is its own row
+        assert "a" in rows
 
         # So do the sort chords
         assert "SP/SD/SS" in rows

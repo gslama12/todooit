@@ -2,10 +2,10 @@
 A whole task read out of one typed line, in the style of Todoist's quick add
 
 The line is written the way the task would be said -- "call the dentist #Home
-@phone p1 e1 tomorrow 09:00" -- and the markers below pick the fields out of
-it: which project it is filed under, what it is tagged with, how urgent it is,
-how big a job it is, and the day it is planned for. Everything none of them
-claims is the description, so the sentence survives having been read.
+@phone p1 tomorrow 09:00" -- and the markers below pick the fields out of it:
+which project it is filed under, what it is tagged with, how urgent it is, and
+the day it is planned for. Everything none of them claims is the description,
+so the sentence survives having been read.
 
 A todo carries two dates, and a line saying one date means the day the work is
 planned for: that is the one there is a day-to-day answer to, and the one the
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional, Sequence, Tuple
 
-from todooit.api.todo import MAX_EFFORT, MAX_PRIORITY
+from todooit.api.todo import MAX_PRIORITY
 
 from .date_parser import looks_like_date_start, parse
 
@@ -53,14 +53,15 @@ MARKED = re.compile(r'(?:(?<=\s)|\A)([#@])(?:"([^"]+)"|(\S+))')
 DUE_MARKER = "due="
 DUE = re.compile(rf"^{DUE_MARKER}(.*)$", re.IGNORECASE)
 
-# `p2`, `e3`: the letter names the scale and the digit the step on it
-SCALE = re.compile(r"^([pe])(\d+)$", re.IGNORECASE)
+# `p2`: the letter names the scale and the digit the step on it. Written as a
+# family of scales rather than as the one there is, since that is the shape the
+# line has always been read in and the next scale would only be another row.
+SCALE = re.compile(r"^([p])(\d+)$", re.IGNORECASE)
 
 # The scales, by the letter they are typed under: what the field is called and
 # how far it runs
 SCALES = {
     "p": ("priority", MAX_PRIORITY),
-    "e": ("effort", MAX_EFFORT),
 }
 
 # A label is one word, so that it can be written into the description as a tag
@@ -110,7 +111,6 @@ class QuickAddSpec:
     project: str = ""
     labels: List[str] = field(default_factory=list)
     priority: int = 0
-    effort: int = 0
     scheduled: Optional[datetime] = None
     # The deadline, which is only ever there because the line asked for it by
     # name: a date said in passing is the day the work is planned for
@@ -282,7 +282,7 @@ def _due_expression(
 
 def _take_scales(words: List[str], spec: QuickAddSpec) -> List[str]:
     """
-    Pulls the `p1` and `e2` out, and hands back what is left
+    Pulls the `p1` out, and hands back what is left
     """
 
     kept: List[str] = []

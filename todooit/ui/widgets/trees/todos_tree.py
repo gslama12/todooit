@@ -607,10 +607,10 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         self.current_model.set_priority(priority)
         self.update_current_prompt()
 
-    def set_effort(self, effort: int):
+    def toggle_agent(self):
         assert isinstance(self.current_model, Todo)
 
-        self.current_model.set_effort(effort)
+        self.current_model.toggle_agent()
         self.update_current_prompt()
 
     def show_note(self):
