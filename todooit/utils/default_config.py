@@ -622,7 +622,9 @@ def key_setup(api: DooitAPI, _):
 
     # A color is picked off the palette the way a priority is picked off its
     # scale, and typed the same way: the chord says which slot, and pressing
-    # the slot a project is already in takes the color back off. The digits are
+    # the slot a project is already in takes the color back off. What it is
+    # given to is the whole tree the highlighted project is in, since a color
+    # labels a project and everything filed under it. The digits are
     # named in the one row the whole run collapses to, which is where ten
     # colors are looked up once instead of being learnt as ten bindings.
     COLOR_LABEL = f"c0-c{len(PROJECT_COLOR_NAMES) - 1}"
@@ -630,7 +632,7 @@ def key_setup(api: DooitAPI, _):
         f"c{slot} {name}" for slot, name in enumerate(PROJECT_COLOR_NAMES)
     )
     COLOR_HELP = (
-        f"Color the project: {COLOR_NAMED} "
+        f"Color the project and everything filed under it: {COLOR_NAMED} "
         "(the same key again takes the color off)"
     )
 
