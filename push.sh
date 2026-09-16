@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Commit what is in the worktree you are standing in, bring it up to date with
-# origin/dev, and push it. Run under WSL, from inside the worktree.
+# Commit what is in the worktree you are standing in and land it on dev.
+# Run under WSL, from inside the worktree.
 #
 #   cd <repo>.git/feat-xy && bash push.sh
 #
 #   1. stages everything and shows you the status
 #   2. asks for a commit message and commits
-#   3. merges the current origin/dev into this branch
-#   4. on a clean merge, asks before pushing; on conflicts it stops and lists
-#      them, so you can resolve, commit and push yourself
+#   3. brings local dev level with origin/dev and merges dev into this branch,
+#      so conflicts surface here, in your own branch
+#   4. shows what would land, asks, then fast-forwards dev onto this branch and
+#      pushes dev - the feature branch itself never leaves your machine
+#
+# On conflicts it stops and lists them: resolve, commit, run push.sh again.
+# Nothing is cleaned up here; clean.sh still removes worktrees and branches.
 set -euo pipefail
 
 if [ -t 1 ]; then
@@ -26,41 +30,103 @@ cd "$wt"
 branch="$(git branch --show-current)"
 [ -n "$branch" ] || die "detached HEAD in $(basename "$wt") - nothing to push"
 
-if [ "$branch" = main ]; then
-  read -rp "  you are on main: merge origin/dev into it and push? [y/N] " reply
-  case "$reply" in [yY]*) ;; *) say "aborted"; exit 0 ;; esac
-fi
+# This repo was created without a fetch refspec, so origin/dev never existed and
+# the old script had to merge FETCH_HEAD. Add it once, then talk about origin/dev.
+git config --get remote.origin.fetch >/dev/null ||
+  git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+
+# Stage everything, show it, commit it.
+commit_all() {
+  git add -A
+  if git diff --cached --quiet; then
+    say "nothing to commit"
+  else
+    echo
+    git status --short
+    echo
+    read -rp "  commit message: " msg
+    [ -n "$msg" ] || die "empty message - nothing committed, changes left staged"
+    git commit -q -m "$msg"
+    say "committed"
+  fi
+}
+
+# Merge $1 into the current branch, or stop and hand the conflicts over.
+merge_or_stop() {
+  git merge --no-edit "$1" && return 0
+  printf '\n  %sconflicts:%s\n' "$RED" "$OFF"
+  git diff --name-only --diff-filter=U | sed 's/^/    /'
+  printf '\n  %sresolve them, then: git add <files> && git commit && bash push.sh%s\n\n'     "$DIM" "$OFF"
+  exit 1
+}
+
+fetch_dev() {
+  say "fetching origin/dev"
+  git fetch --quiet origin '+refs/heads/dev:refs/remotes/origin/dev'
+}
 
 say "$(basename "$wt")  (branch $branch)"
 
-# 1 + 2 - stage everything, show it, commit it.
-git add -A
-if git diff --cached --quiet; then
-  say "nothing to commit"
-else
-  echo
-  git status --short
-  echo
-  read -rp "  commit message: " msg
-  [ -n "$msg" ] || die "empty message - nothing committed, changes left staged"
-  git commit -q -m "$msg"
-  say "committed"
+# dev and main are merged into, never landed from: same shape, both take dev.
+if [ "$branch" = dev ] || [ "$branch" = main ]; then
+  if [ "$branch" = main ]; then
+    read -rp "  you are on main: merge origin/dev into it and push? [y/N] " reply
+    case "$reply" in [yY]*) ;; *) say "aborted"; exit 0 ;; esac
+  fi
+  commit_all
+  fetch_dev
+  merge_or_stop origin/dev
+  read -rp "  push $branch to origin? [y/N] " reply
+  case "$reply" in
+    [yY]*) git push origin "$branch"; say "pushed $branch" ;;
+    *)     say "not pushed - merge is committed locally" ;;
+  esac
+  exit 0
 fi
 
-# 3 - merge in whatever origin/dev looks like right now.
-say "fetching origin/dev"
-git fetch --quiet origin dev
-if ! git merge --no-edit FETCH_HEAD; then
-  printf '\n  %sconflicts:%s\n' "$RED" "$OFF"
-  git diff --name-only --diff-filter=U | sed 's/^/    /'
-  printf '\n  %sresolve them, then: git add <files> && git commit && git push -u origin %s%s\n\n' \
-    "$DIM" "$branch" "$OFF"
-  exit 1
-fi
+# A feature branch: it lands on dev from here, no pull request.
+dev_wt="$(git worktree list --porcelain | awk '
+  /^worktree /              { p = substr($0, 10) }
+  /^branch refs\/heads\/dev$/ { print p; exit }')"
+[ -n "$dev_wt" ] || die "no worktree holds dev - expected one at $(dirname "$wt")/dev"
 
-# 4 - push, once you say so.
-read -rp "  push $branch to origin? [y/N] " reply
-case "$reply" in
-  [yY]*) git push -u origin "$branch"; say "pushed $branch" ;;
-  *)     say "not pushed - merge is committed locally" ;;
-esac
+git -C "$dev_wt" diff --quiet && git -C "$dev_wt" diff --cached --quiet ||
+  die "the dev worktree has uncommitted changes - sort them out in $dev_wt first"
+
+commit_all
+
+# Level dev with the remote, then merge it into this branch. Both halves of a
+# conflict live here; dev is never left half-merged.
+land() {
+  fetch_dev
+  git -C "$dev_wt" merge --ff-only --quiet origin/dev ||
+    die "local dev has commits that are not on origin/dev - sort that out in $dev_wt"
+  merge_or_stop dev
+}
+land
+
+count="$(git rev-list --count dev.."$branch")"
+[ "$count" -gt 0 ] || { say "nothing to land - dev already has $branch"; exit 0; }
+
+echo
+git log --oneline dev.."$branch" | sed 's/^/    /'
+echo
+read -rp "  land $count commit(s) on dev and push? [y/N] " reply
+case "$reply" in [yY]*) ;; *) say "not landed - your branch is committed locally"; exit 0 ;; esac
+
+# dev now contains nothing this branch lacks, so it can only fast-forward. If
+# anything below fails, dev is put back where it was and re-running is safe.
+for attempt in 1 2; do
+  dev_before="$(git -C "$dev_wt" rev-parse HEAD)"
+  git -C "$dev_wt" merge --ff-only --quiet "$branch" ||
+    die "dev could not fast-forward onto $branch - nothing changed"
+  if git -C "$dev_wt" push origin dev; then
+    say "landed $branch on dev ($(git -C "$dev_wt" rev-parse --short HEAD))"
+    exit 0
+  fi
+  git -C "$dev_wt" reset --hard --quiet "$dev_before"
+  [ "$attempt" = 1 ] || break
+  say "origin/dev moved while we were merging - merging again"
+  land
+done
+die "could not push dev - it is back where it was, run push.sh again"
