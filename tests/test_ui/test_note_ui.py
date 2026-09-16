@@ -12,6 +12,7 @@ from todooit.ui.screens.note import (
     EMPH,
     EMPH_MARK,
     HEADER,
+    LINK,
     MARKER,
     MODE_INSERT,
     MODE_NORMAL,
@@ -26,12 +27,25 @@ from todooit.ui.screens.note import (
     scan_note,
 )
 from todooit.ui.screens.pinned_note import PinnedNoteScreen
+from todooit.utils.links import fold_links
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
     create_and_move_to_todo,
     run_pilot,
+    set_clipboard,
 )
+
+# The address that started all this: too long to sit on a line of its own, let
+# alone inside a quote bar, and with nothing past the page name worth reading
+LONG_LINK = (
+    "https://atdfsds.sharepoint.com/sites/INP-TREASURY-SAL/Shared%20Documents"
+    "/Forms/AllItems.aspx?d=w6b644727c5a24335bfb4a1ddf1c6e2de&csf=1&web=1"
+    "&e=9pE4sh&CID=48733ba2%2Dc02d%2D3001%2D47cc%2Df67908799d9d"
+)
+
+# What it is drawn as once folded
+LONG_LINK_DRAWN = "atdfsds.sharepoint.com/…/AllItems.aspx"
 
 
 async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
@@ -391,6 +405,269 @@ async def test_a_quoted_line_is_green_behind_its_bar():
     names = [name for _, _, name in list(scan_note([line]))[0]]
 
     assert names == [QUOTE, QUOTE_BAR]
+
+
+async def test_a_long_link_is_styled_where_it_is_drawn():
+    """
+    The underline lands on the name the link is folded to, not on the address
+    that name stands in for
+    """
+
+    line = QUOTE_GLYPH + "see " + LONG_LINK + " here"
+    (spans,) = list(scan_note([line]))
+
+    assert [name for _, _, name in spans] == [QUOTE, QUOTE_BAR, LINK]
+
+    drawn, _ = fold_links(line)
+    start, end, _ = spans[-1]
+
+    # The spans are counted in bytes of the drawn line, which is what
+    # `render_line` measures them against
+    assert drawn.encode("utf-8")[start:end].decode("utf-8") == LONG_LINK_DRAWN
+
+
+async def test_a_named_link_is_styled_on_the_name_it_is_drawn_under():
+    line = "see [the folder](" + LONG_LINK + ") here"
+    (spans,) = list(scan_note([line]))
+
+    start, end, name = spans[-1]
+    drawn, _ = fold_links(line)
+
+    assert name == LINK
+    assert drawn.encode("utf-8")[start:end].decode("utf-8") == "the folder"
+
+
+async def test_a_long_link_in_a_quote_stays_inside_the_block():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + QUOTE_GLYPH + "see " + LONG_LINK + " here")
+        await pilot.pause()
+
+        assert editor.document.get_line(1) == (
+            QUOTE_GLYPH + "see " + LONG_LINK_DRAWN + " here"
+        )
+
+        # One row on the page: nothing has wrapped out from under the bar,
+        # which is what used to take the link out of the block
+        assert editor.wrapped_document.get_offsets(1) == []
+
+        # And nothing was taken out of the note to get there
+        assert LONG_LINK in editor.text
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_link_stays_folded_with_the_cursor_on_it():
+    """
+    The cursor is not what unfolds a link - nothing is. A note is read with
+    the cursor somewhere in it, and a link that opened out under it would put
+    the address back on the page exactly when it is being looked at
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(QUOTE_GLYPH + "see " + LONG_LINK + " here")
+        await pilot.pause()
+
+        folded = QUOTE_GLYPH + "see " + LONG_LINK_DRAWN + " here"
+
+        for column in (0, 8, len(folded) - 1):
+            editor.move_cursor((0, column))
+            await pilot.pause()
+
+            assert editor.document.get_line(0) == folded
+            assert editor.wrapped_document.get_offsets(0) == []
+
+        # And the whole of the address is still in the note behind it
+        assert LONG_LINK in editor.text
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_name_is_edited_where_it_is_drawn():
+    """
+    What the fold hides is the markup, not the name: the words on the page are
+    the words in the note, so they are retyped like any other words
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [the folder](" + LONG_LINK + ") here")
+        await pilot.pause()
+
+        assert editor.document.get_line(0) == "see the folder here"
+
+        # Between "the " and "folder"
+        editor.move_cursor((0, 8))
+        await pilot.press(*list("big "))
+        await pilot.pause()
+
+        assert editor.document.get_line(0) == "see the big folder here"
+        assert editor.text == "see [the big folder](" + LONG_LINK + ") here"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_indenting_a_line_keeps_the_address_on_it():
+    """
+    The one rewrite that puts a whole line back has to put back the line that
+    was really there, not the one that was drawn
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [the folder](" + LONG_LINK + ") here")
+        await pilot.pause()
+
+        await pilot.press("tab")
+        await pilot.pause()
+
+        assert editor.text == "  see [the folder](" + LONG_LINK + ") here"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_edit_reaching_into_a_link_takes_the_whole_of_it():
+    """
+    Half a link left on the line is not something that could be written back
+    out as a note, so an edit that touches one swallows it
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [](" + LONG_LINK + ")")
+        await pilot.pause()
+
+        editor.move_cursor(editor.document.end)
+        await pilot.press("backspace")
+        await pilot.pause()
+
+        assert editor.text == "see "
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_copying_a_link_carries_its_address():
+    """
+    What is picked out on the page comes back as what is written behind it
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [the folder](" + LONG_LINK + ") here")
+        await pilot.pause()
+
+        await pilot.press("ctrl+a")
+        await pilot.pause()
+
+        assert editor.selected_text == "see [the folder](" + LONG_LINK + ") here"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_o_opens_a_folded_link_in_full():
+    async with run_pilot() as pilot:
+        opened = []
+
+        with patch(
+            "todooit.ui.screens.note.open_url",
+            lambda url: opened.append(url) or True,
+        ):
+            screen = await open_note(pilot)
+            editor = screen.editor
+
+            editor.load_text("see [the folder](" + LONG_LINK + ") here")
+            await pilot.pause()
+
+            await pilot.press("escape")
+
+            # Anywhere on the name it is drawn under
+            editor.move_cursor((0, 6))
+            await pilot.press("o")
+            await pilot.pause()
+
+            assert opened == [LONG_LINK]
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_pasting_a_long_link_leaves_it_unnamed():
+    """
+    An unnamed link is drawn as a shortened form of its own address, which is
+    the most useful thing it can say before anyone has named it
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        set_clipboard(LONG_LINK)
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert editor.text == "[](" + LONG_LINK + ")"
+        assert editor.document.get_line(0) == LONG_LINK_DRAWN
+
+        # Past the whole of it, where there is more of the note to write
+        assert editor.cursor_location == (0, len(LONG_LINK_DRAWN))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_pasting_a_long_link_over_a_phrase_names_it_after_the_phrase():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("the folder")
+        await pilot.pause()
+
+        await pilot.press("ctrl+a")
+        set_clipboard(LONG_LINK)
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert editor.text == "[the folder](" + LONG_LINK + ")"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_short_link_is_pasted_in_as_it_stands():
+    """Wrapping one would cost a name to write and save no room at all"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        set_clipboard("https://example.com")
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert editor.text == "https://example.com"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
 
 
 async def test_a_quote_still_holds_markup():

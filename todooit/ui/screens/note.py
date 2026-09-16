@@ -6,6 +6,9 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.timer import Timer
+from textual.document._document import Document, EditResult
+from textual.document._document_navigator import DocumentNavigator
+from textual.document._wrapped_document import WrappedDocument
 from textual.widgets import Static, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
@@ -15,11 +18,13 @@ from todooit.utils import (
     blend,
     copy_text,
     find_links,
-    link_at,
+    fold_links,
     link_label,
     open_url,
     paste_text,
 )
+from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
+from todooit.utils.links import drawn_column, folded_link_at, stored_range
 
 from .base import BaseScreen
 
@@ -202,7 +207,11 @@ def split_indent(line: str) -> Tuple[str, str, str]:
     return line[: len(line) - len(stripped)], "", stripped
 
 
-def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]]:
+def scan_markup(
+    line: str,
+    following: str = "",
+    links: Optional[list] = None,
+) -> Iterator[Tuple[int, int, str]]:
     """
     The styled spans of one line, measured in UTF-8 bytes
 
@@ -212,6 +221,12 @@ def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]
 
     `following` is the line below, which is all a header needs to be
     recognised: the rule is what says the words above it are a title.
+
+    `line` is the line as it is *drawn*, which is not always the line as it is
+    stored - a link folded down to its name is shorter on the page than in the
+    note. `links` is where the links ended up in what was drawn; handed
+    nothing, the scan reads them off the line itself, which is right for any
+    line that is drawn as it stands.
     """
 
     def byte(index: int) -> int:
@@ -246,7 +261,7 @@ def scan_markup(line: str, following: str = "") -> Iterator[Tuple[int, int, str]
     # Drawn the same way the trees draw a link in a description, and read off
     # the same scan the `o` key opens one with: what is underlined here is
     # exactly what standing on it will open
-    for link in find_links(line):
+    for link in find_links(line) if links is None else links:
         yield byte(link.start), byte(link.end), LINK
 
     for match in EMPH_RE.finditer(line):
@@ -265,12 +280,165 @@ def scan_note(lines) -> Iterator[list]:
 
     Walks the note as a whole rather than styling each line on its own,
     because the line below is what says whether the one above it is a title.
+
+    `lines` are the lines as they are *stored*; the spans handed back are into
+    the lines as they are *drawn*, with every link folded down to its name.
+    The folding is done here rather than taken on trust, so the spans and the
+    text they land on are always the same fold.
     """
 
-    for row, line in enumerate(lines):
-        following = lines[row + 1] if row + 1 < len(lines) else ""
+    drawn = []
+    found = []
 
-        yield list(scan_markup(line, following))
+    for line in lines:
+        text, links = fold_links(line)
+
+        drawn.append(text)
+        found.append(links)
+
+    for row, line in enumerate(drawn):
+        following = drawn[row + 1] if row + 1 < len(drawn) else ""
+
+        yield list(scan_markup(line, following, found[row]))
+
+
+# What a name for a link may not hold, since the brackets are what say where
+# the name stops
+_NO_BRACKETS = str.maketrans("", "", "[]")
+
+
+def _pasted_link(text: str):
+    """
+    The address a paste is, when the whole of the paste is one and it is long
+    enough to be worth naming; None for anything else
+
+    A sentence with a link in it is text and goes in as text. So does an
+    address short enough to read where it stands: wrapping that one in
+    brackets would cost a name to write and save no room at all.
+    """
+
+    stripped = text.strip()
+    links = find_links(stripped)
+
+    if len(links) != 1:
+        return None
+
+    link = links[0]
+
+    if link.title or (link.start, link.end) != (0, len(stripped)):
+        return None
+
+    return link if len(stripped) > LINK_TITLE_MAX else None
+
+
+class FoldedDocument(Document):
+    """
+    The note as it is stored, handed out as the note is drawn
+
+    A TextArea draws exactly the text its document gives it, and the note is
+    stored with the whole of every URL written out in it. The two have to
+    differ for a long link to fit on the line it was written on, and this is
+    the one place they are allowed to.
+
+    Everything above here - the cursor, the wrapping, the styling, every
+    range an edit is asked for - is counted in the columns of the page, and
+    the page is the folded text. Everything below here is the note as it was
+    typed. The translating is done in this class and nowhere else, so nothing
+    upstairs has to know that a line is drawn shorter than it is written, and
+    the note on disk is never anything but what was typed into it.
+
+    A folded link is one thing on the page. There is no column inside the name
+    to put a cursor in, because the name stands in for the whole of
+    `[name](url)`, so an edit reaching into a link is widened to take all of
+    it. That is what keeps an address from being cut in half by a keystroke
+    aimed at the middle of a word that is not really there.
+    """
+
+    def _line(self, row: int) -> str:
+        """
+        One stored line, for a row that may have been clamped out of range
+        """
+
+        return self._lines[max(0, min(row, len(self._lines) - 1))]
+
+    @property
+    def lines(self) -> list:
+        return [fold_links(line)[0] for line in self._lines]
+
+    @property
+    def stored_lines(self) -> list:
+        """
+        The note as it is written, which is what a save writes out
+        """
+
+        return self._lines
+
+    def stored_line(self, row: int) -> str:
+        """
+        One line as it is written, for the rewrites that have to keep the
+        markup they are moving about
+        """
+
+        return self._line(row)
+
+    def get_line(self, index: int) -> str:
+        return fold_links(self._lines[index])[0]
+
+    def __getitem__(self, line_index):
+        if isinstance(line_index, slice):
+            return [fold_links(line)[0] for line in self._lines[line_index]]
+
+        return fold_links(self._lines[line_index])[0]
+
+    @property
+    def end(self) -> tuple:
+        return (self.line_count - 1, len(self.get_line(self.line_count - 1)))
+
+    def _drawn(self, location: tuple) -> tuple:
+        row, column = location
+
+        return row, drawn_column(self._line(row), column)
+
+    def _stored_span(self, start: tuple, end: tuple) -> tuple:
+        """
+        A run of the page, as the run of the note behind it
+
+        A run inside one line is handed over whole, since which columns of it
+        a link wants depends on both ends at once. A run across several is cut
+        at the line ends, each piece asked for on its own: the first runs to
+        the end of its line and the last from the start of its own, which is
+        what they mean on the page.
+        """
+
+        (top_row, top_column), (bottom_row, bottom_column) = start, end
+        top_line = self._line(top_row)
+        bottom_line = self._line(bottom_row)
+
+        if top_row == bottom_row:
+            opening, closing = stored_range(top_line, top_column, bottom_column)
+        else:
+            opening, _ = stored_range(
+                top_line, top_column, len(fold_links(top_line)[0])
+            )
+            _, closing = stored_range(bottom_line, 0, bottom_column)
+
+        return (top_row, opening), (bottom_row, closing)
+
+    def replace_range(self, start: tuple, end: tuple, text: str):
+        top, bottom = self._stored_span(*sorted((start, end)))
+
+        result = super().replace_range(top, bottom, text)
+
+        # The end of the edit goes back out in the columns it came in with:
+        # what asked for it will put the cursor there
+        return EditResult(self._drawn(result.end_location), result.replaced_text)
+
+    def get_text_range(self, start: tuple, end: tuple) -> str:
+        # What is picked out on the page comes back as what is written behind
+        # it, so a copied link carries its address and not just its name
+        top, bottom = self._stored_span(*sorted((start, end)))
+
+        return super().get_text_range(top, bottom)
 
 
 def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
@@ -411,6 +579,41 @@ class NoteEditor(TextArea):
         self.read_only = True
         self.note_screen.mode_changed()
 
+    def _set_document(self, text: str, language) -> None:
+        """
+        Put a folding document behind the editor in place of a plain one
+
+        Upstream builds the document here and wires the wrapping and the
+        navigation onto it, so this is the one place the swap can be made
+        without any of them being left pointed at the document it replaced.
+        """
+
+        super()._set_document(text, language)
+
+        self.document = FoldedDocument(text)
+        self.wrapped_document = WrappedDocument(
+            self.document, tab_width=self.indent_width
+        )
+        self.navigator = DocumentNavigator(self.wrapped_document)
+
+        self._build_highlight_map()
+        self._rewrap_and_refresh_virtual_size()
+        self.move_cursor((0, 0))
+
+    def _stored_line(self, row: int) -> str:
+        """
+        One line as the note holds it, markup and addresses and all
+
+        Almost nothing in here wants this - the editor is written in the
+        columns of the page, and the page is the folded text - but a rewrite
+        that puts a whole line back has to put back what was really on it.
+        """
+
+        document = self.document
+        stored_line = getattr(document, "stored_line", None)
+
+        return stored_line(row) if stored_line else document[row]
+
     def _build_highlight_map(self) -> None:
         """
         Fill the map `render_line` styles from, out of our own markers
@@ -424,7 +627,10 @@ class NoteEditor(TextArea):
         highlights = self._highlights
         highlights.clear()
 
-        for row, spans in enumerate(scan_note(self.document.lines)):
+        document = self.document
+        lines = getattr(document, "stored_lines", document.lines)
+
+        for row, spans in enumerate(scan_note(lines)):
             highlights[row].extend(spans)
 
     def _marks_around(self, start, end) -> Optional[Tuple[tuple, tuple]]:
@@ -557,7 +763,11 @@ class NoteEditor(TextArea):
         says how deep a line sits.
         """
 
-        line = self.document[row]
+        # The one rewrite that puts a whole line back the way it found it, so
+        # the one that has to read the line as it is *written*: handed the
+        # folded text it would write the names of the links back over the
+        # addresses behind them, and the addresses would be gone
+        line = self._stored_line(row)
         indent, bullet, rest = split_indent(line)
 
         depth = max(0, indent_depth(indent) + levels)
@@ -568,7 +778,10 @@ class NoteEditor(TextArea):
 
         _, column = self.cursor_location
         self.replace(
-            head + rest, (row, 0), (row, len(line)), maintain_selection_offset=False
+            head + rest,
+            (row, 0),
+            (row, len(self.document[row])),
+            maintain_selection_offset=False,
         )
 
         # The cursor keeps its place in the words rather than its column: the
@@ -742,8 +955,45 @@ class NoteEditor(TextArea):
 
         self.enter_insert()
 
+        if self._paste_as_link(text):
+            return
+
         if result := self._replace_via_keyboard(text, *self.selection):
             self.move_cursor(result.end_location)
+
+    def _paste_as_link(self, text: str) -> bool:
+        """
+        Drop a pasted address in folded; False when the paste was not one
+
+        The one paste worth rewriting on the way in. A long URL pasted on its
+        own is about to be the longest thing in the note and the least worth
+        reading, so what goes in is the markdown for it with the brackets left
+        empty, which is drawn as a shortened form of its own address.
+
+        What is picked out at the time is the name: pasting an address over a
+        phrase is how the phrase becomes the link, which is what the gesture
+        means in every editor that has it - and the only way a link here comes
+        by a name that was not read off its own address.
+        """
+
+        link = _pasted_link(text)
+
+        if link is None:
+            return False
+
+        # Onto one line, and with the brackets taken out of it: a name holding
+        # the bracket that ends it would be read back as ending there
+        title = " ".join(self.selected_text.split()).translate(_NO_BRACKETS)
+        markdown = f"[{title}]({link.url})"
+
+        result = self._replace_via_keyboard(markdown, *self.selection)
+
+        if result is None:
+            return True
+
+        self.move_cursor(result.end_location)
+
+        return True
 
     def action_cut(self) -> None:
         """
@@ -829,7 +1079,7 @@ class NoteEditor(TextArea):
         """
 
         row, column = self.cursor_location
-        link = link_at(self.document[row], column)
+        link = folded_link_at(self._stored_line(row), column)
 
         if link is None:
             self.note_screen.report("No link under the cursor")
