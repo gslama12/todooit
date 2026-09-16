@@ -60,6 +60,16 @@ merge_or_stop() {
   exit 1
 }
 
+# What a push would change: $1 = where the remote is, $2 = what we would send.
+show_diffstat() {
+  git rev-parse --verify --quiet "$1" >/dev/null || return 0
+  local stat
+  stat="$(git diff --stat --stat-count=25 "$1" "$2")"
+  [ -n "$stat" ] || return 0
+  echo
+  echo "$stat" | sed 's/^/    /'
+}
+
 fetch_dev() {
   say "fetching origin/dev"
   git fetch --quiet origin '+refs/heads/dev:refs/remotes/origin/dev'
@@ -76,6 +86,9 @@ if [ "$branch" = dev ] || [ "$branch" = main ]; then
   commit_all
   fetch_dev
   merge_or_stop origin/dev
+  git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null || true
+  show_diffstat "origin/$branch" HEAD
+  echo
   read -rp "  push $branch to origin? [y/N] " reply
   case "$reply" in
     [yY]*) git push origin "$branch"; say "pushed $branch" ;;
@@ -110,6 +123,7 @@ count="$(git rev-list --count dev.."$branch")"
 
 echo
 git log --oneline dev.."$branch" | sed 's/^/    /'
+show_diffstat dev "$branch"
 echo
 read -rp "  land $count commit(s) on dev and push? [y/N] " reply
 case "$reply" in [yY]*) ;; *) say "not landed - your branch is committed locally"; exit 0 ;; esac

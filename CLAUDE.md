@@ -68,7 +68,8 @@ decides where you put things:
   Uncommitted work is always kept, so leaving your change uncommitted (as
   required above) also keeps it safe from cleanup.
 - `bash push.sh`, run **from inside a worktree**, stages and commits
-  everything there, merges the current `dev` into the branch, then asks and —
+  everything there, merges the current `dev` into the branch, shows the
+  commits and a `git diff --stat` of what would land, then asks and —
   on yes — fast-forwards `dev` onto the branch and pushes `dev`. Feature
   branches are never pushed and there is no pull request: work lands on `dev`
   from the user's machine. On conflicts it stops and lists them, in the feature
