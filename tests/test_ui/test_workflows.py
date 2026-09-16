@@ -34,7 +34,7 @@ async def test_a_task_s_whole_life():
         await commit_line(pilot, "ship the release")
 
         await pilot.press("p", "1")
-        await pilot.press("e", "3")
+        await pilot.press("a")
         await pilot.press("d")
         await commit_line(pilot, "in 3 days")
         await pilot.press("s")
@@ -50,7 +50,7 @@ async def test_a_task_s_whole_life():
         todo = Todo.all()[0]
         assert todo.description == "ship the release"
         assert todo.priority == 1
-        assert todo.effort == 3
+        assert todo.agent is True
         assert todo.due is not None and todo.due.date() == date.today() + timedelta(days=3)
         assert todo.scheduled is not None
         assert todo.scheduled.date() == date.today() + timedelta(days=1)

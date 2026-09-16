@@ -13,6 +13,7 @@ from todooit.api.theme import DooitThemeBase, TokyoNight
 from todooit.ui.tui import Dooit
 from tests.test_ui.ui_base import (
     boot,
+    commit_line,
     create_and_move_to_todo,
     new_project,
     new_todo,
@@ -35,10 +36,10 @@ def test_palette_has_a_color_per_digit():
     assert len(set(palette)) == 10
 
 
-def test_palette_avoids_the_priority_and_effort_colors():
+def test_palette_avoids_the_signal_colors():
     """
     A project's color is a label, not a signal, so it never wears the shade
-    that means "urgent" or "a big job" over in the tasks pane
+    that means "urgent" or "late" over in the tasks pane
     """
 
     theme = TokyoNight()
@@ -201,3 +202,77 @@ async def test_a_colored_project_carries_its_color_into_a_clone():
         clone = Project.clone_from_id(project.id, project.order_index + 1)
 
         assert clone.color == 1
+
+
+async def test_the_digit_colors_the_sub_projects_too():
+    """
+    The color is the tree's and not the row's: everything filed under the
+    project the digit was typed over is repainted with it
+    """
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        project = await new_project(pilot, "painted")
+
+        child = project.add_project()
+        child.description = "under it"
+        child.save()
+
+        grandchild = child.add_project()
+        grandchild.description = "further under it"
+        grandchild.save()
+
+        await pilot.press("c", "4")
+        await pilot.pause()
+
+        assert [p.color for p in (project, child, grandchild)] == [4, 4, 4]
+
+
+async def test_the_digit_over_a_sub_project_colors_the_whole_tree():
+    """
+    A sub project has no color of its own to paint, so the digit typed over
+    one reaches the project at the top of the tree it is in
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        project = await new_project(pilot, "painted")
+
+        # N opens a sub project under the highlighted one, which the cursor
+        # then sits on: the digit below is typed over the child, not the top
+        await pilot.press("N")
+        await commit_line(pilot, "under it")
+
+        child = app.project_tree.current_model
+        assert isinstance(child, Project)
+        assert child.parent_project is project
+
+        await pilot.press("c", "6")
+        await pilot.pause()
+
+        assert child.color == 6
+        assert project.color == 6
+
+        # and the same digit again clears the tree from down here as well
+        await pilot.press("c", "6")
+        await pilot.pause()
+
+        assert child.color is None
+        assert project.color is None
+
+
+async def test_a_sub_project_made_after_the_color_arrives_wearing_it():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        project = await new_project(pilot, "painted")
+
+        await pilot.press("c", "8")
+        await pilot.pause()
+
+        await pilot.press("N")
+        await commit_line(pilot, "under it")
+
+        child = app.project_tree.current_model
+        assert isinstance(child, Project)
+
+        assert child.color == 8

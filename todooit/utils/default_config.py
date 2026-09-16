@@ -4,10 +4,10 @@ from typing import Callable, Optional, Tuple
 from rich.style import Style
 from todooit.api import Todo, Project
 from todooit.extras.formatters import (
+    agent_icon,
     description_highlight_link,
     description_highlight_tags,
     due_danger_today,
-    effort_icon,
     recurrence_icon,
 )
 from todooit.extras.bar_widgets import (
@@ -67,25 +67,6 @@ def priority_color(priority: int, api: DooitAPI) -> str:
 # are there for the stretches of work that are run off a calendar instead, and
 # hold until they are switched back — the order is the pane's, not a project's.
 SORT_MODES = ("priority", "due", "scheduled")
-
-
-# Effort runs the opposite way to priority: e1 is a quick job, e3 a big one.
-# 0 means no estimate was made, and shows as an empty column.
-EFFORTS = (1, 2, 3)
-
-
-# The traffic light everyone reads without being told: cheap is green, costly
-# is red. It says the same thing as the due column's colors do, which is what
-# lets both be scanned in one pass down the row.
-def effort_color(effort: int, api: DooitAPI) -> str:
-    theme = api.vars.theme
-    colors = {
-        1: theme.green,
-        2: theme.yellow,
-        3: theme.red,
-    }
-
-    return colors.get(effort, theme.foreground1)
 
 
 CHECKBOX_EMPTY = "󰄱"
@@ -236,11 +217,13 @@ def todo_description_formatter(description: str, todo: Todo, api: DooitAPI) -> s
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
-def todo_effort_formatter(effort: int, _: Todo) -> str:
-    if not effort:
-        return ""
-
-    return str(effort)
+# The agent column has no text of its own: the flag is either set, and the
+# hourglass below draws it, or it is not, and the column is left blank. A
+# space rather than an empty string, for the same reason the note column
+# returns one -- the formatter store turns anything falsy into a dim, centered
+# "-", which is not the same as nothing.
+def todo_agent_formatter(agent: bool, _: Todo) -> str:
+    return " "
 
 
 # A sheet of paper on the rows that carry a note, and nothing at all on the
@@ -256,18 +239,6 @@ def todo_note_formatter(note: str, _: Todo, api: DooitAPI) -> str:
         return " "
 
     return f"[{api.vars.theme.foreground3}]{NOTE_ICON}[/]"
-
-
-# Runs after the flame icon has been prepended, so icon and number come out in
-# one shared color instead of the icon keeping the orange it arrives with. Same
-# trick the due column uses: the result goes back as a markup string, since a
-# Text would get escaped by the formatter store.
-@extra_formatter
-def todo_effort_color_formatter(effort: str, todo: Todo, api: DooitAPI) -> str:
-    if not todo.effort:
-        return effort
-
-    return f"[{effort_color(todo.effort, api)}]{_strip_markup(effort)}[/]"
 
 
 def todo_recurrence_formatter(recurrence: Optional[timedelta], _):
@@ -418,7 +389,7 @@ PROJECT_COLOR_NAMES = (
 
 
 # A project's color is its own label and says nothing about the work inside
-# it -- which is exactly what a priority or an effort does say. So none of
+# it -- which is exactly what a priority or a due date does say. So none of
 # these is a shade those are drawn in: every named color is pulled a quarter
 # of the way towards the pane's own text first, which lifts the whole family
 # clear of the signal colors without moving any of them off its hue.
@@ -574,7 +545,7 @@ def key_setup(api: DooitAPI, _):
     # Groups show up as sections in the help screen, in this order
     NAVIGATION = "Navigation"
     EDITING = "Editing"
-    PRIORITY_EFFORT = "Priority & Effort"
+    PRIORITY = "Priority"
     MOVING = "Moving & Clipboard"
     VIEW = "Search & View"
     APP = "App"
@@ -613,6 +584,11 @@ def key_setup(api: DooitAPI, _):
     # be pressed on its own, and there is nothing in the left pane to tick off
     # anyway
     api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
+    # The hourglass, on the key it is named after: pressed when a task goes
+    # out to an AI, and pressed again when it comes back. It says nothing
+    # about the task being done -- that is still the tick above -- only that
+    # it is somebody else's to move for the moment
+    api.keys.set("a", api.toggle_agent, group=EDITING)
     # Throwing something away costs nothing and asks nothing: it goes to the
     # Bin, where "u" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
@@ -640,13 +616,15 @@ def key_setup(api: DooitAPI, _):
             f"p{priority}",
             partial(api.set_priority, priority),
             description=PRIORITY_HELP,
-            group=PRIORITY_EFFORT,
+            group=PRIORITY,
             label=PRIORITY_LABEL,
         )
 
     # A color is picked off the palette the way a priority is picked off its
     # scale, and typed the same way: the chord says which slot, and pressing
-    # the slot a project is already in takes the color back off. The digits are
+    # the slot a project is already in takes the color back off. What it is
+    # given to is the whole tree the highlighted project is in, since a color
+    # labels a project and everything filed under it. The digits are
     # named in the one row the whole run collapses to, which is where ten
     # colors are looked up once instead of being learnt as ten bindings.
     COLOR_LABEL = f"c0-c{len(PROJECT_COLOR_NAMES) - 1}"
@@ -654,7 +632,7 @@ def key_setup(api: DooitAPI, _):
         f"c{slot} {name}" for slot, name in enumerate(PROJECT_COLOR_NAMES)
     )
     COLOR_HELP = (
-        f"Color the project: {COLOR_NAMED} "
+        f"Color the project and everything filed under it: {COLOR_NAMED} "
         "(the same key again takes the color off)"
     )
 
@@ -666,24 +644,6 @@ def key_setup(api: DooitAPI, _):
             group=EDITING,
             label=COLOR_LABEL,
             scope="projects",
-        )
-
-    # Effort is picked off a fixed scale the same way priority is, so it is
-    # typed the same way: a chord, not a text field. "e" on its own is only a
-    # prefix of these, so it stays unbound and waits for the digit.
-    EFFORT_LABEL = f"e0-e{max(EFFORTS)}"
-    EFFORT_HELP = (
-        f"Set the todo effort, e1 the quickest "
-        f"and e{max(EFFORTS)} the biggest job (e0 clears it)"
-    )
-
-    for effort in [0, *EFFORTS]:
-        api.keys.set(
-            f"e{effort}",
-            partial(api.set_effort, effort),
-            description=EFFORT_HELP,
-            group=PRIORITY_EFFORT,
-            label=EFFORT_LABEL,
         )
 
     api.keys.set("L", api.shift_down, group=MOVING)
@@ -756,7 +716,7 @@ def layout_setup(api: DooitAPI, _):
         # the deadline are read as the pair they are
         TodoWidget.scheduled,
         TodoWidget.due,
-        TodoWidget.effort,
+        TodoWidget.agent,
         TodoWidget.recurrence,
         # Last on the row: a note is something a todo either has or has not,
         # read in one glance and never scanned against the columns beside it
@@ -772,7 +732,7 @@ def formatter_setup(api: DooitAPI, _):
         api.formatter.todos.description.add(gray_out(strike=True))
         api.formatter.todos.due.add(gray_out())
         api.formatter.todos.scheduled.add(gray_out())
-        api.formatter.todos.effort.add(gray_out())
+        api.formatter.todos.agent.add(gray_out())
         api.formatter.todos.recurrence.add(gray_out())
         api.formatter.todos.note.add(gray_out())
 
@@ -811,13 +771,10 @@ def formatter_setup(api: DooitAPI, _):
     api.formatter.todos.binned.add(due_danger_today())
     api.formatter.todos.binned.add(binned_date_formatter)
 
-    api.formatter.todos.effort.add(todo_effort_formatter)
-    api.formatter.todos.effort.add(todo_effort_color_formatter)
-    # The flame is what tells a lone digit in the effort column apart from the
-    # numbers elsewhere on the row; added last => runs first, so the color
-    # formatter above gets to paint it in the same shade as the number.
-    # Effort 0 is left as an empty column rather than a flame with nothing on it.
-    api.formatter.todos.effort.add(effort_icon(show_on_zero=False))
+    api.formatter.todos.agent.add(todo_agent_formatter)
+    # The hourglass is the column: it goes on over the blank the formatter
+    # above hands back, and only on the rows carrying the flag
+    api.formatter.todos.agent.add(agent_icon())
     api.formatter.todos.note.add(todo_note_formatter)
     api.formatter.todos.recurrence.add(todo_recurrence_formatter)
     # Marks the repeating todos, whose interval is easy to miss as bare text

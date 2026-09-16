@@ -251,10 +251,6 @@ class DooitAPI:
         """Start editing the recurrence of the todo"""
         return self.edit("recurrence")
 
-    def edit_effort(self):
-        """Start editing the effort of the todo"""
-        return self.edit("effort")
-
     def add_sibling(self):
         """Add a sibling to highlighted item"""
         self.focused.add_sibling()
@@ -360,10 +356,10 @@ class DooitAPI:
         if isinstance(self.focused, TodosTree):
             self.focused.set_priority(priority)
 
-    def set_effort(self, effort: int):
-        """Set the effort of the todo (1 is the lightest, 0 clears it)"""
+    def toggle_agent(self):
+        """Mark the todo as handed to an AI, or take the mark back off"""
         if isinstance(self.focused, TodosTree):
-            self.focused.set_effort(effort)
+            self.focused.toggle_agent()
 
     def set_project_color(self, color: int):
         """Color the project (the same key again takes the color back off)"""

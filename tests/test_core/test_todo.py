@@ -84,7 +84,7 @@ def test_comparable_fields():
         "description",
         "due",
         "scheduled",
-        "effort",
+        "agent",
         "recurrence",
         "priority",
         "pending",
@@ -255,7 +255,7 @@ def test_sort_invalid(create_project, create_todo):
         ),
         ("description", lambda x: x.description, None, False),
         ("recurrence", lambda x: x.recurrence, lambda x: x.recurrence, False),
-        ("effort", lambda x: x.effort, None, False),
+        ("agent", lambda x: x.agent, None, False),
         ("priority", lambda x: x.priority, None, False),
         ("due", lambda x: x.due, lambda x: x.due, True),
     ],
@@ -291,18 +291,16 @@ def test_completion_is_stamped(create_project):
     assert t.completed_at is None
 
 
-def test_effort_is_clamped(create_project):
+def test_agent_toggles(create_project):
     p = create_project()
     t = p.add_todo()
+    assert t.agent is False
 
-    t.set_effort(2)
-    assert t.effort == 2
+    t.toggle_agent()
+    assert t.agent is True
 
-    t.set_effort(99)
-    assert t.effort == 3
-
-    t.set_effort(-5)
-    assert t.effort == 0
+    t.toggle_agent()
+    assert t.agent is False
 
 
 def test_descendants(create_project):

@@ -171,6 +171,45 @@ def add_bin_columns(engine: Engine):
             connection.execute(text(statement))
 
 
+def migrate_effort_to_agent(engine: Engine):
+    """
+    Trade a todo table's legacy `effort` column for the `agent` flag.
+
+    Effort was an estimate of how big a job is, on a 1-3 scale; the column that
+    took its place says something else entirely -- that the task has been
+    handed to an AI which is off working on it -- so nothing is carried over
+    and every existing row starts out unflagged.
+
+    The old column has to go rather than being left lying there: it was written
+    `NOT NULL` with no default of its own, and the model no longer has anything
+    to say about it, so a single row added after the upgrade would be rejected
+    by a column nothing is filling in any more.
+    """
+
+    inspector = inspect(engine)
+    if "todo" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("todo")}
+
+    statements = []
+
+    if "agent" not in columns:
+        statements.append(
+            "ALTER TABLE todo ADD COLUMN agent BOOLEAN NOT NULL DEFAULT 0"
+        )
+
+    if "effort" in columns:
+        statements.append("ALTER TABLE todo DROP COLUMN effort")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
 def add_project_color_column(engine: Engine):
     """
     Add the `color` column to a project table written before it existed.
@@ -190,6 +229,56 @@ def add_project_color_column(engine: Engine):
 
     with engine.begin() as connection:
         connection.execute(text("ALTER TABLE project ADD COLUMN color INTEGER"))
+
+
+# Walks the project tree from its top level down, handing each project the
+# color of the one it is filed in. The anchor row of the recursion is a top
+# level project -- one whose parent is the root, or, defensively, one with no
+# parent at all -- and that is the only place a color is read from rather than
+# passed on. The root itself is kept out of the walk entirely: left in, it
+# would reach the top level projects a second time and hand them the color it
+# has never had, and each of them would then be in the walk twice over.
+SYNC_PROJECT_COLORS = """
+WITH RECURSIVE tree(id, color) AS (
+    SELECT child.id, child.color
+    FROM project AS child
+    LEFT JOIN project AS parent ON parent.id = child.parent_project_id
+    WHERE child.is_root = 0
+      AND (child.parent_project_id IS NULL OR parent.is_root = 1)
+
+    UNION ALL
+
+    SELECT child.id, tree.color
+    FROM project AS child
+    JOIN tree ON tree.id = child.parent_project_id
+)
+UPDATE project
+SET color = (SELECT color FROM tree WHERE tree.id = project.id)
+WHERE color IS NOT (SELECT color FROM tree WHERE tree.id = project.id)
+"""
+
+
+def sync_project_colors(engine: Engine):
+    """
+    Bring every sub project into line with the color of the project it is in.
+
+    A color labels a whole tree, and the model keeps it that way from here on.
+    A database written before that was the rule can still hold a sub project
+    painted a color of its own, so the rule is applied to what is already
+    there once on the way in. Idempotent: a tree that already agrees with
+    itself is left untouched.
+    """
+
+    inspector = inspect(engine)
+    if "project" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("project")}
+    if "color" not in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text(SYNC_PROJECT_COLORS))
 
 
 def delete_all_data(session: Session):

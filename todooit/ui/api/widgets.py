@@ -18,7 +18,7 @@ class TodoWidget(Enum):
     priority = "priority"
     recurrence = "recurrence"
     status = "status"
-    effort = "effort"
+    agent = "agent"
     note = "note"
 
 

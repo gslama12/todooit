@@ -280,12 +280,12 @@ class TodoStatusChanged(TodoChanged):
         self.new = new
 
 
-class TodoEffortChanged(TodoChanged):
+class TodoAgentChanged(TodoChanged):
     """
-    Emitted when user changes the effort of a todo
+    Emitted when a todo is handed to an AI, or taken back off one
     """
 
-    def __init__(self, old: Optional[int], new: Optional[int], todo: Todo) -> None:
+    def __init__(self, old: bool, new: bool, todo: Todo) -> None:
         super().__init__(todo)
         self.old = old
         self.new = new

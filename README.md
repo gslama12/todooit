@@ -12,7 +12,7 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Note markup** — `ctrl+e` emphasises in orange, delimited by zero-width marks so the words go loud with nothing at all around them; `ctrl+b` (or a typed `> `) sets a line off as a green quote, `ctrl+l` (or a typed `- `) bullets a line and `tab` / `shift+tab` nest it, `ctrl+t` closes a line off as a heading, and a typed `---` turns into a separator.
 - **Link opening** — `o` opens the link under the cursor, on a task row and inside a note alike.
 - **Priority `p0`-`p3`** — Todoist's scale, typed as a chord and shown as a colored checkbox rather than a column of its own.
-- **Effort `e0`-`e3`** — the same kind of scale for how big a job is, colored green through red.
+- **Agent flag `a`** — an hourglass in its own column on the tasks handed to an AI that is off working on them.
 - **Natural language dates** — due and scheduled dates are typed as words, shown with their day name, and colored green through red as they come closer.
 - **Recurrence on the scheduled date** — a recurring task moves its scheduled date on instead of carrying a due date.
 - **Projects as folders** — projects nest and count their children, and a nested task is only completed once all of its children are.

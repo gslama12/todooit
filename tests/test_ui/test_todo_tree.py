@@ -373,7 +373,7 @@ async def test_priority_keybinds():
         assert todo.priority == 0
 
 
-async def test_effort_keybinds():
+async def test_agent_keybind_toggles():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
 
@@ -382,15 +382,15 @@ async def test_effort_keybinds():
 
         todo = tree.current_model
         assert isinstance(todo, Todo)
-        assert todo.effort == 0
+        assert todo.agent is False
 
-        await pilot.press("e", "2")
+        await pilot.press("a")
         await pilot.pause()
-        assert todo.effort == 2
+        assert todo.agent is True
 
-        await pilot.press("e", "0")
+        await pilot.press("a")
         await pilot.pause()
-        assert todo.effort == 0
+        assert todo.agent is False
 
 
 async def test_status_change():
@@ -411,7 +411,12 @@ async def test_status_change():
         assert todo.status == "completed"
 
 
-async def test_effort_editing_needs_the_column():
+async def test_agent_column_is_never_typed_into():
+    """
+    The flag is turned on and off with a key, so the column turns an edit down
+    even with the column drawn and the cursor sitting on the row
+    """
+
     async with run_pilot() as pilot:
         app = pilot.app
         assert isinstance(app, Dooit)
@@ -425,18 +430,14 @@ async def test_effort_editing_needs_the_column():
         assert isinstance(todo, Todo)
 
         app.api.layouts.todo_layout = [TodoWidget.description]
-        assert not tree.start_edit("effort")  # column is not in the layout
+        assert not tree.start_edit("agent")  # column is not in the layout
 
         app.api.layouts.todo_layout = [
             TodoWidget.description,
-            TodoWidget.effort,
+            TodoWidget.agent,
         ]
-        tree.start_edit("effort")
-        await pilot.press("2")
-        await pilot.press("enter")
-        await pilot.pause()
-
-        assert todo.effort == 2
+        assert not tree.start_edit("agent")  # and it is not editable either
+        assert todo.agent is False
 
 
 async def test_recurrence_change():

@@ -636,14 +636,13 @@ class QuickAddScreen(BaseScreen, ModalScreen):
                 Text(f"{TAG_MARKER}{label}", style=Style(color=theme.magenta))
             )
 
-        for name, value in (("p", spec.priority), ("e", spec.effort)):
-            if value:
-                chips.append(
-                    Text(
-                        f"{name}{value}",
-                        style=Style(color=theme.foreground2, bold=True),
-                    )
+        if spec.priority:
+            chips.append(
+                Text(
+                    f"p{spec.priority}",
+                    style=Style(color=theme.foreground2, bold=True),
                 )
+            )
 
         # The two dates side by side, in the order the row draws them, with
         # the deadline named: they are written the same way and read the same
@@ -785,7 +784,6 @@ class QuickAddScreen(BaseScreen, ModalScreen):
         todo.scheduled = spec.scheduled
         todo.due = spec.due
         todo.priority = spec.priority
-        todo.effort = spec.effort
         todo.save()
 
         return todo
