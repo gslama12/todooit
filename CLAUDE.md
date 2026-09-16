@@ -45,8 +45,25 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 - Don't read/edit files outside the current worktree unless asked.
 - `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are not shared between worktrees. DB migrations *are* shared project-wide (`docs/db.md`) - be careful running
   destructive ones from a feature worktree.
+- Every worktree gets its **own todooit instance** (database, cache and venv)
+  — see [Worktree instances](#worktree-instances). Use it for everything you
+  run; never touch the live instance or another worktree's.
 - If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, **never** Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
 - If you are on a Mac or Linux machine, you can use the regular shell.
+
+### Helper scripts
+
+Both live in the `dev` worktree and the user runs them from there. They are the
+user's tools, not yours — you never call them — but what they do decides where
+you put things:
+
+- `./test.sh <worktree>` launches the app from that worktree against that
+  worktree's instance, then returns to `dev`. This is how the user tries out
+  your change, and it opens **the same database you seeded**.
+- `./clean.sh` deletes every `feat-*`/`fix-*` worktree that has no uncommitted
+  changes, force-deletes its branch, and removes its instance directory.
+  Uncommitted work is always kept, so leaving your change uncommitted (as
+  required above) also keeps it safe from cleanup.
 
 
 ## Data locations
@@ -61,10 +78,47 @@ todooit's data is separate from any dooit install (paths resolved in
 Seeded 2026-09-09 from the old dooit database; the two have diverged since.
 Nothing here touches `~/.local/share/dooit/`.
 
-**Dev instance:** `TODOOIT_HOME=~/.local/share/todooit-dev` (shorthand:
-`todooit --dev`) relocates DB/cache/config into one self-contained directory,
-so development never touches the live data. Unset, `todooit` is the real
-instance.
+**Dev instance:** `TODOOIT_HOME=<dir>` relocates DB/cache/config into one
+self-contained directory, so development never touches the live data. Unset,
+`todooit` is the real instance. `todooit --dev` is shorthand for
+`~/.local/share/todooit-dev`, but an explicit `TODOOIT_HOME` always wins over
+it — which is what gives each worktree an instance of its own.
+
+### Worktree instances
+
+One instance per worktree, named after the worktree directory:
+
+```
+~/.local/share/todooit-wt/<worktree>/     # = TODOOIT_HOME
+    todooit.db                            # that worktree's database
+    cache/
+    venv/                                 # that worktree's uv environment
+```
+
+**Derive it, never hardcode it.** From inside a worktree:
+
+```bash
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+```
+
+Export those two at the top of every shell session you work in, and every
+`uv run`, `uv sync`, seeding script and manual launch below lands in the right
+place. Both directories are created on first use — there is nothing to set up
+— and `./clean.sh` deletes them along with the worktree.
+
+Two things that are easy to get wrong:
+
+- **Never use the bare `~/.local/share/todooit-dev`.** It is shared across
+  branches, so it carries whatever schema the last branch left behind, and a
+  branch that changes the model will meet a database that does not match it.
+  Plain `todooit --dev` with no `TODOOIT_HOME` set lands there — don't run it.
+- **Keep the venv off `/mnt/c`.** `UV_PROJECT_ENVIRONMENT` points into the
+  instance dir on ext4 for a reason: installing onto the drvfs mount is slow
+  and can silently truncate packages, producing import errors (`module 'click'
+  has no attribute 'group'`) that `uv sync` will not repair, because the
+  recorded metadata still looks complete. A `.venv` inside a worktree is a
+  leftover from the old layout; ignore it.
 
 ## Testing a change
 
@@ -72,10 +126,16 @@ Python tooling only works from WSL, not Windows.
 
 ```bash
 wsl
-uv venv .venv && source .venv/bin/activate    # first time only
-uv pip install -e .                           # first time only
-todooit                                       # launches the real instance — live DB!
+cd <the worktree you are working in>
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+
+uv run todooit --dev     # this worktree's code against this worktree's database
 ```
+
+The first `uv run` builds the venv; after that it is instant. Nothing there
+touches the live instance — that is plain `todooit` with `TODOOIT_HOME` unset,
+which you should not run.
 
 Exercise every change in that running instance — type-checking alone doesn't
 count as done.
@@ -89,20 +149,27 @@ VIRTUAL_ENV=/tmp/ttest uv pip install -e . pytest pytest-asyncio faker
 /tmp/ttest/bin/python -m pytest tests -q
 ```
 
+`/tmp` is inside WSL, so that venv sits on ext4 as well — keep it there rather
+than in the worktree, for the same reason.
+
 **Only run tests relevant to the change** — not the whole suite — for small
 changes.
 
 ## Every change ships a demo
 
-Seed a project into the **dev** database (never live) that exercises the new
-code path, named after the change (e.g. `demo: priority icons`). Refresh/
-replace it when iterating rather than piling up new ones. Seed via the API,
-not raw SQL:
+Seed a project into **this worktree's** database (never live) that exercises
+the new code path, named after the change (e.g. `demo: priority icons`).
+Refresh/replace it when iterating rather than piling up new ones. This is the
+same database the user opens with `./test.sh <worktree>`, so what you seed is
+exactly what they will see. Seed via the API, not raw SQL:
 
 ```bash
-TODOOIT_HOME=~/.local/share/todooit-dev python - <<'PY'
+export TODOOIT_HOME="$HOME/.local/share/todooit-wt/$(basename "$PWD")"
+export UV_PROJECT_ENVIRONMENT="$TODOOIT_HOME/venv"
+
+uv run python - <<'PY'
 from todooit.api import manager, Project
-manager.connect()               # no arg -> resolves to the dev database
+manager.connect()               # no arg -> resolves to $TODOOIT_HOME's database
 
 p = Project()
 p.save()
@@ -116,8 +183,12 @@ t.save()
 PY
 ```
 
-Then launch `todooit --dev` and confirm it. Before touching any DB any other
-way, copy it to `/tmp` first.
+Then launch `uv run todooit --dev` and confirm it. Before touching any DB any
+other way, copy it to `/tmp` first.
+
+If a schema change leaves the instance database stale, throw it away instead of
+migrating it by hand: `rm -rf "$TODOOIT_HOME"`, then re-seed. It is disposable
+by design, which is the whole point of one per worktree.
 
 ## Every new feature needs tests
 
