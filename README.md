@@ -23,6 +23,8 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 
 ## Install & run
 
+> NOTE: Todooit was only tested on WezTerm. Other terminals may not show some of the  cons correctly.
+
 Pick whichever environment manager you already use; each installs the app editable, so editing the source is editing the running app.
 
 With [uv](https://docs.astral.sh/uv/):
@@ -48,6 +50,8 @@ conda create -n todooit python=3.12 && conda activate todooit
 pip install -e .
 todooit
 ```
+
+> Supported Operating Systems: MacOS, Linux, WSL.
 
 ## Layout
 
