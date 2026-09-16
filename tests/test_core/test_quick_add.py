@@ -17,18 +17,16 @@ def test_a_bare_line_is_all_description():
 
     assert spec.description == "call the dentist"
     assert spec.project == ""
-    assert spec.labels == []
     assert spec.priority == 0
     assert spec.scheduled is None
     assert spec.due is None
 
 
 def test_the_whole_sentence_at_once():
-    spec = parse_quick_add("call the dentist #Home @phone p1 tomorrow", NOW)
+    spec = parse_quick_add("call the dentist #Home p1 tomorrow", NOW)
 
     assert spec.description == "call the dentist"
     assert spec.project == "Home"
-    assert spec.labels == ["phone"]
     assert spec.priority == 1
     assert spec.scheduled == datetime(2026, 9, 3)
 
@@ -48,36 +46,15 @@ def test_only_one_project():
         parse_quick_add("x #a #b", NOW)
 
 
-def test_labels_are_stored_as_tags():
-    spec = parse_quick_add("call mum @family @phone", NOW)
+def test_an_at_is_an_ordinary_word():
+    spec = parse_quick_add("mail bob@example.com about @work", NOW)
 
-    assert spec.labels == ["family", "phone"]
-    assert spec.described == "call mum @family @phone"
-
-
-def test_duplicate_labels_collapse():
-    spec = parse_quick_add("x @a @a", NOW)
-    assert spec.labels == ["a"]
-
-
-def test_an_at_inside_a_word_is_not_a_label():
-    spec = parse_quick_add("mail bob@example.com", NOW)
-
-    assert spec.labels == []
-    assert spec.description == "mail bob@example.com"
-
-
-def test_a_label_must_be_one_word():
-    with raises(QuickAddError):
-        parse_quick_add('x @"two words"', NOW)
+    assert spec.description == "mail bob@example.com about @work"
 
 
 def test_a_bare_marker_is_an_error():
     with raises(QuickAddError):
         parse_quick_add("buy milk #", NOW)
-
-    with raises(QuickAddError):
-        parse_quick_add("buy milk @", NOW)
 
 
 def test_scales():
@@ -194,14 +171,6 @@ def test_a_task_needs_a_description():
 
     with raises(QuickAddError):
         parse_quick_add("", NOW)
-
-
-def test_described_appends_the_labels():
-    spec = parse_quick_add("call mum @family", NOW)
-    assert spec.described == "call mum @family"
-
-    spec = parse_quick_add("call mum", NOW)
-    assert spec.described == "call mum"
 
 
 def test_split_path():

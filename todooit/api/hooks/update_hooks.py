@@ -104,12 +104,14 @@ def update_children_to_pending(_, connection, target: Todo):
 
     The whole subtree at once rather than one level of it: what is done is the
     task, and a task is undone the moment any part of it is.
+
+    Only the untick itself does this, and not every later edit that happens
+    to touch a pending todo: a step written into a task whose steps are all
+    done leaves the task pending exactly as it was, and would otherwise take
+    the finished work down with it.
     """
 
-    if not target.pending:
-        return
-
-    if any(todo.pending for todo in target.todos):
+    if not target.pending or not _changed(target, "pending"):
         return
 
     _set_pending(connection, list(_descendants(target)))
@@ -141,42 +143,6 @@ def update_parent_to_pending(mapper, connection, target: Todo):
         return
 
     _set_pending(connection, list(_ancestors(target)))
-
-
-@event.listens_for(Todo, "before_update")
-def update_parent_to_completed(mapper, connection, target: Todo):
-    """
-    Ticking off the last of a todo's children ticks the todo itself
-
-    Carried on up for as long as it keeps being the last one: finishing the
-    final step of the final part of something finishes the whole of it, and
-    the whole of it is stamped with the moment that step was done.
-    """
-
-    if target.pending or not target.parent_todo:
-        return
-
-    stamp = target.completed_at or datetime.now()
-
-    # The rows written here are only written straight to the database, so the
-    # ones already dealt with still read as pending in the session: they are
-    # kept track of rather than read back
-    completed = {target.id}
-
-    for node in _ancestors(target):
-        if any(
-            child.pending and child.id not in completed for child in node.todos
-        ):
-            break
-
-        # A task that repeats comes round again rather than finishing, and
-        # nothing above an unfinished task is finished either
-        if node.recurrence is not None:
-            _bounce_recurrence(connection, node, stamp)
-            break
-
-        _set_completed(connection, [node], stamp)
-        completed.add(node.id)
 
 
 @event.listens_for(Todo, "before_insert")

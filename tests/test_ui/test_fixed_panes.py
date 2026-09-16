@@ -525,6 +525,8 @@ async def test_unticking_a_step_in_completed_goes_to_the_step():
         await pilot.press("N")
         await commit_line(pilot, "the step")
 
+        # The task is what gets ticked; the step goes with it
+        await pilot.press("k")
         await pilot.press("c")
         await pilot.pause()
 

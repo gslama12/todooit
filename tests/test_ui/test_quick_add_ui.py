@@ -56,15 +56,13 @@ async def test_quick_add_names_another_project():
 
         # The panes sit on "work"; the line files it under "inbox"
         await open_quick_add(pilot)
-        await pilot.press(*list("file taxes #inbox @paper"))
+        await pilot.press(*list("file taxes #inbox"))
         await pilot.press("enter")
         await pilot.pause()
 
         (todo,) = Todo.all()
         assert todo.parent_project.description == "inbox"
-        # The label rides along in the description, as a tag
-        assert todo.description == "file taxes @paper"
-        assert todo.tags == ["@paper"]
+        assert todo.description == "file taxes"
 
 
 async def test_quick_add_asks_before_building_a_project():

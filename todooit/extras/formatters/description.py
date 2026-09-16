@@ -1,6 +1,5 @@
 from typing import Optional
-from todooit.api import Todo
-from rich.style import Style, StyleType
+from rich.style import Style
 from todooit.ui.api import DooitAPI
 from rich.text import Text
 from todooit.ui.api import extra_formatter
@@ -35,24 +34,3 @@ def description_highlight_link(color: Optional[str] = None):
         return text.markup
 
     return wrapper
-
-
-def description_highlight_tags(color: StyleType = "", fmt=" {}"):
-    @extra_formatter
-    def wrapper(value: str, _: Todo, api: DooitAPI):
-        """
-        Highlight tags in the description.
-        """
-
-        regex = re.compile(r"@\w+")
-        style = color or api.vars.theme.primary
-
-        def highlight(match: re.Match) -> str:
-            formatted_tag = fmt.format(match.group()[1:])  # strip the @ symbol
-            return Text.from_markup(formatted_tag, style=style).markup
-
-        return regex.sub(highlight, value)
-
-    return wrapper
-
-

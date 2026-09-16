@@ -9,11 +9,11 @@ def test_todo_status_update_children(todo1):
     for child_todo in todo1.todos:
         child_todo.toggle_complete()
 
-    assert not todo1.is_pending
+    assert todo1.is_pending
 
 
-def test_ticking_the_last_step_ticks_the_whole_chain(create_project):
-    """Finishing the final step of the final part finishes the whole task"""
+def test_ticking_the_last_step_leaves_the_task_to_be_ticked(create_project):
+    """Finishing every step of a task is not finishing the task"""
 
     p = create_project()
     task = p.add_todo()
@@ -26,8 +26,8 @@ def test_ticking_the_last_step_ticks_the_whole_chain(create_project):
     assert task.is_pending
 
     step2.toggle_complete()
-    assert part.is_completed
-    assert task.is_completed
+    assert part.is_pending
+    assert task.is_pending
 
 
 def test_ticking_a_parent_ticks_everything_underneath(create_project):
@@ -96,14 +96,31 @@ def test_unticking_leaves_finished_siblings_alone(create_project):
     step1 = task.add_todo()
     step2 = task.add_todo()
 
-    step1.toggle_complete()
-    step2.toggle_complete()
-    assert task.is_completed
+    task.toggle_complete()
+    assert step1.is_completed and step2.is_completed
 
     step1.toggle_complete()
 
     assert task.is_pending
     assert step2.is_completed
+
+
+def test_a_new_step_leaves_the_finished_ones_alone(create_project):
+    """Writing a step into a task is not unticking the task"""
+
+    p = create_project()
+    task = p.add_todo()
+    done = task.add_todo()
+    done.toggle_complete()
+
+    # Every step there is has been done, and the task is still pending: the
+    # next step written into it must not take the finished one down with it
+    fresh = task.add_todo()
+    fresh.save()
+
+    assert done.is_completed
+    assert fresh.is_pending
+    assert task.is_pending
 
 
 def test_recurrence_forces_pending(create_project):
@@ -191,10 +208,10 @@ def test_editing_a_recurring_todo_with_no_day_leaves_it_undated(
     assert step.scheduled == datetime(2026, 6, 2)
 
 
-def test_last_step_bounces_the_recurring_task_it_finishes(
+def test_last_step_leaves_the_recurring_task_on_its_day(
     create_project, session
 ):
-    """A repeating task carried off by its last step comes round again there"""
+    """A repeating task is not moved on by a step of it being ticked"""
 
     p = create_project()
     task = p.add_todo()
@@ -210,33 +227,12 @@ def test_last_step_bounces_the_recurring_task_it_finishes(
 
     assert task.is_pending
     assert task.completed_at is None
-    assert task.scheduled == datetime(2026, 1, 4)
+    assert task.scheduled == datetime(2026, 1, 1)
 
     task.set_priority(1)
     session.expire_all()
 
-    assert task.scheduled == datetime(2026, 1, 4)
-
-
-def test_a_bounced_task_does_not_finish_the_task_above_it(
-    create_project, session
-):
-    """Nothing above a task that has come round again is finished either"""
-
-    p = create_project()
-    outer = p.add_todo()
-    task = outer.add_todo()
-    task.recurrence = timedelta(days=3)
-    task.save()
-
-    step = task.add_todo()
-    step.save()
-
-    step.toggle_complete()
-    session.expire_all()
-
-    assert task.is_pending
-    assert outer.is_pending
+    assert task.scheduled == datetime(2026, 1, 1)
 
 
 def test_ticking_a_task_bounces_the_repeating_steps_inside_it(

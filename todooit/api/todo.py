@@ -240,10 +240,6 @@ class Todo(DooitModel):
         return self.parent_todo is not None
 
     @property
-    def tags(self) -> List[str]:
-        return [i for i in self.description.split() if i[0] == "@"]
-
-    @property
     def status(self) -> str:
         if self.is_completed:
             return "completed"

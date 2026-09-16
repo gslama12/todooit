@@ -6,7 +6,6 @@ from todooit.api import Todo, Project
 from todooit.extras.formatters import (
     agent_icon,
     description_highlight_link,
-    description_highlight_tags,
     due_danger_today,
     recurrence_icon,
 )
@@ -739,11 +738,8 @@ def formatter_setup(api: DooitAPI, _):
     api.formatter.todos.status.add(todo_status_formatter)
     api.formatter.todos.description.add(todo_description_formatter)
 
-    # Tags and URLs are picked out of the raw description, so they have to run
-    # before the child count appends its own markup: added last => runs first.
-    # The link goes on ahead of the tags, so an "@" inside a URL is already
-    # sealed inside the link span by the time the tag regex comes past.
-    api.formatter.todos.description.add(description_highlight_tags())
+    # URLs are picked out of the raw description, so this has to run before
+    # the child count appends its own markup: added last => runs first.
     api.formatter.todos.description.add(description_highlight_link())
 
     # Every date column is built the same way, out of the same formatters. The
