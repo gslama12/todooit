@@ -545,10 +545,8 @@ def key_setup(api: DooitAPI, _):
     # Groups show up as sections in the help screen, in this order
     NAVIGATION = "Navigation"
     EDITING = "Editing"
-    PRIORITY = "Priority"
     MOVING = "Moving & Clipboard"
     VIEW = "Search & View"
-    APP = "App"
 
     api.keys.set("j", api.focus_projects, group=NAVIGATION)
     api.keys.set("ö", api.focus_todos, group=NAVIGATION)
@@ -616,7 +614,7 @@ def key_setup(api: DooitAPI, _):
             f"p{priority}",
             partial(api.set_priority, priority),
             description=PRIORITY_HELP,
-            group=PRIORITY,
+            group=EDITING,
             label=PRIORITY_LABEL,
         )
 
@@ -669,6 +667,9 @@ def key_setup(api: DooitAPI, _):
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
     api.keys.set("q", api.toggle_row_shading, group=VIEW)
+    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
+    # else, and nothing else quits
+    api.keys.set("<ctrl+q>", api.quit, group=VIEW)
 
     # The order a project is read in, typed as one chord per order: shifted
     # "S" then the shifted initial of the thing sorted by. Shifted, so that
@@ -694,12 +695,9 @@ def key_setup(api: DooitAPI, _):
         "?",
         lambda: show_help_while_held(api),
         description="Show the help screen (while held)",
-        group=APP,
+        group=VIEW,
         hidden=True,
     )
-    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
-    # else, and nothing else quits
-    api.keys.set("<ctrl+q>", api.quit, group=APP)
 
 
 @subscribe(Startup)

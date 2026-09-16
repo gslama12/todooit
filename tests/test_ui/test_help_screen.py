@@ -42,10 +42,8 @@ async def test_help_lists_the_config_groups_in_order():
         assert app.api.keys.groups == [
             "Navigation",
             "Editing",
-            "Priority",
             "Moving & Clipboard",
             "Search & View",
-            "App",
         ]
 
 
