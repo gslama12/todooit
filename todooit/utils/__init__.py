@@ -3,7 +3,19 @@ from .css_manager import CssManager
 from .colors import blend
 from .day_names import DATE_FORMAT, WEEKDAY_NAMES, day_label
 from .clipboard import copy_text, paste_text
-from .links import Link, find_links, first_link, link_at, link_label, open_url
+from .links import (
+    TITLE_MAX,
+    Link,
+    find_links,
+    first_link,
+    fold_links,
+    folded_link_at,
+    link_at,
+    link_label,
+    link_title,
+    open_url,
+    stored_range,
+)
 
 __all__ = [
     "parse",
@@ -15,10 +27,15 @@ __all__ = [
     "day_label",
     "copy_text",
     "paste_text",
+    "TITLE_MAX",
     "Link",
     "find_links",
     "first_link",
+    "fold_links",
+    "folded_link_at",
     "link_at",
     "link_label",
+    "link_title",
     "open_url",
+    "stored_range",
 ]
