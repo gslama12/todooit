@@ -1,72 +1,44 @@
 #!/usr/bin/env bash
-# Launch todooit from one worktree against that worktree's own dev database,
-# then drop you back in dev. Run under WSL.
+# Launch todooit from the worktree you are standing in, against that worktree's
+# own dev database and venv. Run under WSL, from inside the worktree.
 #
-#   ./test.sh feat-xy      run the app with feat-xy's code and feat-xy's db
-#   ./test.sh              same, for the dev worktree
+#   cd <repo>.git/feat-xy && bash test.sh
 #
 # Each worktree gets an instance dir under ~/.local/share/todooit-wt/ holding
 # both its database and its venv; clean.sh deletes them along with the
 # worktree. The first run for a worktree builds the venv, so it is slower.
 #
-# Tab completion over worktree names: add this line to ~/.bashrc
-#   source /mnt/c/Users/slamanigg/Documents/todooit.git/dev/test.sh
-# (sourcing only registers the completion, it never launches the app)
+# It takes no arguments and leaves you where you are - no cd back to dev.
+# (An old `source .../test.sh` line in ~/.bashrc registered tab completion for
+# the worktree argument. There is no argument anymore; the line is harmless but
+# can go.)
 
-# Everything above the sourced-check runs in your interactive shell too, so it
-# stays namespaced and sets no shell options.
-_TODOOIT_REPO="$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
-
-_todooit_worktrees() {
-  # Paths under the bare repo only, so the repo itself is not offered.
-  git -C "$_TODOOIT_REPO" worktree list --porcelain |
-    sed -n "s|^worktree $_TODOOIT_REPO/||p"
-}
-
-_todooit_test_complete() {
-  local cur="${COMP_WORDS[COMP_CWORD]}"
-  mapfile -t COMPREPLY < <(compgen -W "$(_todooit_worktrees)" -- "$cur")
-}
-
-# Sourced from .bashrc: just wire up completion and get out.
+# Sourced, not run: do nothing at all rather than launching the app.
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then
-  complete -F _todooit_test_complete test.sh ./test.sh
   return 0
 fi
 
 set -euo pipefail
 
-REPO="$_TODOOIT_REPO"                     # bare repo holding all the worktrees
-DEV="$REPO/dev"
-WT_HOMES="$HOME/.local/share/todooit-wt"  # one todooit instance per worktree
-START="$PWD"
+WT_HOMES="$HOME/.local/share/todooit-wt"   # one todooit instance per worktree
 
-name="${1:-dev}"
-wt="$REPO/$name"
-if [ ! -d "$wt" ]; then
-  echo "no worktree '$name' in $REPO" >&2
-  echo "try: $(_todooit_worktrees | tr '\n' ' ')" >&2
-  exit 1
+if [ "$#" -gt 0 ]; then
+  echo "test.sh takes no arguments - cd into the worktree and run it there" >&2
+  exit 2
 fi
 
+wt="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+  echo "not inside a worktree - cd into one (e.g. $PWD/feat-xy) first" >&2
+  exit 1
+}
+cd "$wt"
+
+name="$(basename "$wt")"
 home="$WT_HOMES/$name"
 mkdir -p "$home"
 
-# Back to dev whatever happens - a crash, or you quitting the TUI. The cd only
-# sticks if this script was sourced, so report what is actually true.
-back_to_dev() {
-  cd "$DEV"
-  if [ "$START" -ef "$DEV" ]; then
-    echo "back in $DEV"
-  else
-    echo "done - run 'cd $DEV' to get back to dev"
-  fi
-}
-trap back_to_dev EXIT
-
 echo "running $name  (instance $home)"
-cd "$wt"
 # The venv lives on ext4, not beside the worktree: installing onto the /mnt/c
 # drvfs mount is slow and silently truncates packages. TODOOIT_HOME beats
 # --dev, so this is $name's own database, not the shared todooit-dev one.
-UV_PROJECT_ENVIRONMENT="$home/venv" TODOOIT_HOME="$home" uv run todooit --dev
+exec env UV_PROJECT_ENVIRONMENT="$home/venv" TODOOIT_HOME="$home" uv run todooit --dev

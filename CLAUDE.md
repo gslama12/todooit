@@ -35,7 +35,7 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 - For every user session you will work only **inside** a defined worktree that will be specified and created by the user.
 - If the user does not specify a worktree path in the request, you 
   are allowed to create a worktree yourself with: `git worktree add <branch> -b <branch> dev`. Pick a short, descriptive branch name from the task (e.g. `fix-priority-icons`,
-  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch. Never implement directly in `dev` or `main`!
+  `feat-recurring-todos`). Branches always branch from `dev`, never `main` or another feature branch. Never implement directly in `dev` or `main`.
 - Assume you're in one worktree, not the main checkout - check with
   `git worktree list` / `git branch --show-current` before assuming repo state.
 - Never switch branches inside a worktree: each is pinned to one branch. If
@@ -53,17 +53,24 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 
 ### Helper scripts
 
-Both live in the `dev` worktree and the user runs them from there. They are the
-user's tools, not yours — you never call them — but what they do decides where
-you put things:
+All three are tracked in the repo, so every worktree carries its own copy.
+They are the user's tools, not yours — you never call them — but what they do
+decides where you put things:
 
-- `./test.sh <worktree>` launches the app from that worktree against that
-  worktree's instance, then returns to `dev`. This is how the user tries out
-  your change, and it opens **the same database you seeded**.
-- `./clean.sh` deletes every `feat-*`/`fix-*` worktree that has no uncommitted
-  changes, force-deletes its branch, and removes its instance directory.
+- `bash test.sh`, run **from inside a worktree** with no arguments, launches
+  the app from that worktree against that worktree's instance and leaves the
+  user standing there. This is how the user tries out your change, and it
+  opens **the same database you seeded**.
+- `bash clean.sh`, run from anywhere inside the repo, deletes every
+  `feat-*`/`fix-*` worktree that has no uncommitted changes, force-deletes its
+  branch, and removes its instance directory; it prints the plan as a table
+  and aborts untouched if the directory it was run from is on the remove list.
   Uncommitted work is always kept, so leaving your change uncommitted (as
   required above) also keeps it safe from cleanup.
+- `bash push.sh`, run **from inside a worktree**, stages and commits
+  everything there, merges the current `origin/dev` into the branch, and
+  pushes after asking; on conflicts it stops and lists them. This is how the
+  user ships your change — you still never commit yourself.
 
 
 ## Data locations
@@ -160,7 +167,7 @@ changes.
 Seed a project into **this worktree's** database (never live) that exercises
 the new code path, named after the change (e.g. `demo: priority icons`).
 Refresh/replace it when iterating rather than piling up new ones. This is the
-same database the user opens with `./test.sh <worktree>`, so what you seed is
+same database the user opens with `bash test.sh` in this worktree, so what you seed is
 exactly what they will see. Seed via the API, not raw SQL:
 
 ```bash
