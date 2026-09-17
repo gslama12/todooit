@@ -17,6 +17,7 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Recurrence on the scheduled date** — a recurring task moves its scheduled date on instead of carrying a due date.
 - **Projects as folders** — projects nest and count their children, and a task is ticked off by hand rather than by its last step being done.
 - **Moving tasks** — `I` / `U` file a task under the one above it or pull it back out, `ctrl+c` / `ctrl+v` copy and paste through the system clipboard, and `ctrl+n` takes a task's note without opening it.
+- **Undo / redo `ctrl+z` / `ctrl+y`** — every edit either pane can make, walked back one key at a time and forward again: a rename, a priority, a task in the Bin, a task deleted for good, a whole project dropped with its work scattered into the Bin. The rows themselves are what is kept, so a key that moved half the tree comes back whole.
 - **Sorting** — `SP`, `SD`, `SS` read a project by priority, due date or scheduled date.
 - **Help screen** — `?` held down shows every keybind, grouped by what it is for.
 - **Reworked look** — Tokyo Night colors, a status bar with the current mode, icons, headers, rounded lines, alternating row shading (`q`), and completed tasks struck through and grayed out.

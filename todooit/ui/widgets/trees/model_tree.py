@@ -193,6 +193,24 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self.refresh()
 
+    def flash_row_if_shown(self, _id: str) -> bool:
+        """
+        Lights a row up, if this pane happens to have one for it
+
+        What is being pointed at can come from outside the pane — a history
+        step writes rows wherever the key that made them was pressed — and a
+        pane with no row for one of them has nothing to light up rather than
+        a fade to run over a row that is not there.
+        """
+
+        try:
+            self.get_option_index(_id)
+        except OptionDoesNotExist:
+            return False
+
+        self.flash_row(_id)
+        return True
+
     def _fade_rows(self) -> None:
         """
         Takes every flashing row one step closer to the background it sits on
@@ -886,8 +904,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         """
         Deletes the highlighted item outright, with everything under it
 
-        The one way something leaves the database, and the only edit that
-        cannot be taken back — so it is the one that asks.
+        The one way something leaves the database, rather than going to the
+        Bin to be thought about later — so it is the one that asks. Ctrl+z
+        still reaches it while the app is open; quitting is what makes it
+        final.
         """
 
         self._remove_node()

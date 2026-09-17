@@ -605,6 +605,17 @@ def key_setup(api: DooitAPI, _):
     # the finger — it has to be typed twice over, the way "yy" does
     api.keys.set("YY", api.empty_bin, group=EDITING)
 
+    # Taking back the last thing that happened, on the keys the rest of the
+    # desktop takes things back with — the same two the note window already
+    # answers to, so that ctrl+z means one thing wherever it is pressed. Not
+    # vim's "u": that is the key which fetches a task back out of the Bin, and
+    # it was here first.
+    #
+    # What they walk back is every edit either pane can make, one key at a
+    # time, however much of the tree that key moved.
+    api.keys.set("<ctrl+z>", api.undo, group=EDITING)
+    api.keys.set("<ctrl+y>", api.redo, group=EDITING)
+
     # A scale is one thing to learn, not four, so the whole run of digits is
     # listed as the single row it reads as. The keys are still set one at a
     # time; it is only the help screen that is told to write them as a range.

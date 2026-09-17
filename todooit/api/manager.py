@@ -11,6 +11,13 @@ class Manager:
     Class for managing sqlalchemy sessions
     """
 
+    def __init__(self) -> None:
+        # Counts the commits that have gone through here, so that anything
+        # watching for a change can ask whether there has been one without
+        # reading the database to find out. The undo history is what it is
+        # for: it looks after every key, and most keys write nothing.
+        self.revision = 0
+
     def connect(self, path: Optional[str] = None):
         """
         Connect to database using a file path
@@ -65,6 +72,11 @@ class Manager:
         if current_last_modified and self._db_last_modified != current_last_modified:
             self._db_last_modified = current_last_modified
             manager.session.expire_all()
+
+            # Written by somebody else, but written all the same: anything
+            # measuring against the last commit has to know the rows it was
+            # holding are not the rows that are there now
+            self.revision += 1
             return True
         return False
 
@@ -78,6 +90,7 @@ class Manager:
 
     def commit(self):
         self.session.commit()
+        self.revision += 1
         self._db_last_modified = self._get_db_last_modified()
 
 

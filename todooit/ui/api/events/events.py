@@ -356,6 +356,20 @@ class StartFieldEdit(DooitEvent):
         self.column = column
 
 
+class HistoryStep(DooitEvent):
+    """
+    Emitted when the user wants the last change taken back, or put back
+
+    The step itself is not taken here: a change can drop the project a pane is
+    built around, and only the screen that holds the panes can let go of one.
+    So the key says which way to walk and the screen does the walking.
+    """
+
+    def __init__(self, forward: bool) -> None:
+        super().__init__()
+        self.forward = forward
+
+
 class QuitApp(DooitEvent):
     """
     Internally used Quit Event

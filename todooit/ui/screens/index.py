@@ -5,7 +5,15 @@ from sqlalchemy.orm.attributes import get_history
 from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher
-from todooit.api import BIN, COMPLETED, TODAY, Todo, Project, fixed_project_from_key
+from todooit.api import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    Restored,
+    Todo,
+    Project,
+    fixed_project_from_key,
+)
 from todooit.api.model import DooitModel
 from todooit.ui.api.events import (
     DooitEvent,
@@ -28,6 +36,7 @@ from todooit.ui.api.events import (
     ProjectSelected,
     RevealTodo,
     GotoFixedProject,
+    HistoryStep,
     SpawnHelp,
     SpawnMove,
     SpawnNote,
@@ -44,6 +53,12 @@ from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
 from .search import SearchScreen, task_root
+
+
+# How many rows one history step is willing to point out one at a time.
+# Past that the bar has already said how much moved, and panes lighting up
+# from top to bottom say less than the count does.
+FLASH_LIMIT = 5
 
 
 class DualSplit(Container):
@@ -102,10 +117,100 @@ class MainScreen(BaseScreen):
         # wants the character that was pressed, not the name of the key
         if self.app.bar_switcher.is_focused:
             await self.app.bar_switcher.handle_keypress(key)
-            return True
+        else:
+            await self.api.handle_key(key)
 
-        await self.api.handle_key(key)
+        self.record_change()
         return True
+
+    @property
+    def mid_edit(self) -> bool:
+        """
+        Whether a row is being typed into right now, in any of the panes
+
+        Asked of the trees rather than of the focus: an edit on a column the
+        pane has no room for is drawn in the bar, and the bar is what holds
+        the focus while it runs, but the edit itself is still the tree's.
+        """
+
+        return any(tree.is_editing for tree in self.query(ModelTree))
+
+    def record_change(self) -> None:
+        """
+        Hands the history whatever the key just pressed left different
+
+        Nothing is recorded in the middle of an edit. A new row is written to
+        the database the moment it is made — before it has been given a name
+        — so a change taken at every keystroke would leave `n`, the name, and
+        the enter that keeps it as separate things to undo, when what was done
+        was to add one task.
+        """
+
+        if not self.mid_edit:
+            self.api.history.record()
+
+    @on(events.ScreenResume)
+    def resumed(self, _: events.ScreenResume) -> None:
+        """
+        Records what a window that was open over the panes changed
+
+        The note, the one line entry and the move window all write to the
+        database and are gone by the time the panes are back, so their keys
+        never reached `handle_key` here. Coming back into view is the moment
+        there is something to record.
+        """
+
+        self.record_change()
+
+    @on(HistoryStep)
+    async def history_step(self, event: HistoryStep) -> None:
+        """
+        Walks one step back through the history, or one step forward
+        """
+
+        step = self.api.history.redo if event.forward else self.api.history.undo
+        restored = step()
+
+        if restored is None:
+            way = "redo" if event.forward else "undo"
+            self.api.notify(f"Nothing left to {way}", "warning")
+            return
+
+        await self.rebuild_after(restored)
+
+        done = "Redone" if event.forward else "Undone"
+        self.api.notify(f"{done} — {restored.summary()}")
+
+    async def rebuild_after(self, restored: Restored) -> None:
+        """
+        Puts the panes back together over the rows a history step left
+
+        The order is what matters. Nothing drawn from a row that has just left
+        the database can be kept — a renderer outliving its row is a row read
+        back out of a table it is no longer in — so the panes let go of those
+        first, the ones built around a project that is gone are dropped whole,
+        and only then is anything redrawn.
+        """
+
+        for tree in self.query(ModelTree):
+            tree.forget_rows(restored.gone)
+
+        for uuid in restored.gone:
+            await self.drop_project_pane(uuid)
+
+        for tree in self.query(ModelTree):
+            tree.force_refresh()
+
+        # A step can land in a pane that is not in front, or leave a row
+        # looking exactly as it did in the one that is; the rows it wrote are
+        # pointed out the same way a revived project is, while there are few
+        # enough of them for pointing to mean anything
+        touched = restored.touched
+
+        if len(touched) <= FLASH_LIMIT:
+            for tree in self.query(ModelTree):
+                for uuid in touched:
+                    tree.flash_row_if_shown(uuid)
 
     @on(BarNotification)
     def show_notification(self, event: BarNotification):
@@ -342,16 +447,23 @@ class MainScreen(BaseScreen):
 
     @on(ProjectRemoved)
     async def project_removed(self, event: ProjectRemoved):
+        await self.drop_project_pane(event.project.uuid)
+
+    async def drop_project_pane(self, uuid: str) -> None:
         """
         Drops the pane of a project that is gone
 
         Nothing highlights the pane back into place when the project it
         belongs to was the last one, so it is swapped for the dashboard rather
         than left showing (and collecting todos for) a deleted project.
+
+        Named by uuid rather than handed the project: a project taken away by
+        a history step is a row, not an object, by the time the pane it left
+        behind has to go.
         """
 
         switcher = self.query_one("#todo_switcher", expect_type=ContentSwitcher)
-        panes = switcher.query(f"#TodosTree_{event.project.uuid}")
+        panes = switcher.query(f"#TodosTree_{uuid}")
 
         if not panes:
             return

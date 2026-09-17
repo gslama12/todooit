@@ -1,10 +1,19 @@
 from typing import TYPE_CHECKING, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
 from todooit.ui.api.plug import PluginManager
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, binned_tasks, empty_bin
+from todooit.api import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    UPCOMING,
+    History,
+    binned_tasks,
+    empty_bin,
+)
 from .events import (
     DooitEvent,
     GotoFixedProject,
+    HistoryStep,
     ShowConfirm,
     SpawnQuickAdd,
     SpawnSearch,
@@ -53,6 +62,7 @@ class DooitAPI:
         self.bar = BarManager(self)
         self.vars = VarManager(self)
         self.dashboard = DashboardManager(self.app)
+        self.history = History()
 
         self.css.refresh_css()
 
@@ -332,6 +342,30 @@ class DooitAPI:
         for tree in self.app.screen.query(ModelTree):
             tree.forget_rows(gone)
             tree.force_refresh()
+
+    def undo(self):
+        """Take back the last change made in the panes"""
+
+        self._step_history(forward=False)
+
+    def redo(self):
+        """Put back the change that was last taken back"""
+
+        self._step_history(forward=True)
+
+    def _step_history(self, forward: bool) -> None:
+        """
+        Asks the screen to walk one step through the history
+
+        Nothing is written from here. A step can drop the project a pane was
+        built around, and the panes are the screen's — so the key says which
+        way, and the screen does it and then puts itself back together.
+        """
+
+        if self.app.bar_switcher.is_focused:
+            return
+
+        self.app.screen.post_message(HistoryStep(forward))
 
     def start_search(self):
         """Find a task anywhere in the tree and jump to it"""
