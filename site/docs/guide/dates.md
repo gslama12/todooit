@@ -1,0 +1,78 @@
+# Dates & recurrence
+
+A task carries two dates:
+
+- **Scheduled** (`s`) — the day you plan to work on it. Today and Upcoming are
+  built on this one.
+- **Due** (`d`) — the deadline.
+
+Both are typed as words and read the same way.
+
+## What you can type
+
+| Typed | Means |
+| --- | --- |
+| `today`, `tod` | today |
+| `tom`, `tmr`, `tmrw`, `tmw`, `tomorrow` | tomorrow |
+| `yesterday`, `yest`, `yd` | yesterday |
+| `friday`, `fri` | the coming friday (today counts) |
+| `next monday` | a week on from the coming monday |
+| `next week` | the monday that starts next week |
+| `next month`, `next year` | the 1st of it |
+| `weekend` | the coming saturday |
+| `weekday` | the next working day |
+| `end of month`, `eom` | the last day of this month |
+| `someday` | two months out |
+| `mid july` | the 15th |
+| `3d`, `2w`, `1mo`, `1y`, `+5d` | an offset from today |
+| `2h`, `30m` | an offset from the clock, right now |
+| `in 2 weeks`, `in three days` | the same, spelled out |
+| `19.07.`, `5.9`, `19.07.26` | day first, German style; the year may be left off |
+| `2026-09-05` | ISO |
+| `tom 16:00`, `friday at 4:30pm` | a date and a time |
+| `friday evening` | 19:00 — also `morning` 9, `noon`/`afternoon` 12, `night` 22 |
+| `none`, `never`, `no date`, `-` | clear the date |
+
+::: warning Watch out for two things
+`m` is **minutes**, not months — months are `mo`, to agree with the recurrence
+field. And `1600` is not a time: write `16:00`, or `16h` means sixteen hours
+from now.
+:::
+
+## How dates are drawn
+
+`Sa, 19.09.26`, with the time in parentheses when it is not midnight. A date
+that falls today shows a bold red **Today** instead.
+
+The color is the lead time: green when the task is done, red today or overdue,
+yellow within five working days, plain white beyond that. A calendar icon sits
+in front, and a different one once the date has passed.
+
+## The calendar picker
+
+Type `cal` into either date field and a month opens over the app.
+
+![The calendar picker](/screenshots/calendar.svg)
+
+| Key | What it does |
+| --- | --- |
+| `j` / `ö` (or `←` / `→`) | A day back / forward |
+| `k` / `l` (or `↑` / `↓`) | A week back / forward |
+| `J` / `Ö` (or `PgUp` / `PgDn`) | A month back / forward |
+| `t` | Back to today |
+| `enter` | Pick the day |
+| `escape` | Close the month, leaving the field mid-edit |
+
+Weeks start on Monday, the names are Austrian German, and the thirteen
+Austrian public holidays are drawn in red. A time the task already carried is
+kept.
+
+## Recurrence
+
+`r` sets an interval: `30m`, `2h`, `3d`, `4w` — a number and one of
+`m`/`h`/`d`/`w`.
+
+A recurring task repeats on its **scheduled** date, not its due date. Setting a
+recurrence on a task that had a due date moves that date over to become the
+first occurrence. Ticking the task off moves the scheduled date on by the
+interval and hands the task back, still pending.

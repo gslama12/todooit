@@ -1,5 +1,8 @@
 # todooit
 
+[![Docs](https://img.shields.io/badge/docs-todooit-7AA2F7?style=flat-square&logo=readthedocs&logoColor=white)](https://gslama12.github.io/todooit/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-9ECE6A?style=flat-square)](LICENSE)
+
 A beautiful, versatile todo app in your terminal for a keyboard based workflow. For those wanting a fancy TUI todo list that can do more than just add/complete tasks. Started as a fork of "Dooit" extended with many features of "Todoist".
 
 ## Added Features (inspired by Todoist)
