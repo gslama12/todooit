@@ -181,6 +181,12 @@ class DooitAPI:
 
         self.goto_fixed_project(BIN.key)
 
+    def goto_item(self):
+        """Jump to the highlighted task in the project it is filed under"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.goto_item()
+
     def move_down(self):
         """Move the cursor down in the focused list"""
 

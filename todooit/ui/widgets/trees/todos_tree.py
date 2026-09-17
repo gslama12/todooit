@@ -19,7 +19,7 @@ from todooit.api import (
     restore_todo,
     sort_todos,
 )
-from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
@@ -627,6 +627,35 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         assert isinstance(self.current_model, Todo)
 
         self.post_message(SpawnMove(self.current_model))
+
+    @require_highlighted_node
+    def goto_item(self):
+        """
+        Goes to the highlighted task where it is filed, and points it out
+
+        A pane draws work that lives elsewhere: the fixed projects gather it
+        out of the whole tree, and a project draws a block for every project
+        nested under it. The row is the same task either way, so the key walks
+        over to it -- its project opened, the tasks above it unfolded, the row
+        flashed -- which is the arrival the finder makes.
+
+        Pressed on a row that is already at home it says so rather than
+        flashing the row under the cursor: the pane it would go to is the one
+        it is in.
+        """
+
+        todo = self.current_model
+        assert isinstance(todo, Todo)
+
+        home = owning_project(todo)
+
+        if home is not None and home.uuid == self.model.uuid:
+            self.post_message(
+                BarNotification("This is the project it lives in", "info")
+            )
+            return
+
+        self.post_message(RevealTodo(todo))
 
     @require_highlighted_node
     def copy_note_to_clipboard(self):

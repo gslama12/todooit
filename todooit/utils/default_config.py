@@ -556,6 +556,12 @@ def key_setup(api: DooitAPI, _):
     api.keys.set("gu", api.goto_upcoming, group=NAVIGATION)
     api.keys.set("gc", api.goto_completed, group=NAVIGATION)
     api.keys.set("gb", api.goto_bin, group=NAVIGATION)
+    # The way back from a pane that gathered its rows from elsewhere: the task
+    # under the cursor, in the project it actually lives in. Among the other
+    # "g" jumps because it is one -- those name the pane to go to, this one
+    # lets the highlighted row name it -- and scoped to the tasks, since a
+    # project row is already standing in its own pane
+    api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
