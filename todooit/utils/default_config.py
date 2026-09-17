@@ -650,6 +650,11 @@ def key_setup(api: DooitAPI, _):
     # has levels to move between, so the projects pane leaves both alone
     api.keys.set("I", api.indent_todo, group=MOVING)
     api.keys.set("U", api.unindent_todo, group=MOVING)
+    # The move that crosses the whole tree rather than one step of it: the
+    # other three shift a task among the rows around it, and this one takes it
+    # out of the project altogether. Shifted "m", which is free over the tasks
+    # — plain "m" is the pinned note, and nothing else starts with either
+    api.keys.set("M", api.move_todo, group=MOVING, scope="todos")
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)

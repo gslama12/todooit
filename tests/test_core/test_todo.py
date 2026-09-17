@@ -426,3 +426,90 @@ def test_is_binned(create_project):
     move_todo_to_bin(t)
     assert t.is_binned
     assert t.binned_at is not None
+
+
+def test_move_to_lands_at_the_end_of_the_new_project(create_project):
+    here = create_project()
+    there = create_project()
+
+    first = there.add_todo()
+    first.description = "already there"
+    first.save()
+
+    moved = here.add_todo()
+    moved.description = "moved"
+    moved.save()
+
+    moved.move_to(there)
+
+    assert moved.parent_project == there
+    assert here.todos == []
+
+    ordered = sorted(there.todos, key=lambda t: t.order_index)
+    assert [t.description for t in ordered] == ["already there", "moved"]
+
+
+def test_move_to_carries_the_steps_along(create_project):
+    here = create_project()
+    there = create_project()
+
+    task = here.add_todo()
+    step = task.add_todo()
+
+    task.move_to(there)
+
+    assert task.parent_project == there
+    assert step.parent_todo == task
+    assert there.todos == [task]
+
+
+def test_move_to_lifts_a_step_out_of_its_task(create_project):
+    here = create_project()
+    there = create_project()
+
+    task = here.add_todo()
+    task.description = "task"
+    task.save()
+
+    step = task.add_todo()
+    step.description = "step"
+    step.save()
+
+    step.move_to(there)
+
+    assert step.parent_todo is None
+    assert step.parent_project == there
+    assert task.todos == []
+
+
+def test_move_to_the_project_a_step_is_already_under(create_project):
+    """A step moved into its own project comes out as a task of it"""
+
+    p = create_project()
+    task = p.add_todo()
+    task.description = "task"
+    task.save()
+
+    step = task.add_todo()
+    step.description = "step"
+    step.save()
+
+    step.move_to(p)
+
+    ordered = sorted(p.todos, key=lambda t: t.order_index)
+    assert [t.description for t in ordered] == ["task", "step"]
+
+
+def test_move_to_leaves_a_binned_todo_binned(create_project):
+    from todooit.api import move_todo_to_bin
+
+    here = create_project()
+    there = create_project()
+
+    t = here.add_todo()
+    move_todo_to_bin(t)
+
+    t.move_to(there)
+
+    assert t.is_binned
+    assert t.parent_project == there

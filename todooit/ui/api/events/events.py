@@ -110,6 +110,16 @@ class SpawnNote(DooitEvent):
         self.todo = todo
 
 
+class SpawnMove(DooitEvent):
+    """
+    Emitted when the user wants to file a task under another project
+    """
+
+    def __init__(self, todo: Todo) -> None:
+        super().__init__()
+        self.todo = todo
+
+
 class ModeChanged(DooitEvent):
     """
     Emitted when there is a change in the `status`

@@ -30,16 +30,18 @@ from todooit.ui.api.events import (
     GotoFixedProject,
     SwitchTab,
     SpawnHelp,
+    SpawnMove,
     SpawnNote,
     SpawnQuickAdd,
     SpawnSearch,
     BarNotification,
 )
-from todooit.api.fixed_projects import owning_project
+from todooit.api.fixed_projects import owning_project, project_path
 from todooit.ui.api.events.events import ProjectType
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
 from todooit.ui.widgets import BarSwitcher, Dashboard, ModelTree
 from .base import BaseScreen
+from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
 from .search import SearchScreen, task_root
@@ -200,6 +202,37 @@ class MainScreen(BaseScreen):
 
         tree.force_refresh()
         tree.flash_row(project.uuid)
+
+    @on(SpawnMove)
+    def spawn_move(self, event: SpawnMove) -> None:
+        self.app.push_screen(MoveScreen(event.todo), self.move_done)
+
+    async def move_done(self, result: Optional[Moved]) -> None:
+        """
+        Follows a task into the project it has just been filed under
+
+        The task is gone from the pane it was moved out of and is the last row
+        of one nobody is looking at, so the cursor is taken over to it the same
+        way it is taken to a task typed in from somewhere else: what was just
+        moved is what the next keypress is meant for. The bar still says where
+        it went, since the panes rearranging underneath is not on its own an
+        answer to which project took it.
+        """
+
+        if result is None:
+            return
+
+        todo, project = result
+
+        self.post_message(TodoChanged(todo))
+        await self.reveal_todo(todo)
+
+        what = escape(todo.description)
+        where = escape(project_path(project))
+
+        self.post_message(
+            BarNotification(f"Moved [b]{what}[/b] to [b]{where}[/b]", "info")
+        )
 
     @on(SpawnSearch)
     def spawn_search(self, _: SpawnSearch) -> None:

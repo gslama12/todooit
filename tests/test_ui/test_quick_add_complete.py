@@ -3,7 +3,8 @@ The quick add line completing a `#project` the way a shell completes a path
 """
 
 from todooit.api import Todo
-from todooit.ui.screens.quick_add import QuickAddScreen, build_project
+from todooit.ui.screens.project_completion import build_project
+from todooit.ui.screens.quick_add import QuickAddScreen
 from tests.test_ui.ui_base import boot, new_project, run_pilot
 
 from tests.test_ui.test_quick_add_ui import open_quick_add
