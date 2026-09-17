@@ -29,7 +29,6 @@ from todooit.api.theme import DooitThemeBase
 from todooit.ui.widgets.inputs._input import Input
 from todooit.utils import blend
 from todooit.utils.project_complete import Token
-from todooit.utils.quick_add import PATH_SEPARATOR
 
 from .base import BaseScreen
 from .project_completion import (
@@ -237,6 +236,10 @@ class MoveScreen(ProjectCompletion, BaseScreen, ModalScreen):
         opens by saying where the task stands rather than by leaving the answer
         blank; a name that answers to no project is drawn in red as it is
         typed, rather than being turned down after enter.
+
+        A name picked out of the list is drawn as the project it was picked
+        from, however many others answer to it: the chip says where the task
+        is going, and that has been settled.
         """
 
         typed = self._input.value.strip()
@@ -252,10 +255,15 @@ class MoveScreen(ProjectCompletion, BaseScreen, ModalScreen):
             )
 
         found = find_projects(typed)
-        settled = len(found) == 1
+        settled = self.picked_among(found)
 
-        name = project_path(found[0]) if settled else project_display(typed)
-        color = self.theme.primary if settled else self.theme.red
+        if settled is None and len(found) == 1:
+            settled = found[0]
+
+        settled_on = settled is not None
+
+        name = project_path(settled) if settled_on else project_display(typed)
+        color = self.theme.primary if settled_on else self.theme.red
 
         return Text(f"{PROJECT_ICON} {name}", style=Style(color=color))
 
@@ -291,14 +299,22 @@ class MoveScreen(ProjectCompletion, BaseScreen, ModalScreen):
             self._reject(f"No project {project_display(typed)}")
             return
 
-        if len(found) > 1:
-            self._reject(
-                f"More than one {project_display(typed)} — "
-                f"try parent{PATH_SEPARATOR}{typed}"
-            )
-            return
+        # A name picked out of the list means the project it was picked from,
+        # however many answer to it. Asked before the ambiguity is complained
+        # about rather than after: the complaint is a question the picking has
+        # already answered, and one a project at the top of the tree has no
+        # way of answering at all -- there is no parent to name it by.
+        project = self.picked_among(found)
 
-        project = found[0]
+        if project is None:
+            if len(found) > 1:
+                self._reject(
+                    f"More than one {project_display(typed)} — "
+                    "↑↓ to pick which"
+                )
+                return
+
+            project = found[0]
 
         # Already filed straight under it, so there is nothing to do and
         # nothing to announce as having been done. Said rather than carried

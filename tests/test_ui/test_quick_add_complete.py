@@ -316,3 +316,36 @@ async def test_a_completed_line_still_reads_back_as_the_task_it_says():
         assert todo.priority == 1
         assert todo.scheduled is not None
         assert todo.parent_project.description == "api"
+
+
+async def test_a_picked_project_is_the_one_the_task_lands_in():
+    """
+    Two projects called "misc", and the pick stands while the line goes on
+
+    The one at the top of the tree cannot be named by a path — there is no
+    parent to name it after — so picking it out of the list is the only way
+    to say it, and the rest of the sentence must not undo that.
+    """
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await new_project(pilot, "inbox")
+        tree("misc", "work/misc")
+
+        screen = await open_quick_add(pilot)
+        await pilot.press(*list("buy milk #misc"))
+
+        assert listed(screen) == ["misc", "work/misc"]
+
+        # The one at the top of the tree, and then the rest of the line
+        await pilot.press("down")
+        assert screen._input.value == "buy milk #misc"
+
+        await pilot.press(*list(" p1"))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        (todo,) = Todo.all()
+        assert todo.description == "buy milk"
+        assert todo.parent_project.description == "misc"
+        assert todo.parent_project.parent_project.is_root

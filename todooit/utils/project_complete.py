@@ -15,8 +15,8 @@ overlay's, and it takes back a string.
 """
 
 import re
-from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Sequence, Tuple
 
 from .quick_add import PATH_SEPARATOR, PROJECT_MARKER
 
@@ -38,6 +38,12 @@ class Candidate:
     # Whether there is anything inside it, which is what decides how a
     # finished completion is punctuated
     has_children: bool = False
+
+    # Whatever the app knows the project by, carried through untouched and
+    # handed back on whichever match is chosen. Nothing here reads it: it is
+    # how the window that offered a match gets the very project back, which
+    # the path alone cannot always say.
+    key: Any = field(default=None, compare=False)
 
     @property
     def name(self) -> str:
@@ -159,6 +165,11 @@ def minimal_path(candidate: Candidate, pool: Sequence[Candidate]) -> Tuple[str, 
     and the shortest thing to type. Where two projects share one, as much of
     the way up as it takes to tell them apart is added -- which is the same
     `parent/child` the overlay suggests when a name turns out to be ambiguous.
+
+    A project at the top of the tree has no way up, so one sharing its name
+    with something deeper down has nothing to add: what comes back still means
+    both of them, and which was meant is settled by the picking rather than by
+    the path.
     """
 
     for depth in range(1, len(candidate.steps)):

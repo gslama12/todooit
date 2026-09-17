@@ -122,10 +122,19 @@ def project_pool() -> List[Candidate]:
     Read once when the window opens rather than at each keystroke: the tree
     cannot change underneath a line that is still being typed, and the only
     thing here that does add a project closes the window as it goes.
+
+    Each carries the project it was made from, so that picking a match out of
+    the list is picking the project itself and not merely its path: two
+    projects can share the path a completion writes, and only the list knows
+    which of them was walked to.
     """
 
     return [
-        Candidate(steps=project_steps(project), has_children=bool(project.projects))
+        Candidate(
+            steps=project_steps(project),
+            has_children=bool(project.projects),
+            key=project,
+        )
         for project in Project.all()
     ]
 
@@ -205,6 +214,13 @@ class ProjectCompletion:
         # keystroke would be ignoring what escape was for.
         self._hidden = False
 
+        # The project a completion last put into the line, and the name it
+        # wrote it as. Held because the name need not say which project it
+        # means: two of them can answer to it, and the one that was picked out
+        # of the list is the one that was meant.
+        self._picked: Optional[Project] = None
+        self._picked_text = ""
+
     def load_projects(self) -> None:
         """Reads the tree in, once, as the window opens"""
 
@@ -223,6 +239,25 @@ class ProjectCompletion:
 
         self._hidden = True
         self._redraw()
+
+    def picked_among(self, found: Sequence[Project]) -> Optional[Project]:
+        """
+        Which of the projects a name found is the one picked out of the list
+
+        A name two projects answer to is not ambiguous when it was chosen
+        rather than typed: the list showed both, one of them was walked to,
+        and there is nothing left to ask. It is the only way to say which of
+        two same-named projects is meant when one of them sits at the top of
+        the tree, since a path can name that one by nothing but its name.
+
+        Checked against what the name finds rather than taken on its own, so
+        that a pick the line has since been rewritten past settles nothing.
+        """
+
+        if self._picked is None or self._picked not in found:
+            return None
+
+        return self._picked
 
     # ------------------------------------------------------------------
     # Keys
@@ -266,6 +301,14 @@ class ProjectCompletion:
         self._index = -1
         self._offset = 0
         self._token = self._completion_token()
+
+        # A pick stands while the name it was written into still says what it
+        # said. The line can go on to talk about other things -- the cursor
+        # leaves the name behind, and the pick is still the answer to it --
+        # but typing into the name itself is asking the question again.
+        if self._token is not None and self._token.text != self._picked_text:
+            self._picked = None
+            self._picked_text = ""
 
         if self._token is None:
             self._matches = []
@@ -324,6 +367,7 @@ class ProjectCompletion:
             PATH_SEPARATOR if candidate.has_children else "",
         )
 
+        self._remember(candidate)
         self._completed()
 
     def _accept(self, candidate: Candidate) -> None:
@@ -342,7 +386,25 @@ class ProjectCompletion:
 
         self._write(path, trailing)
         self._resuggest()
+
+        # After the resuggest, which is about the name as the line now spells
+        # it and drops whatever was picked under the old one
+        self._remember(candidate)
         self._completed()
+
+    def _remember(self, candidate: Candidate) -> None:
+        """
+        Holds on to the project a completion has just written into the line
+
+        Read back off the line rather than worked out from the path that was
+        written, so that what is remembered is the name as the next keystroke
+        will find it -- quotes taken off, and the steps above it included.
+        """
+
+        token = self._completion_token()
+
+        self._picked = candidate.key
+        self._picked_text = token.text if token is not None else ""
 
     def _write(self, path: str, trailing: str = "") -> None:
         """

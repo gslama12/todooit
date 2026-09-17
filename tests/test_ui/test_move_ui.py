@@ -388,3 +388,94 @@ async def test_moving_from_a_pane_that_gathers_work():
         todo = next(t for t in Todo.all() if t.description == "file taxes")
         assert todo.parent_project == project_named("work")
         assert not isinstance(app.screen, MoveScreen)
+
+
+async def test_picking_settles_a_name_two_projects_answer_to():
+    """
+    The list is the answer to its own ambiguity
+
+    Two projects called "misc", one at the top of the tree and one inside
+    another. Typing the name cannot say which — and for the one at the top
+    nothing can, since it has no parent to be named after. Walking to it says
+    it, and the window has nothing left to ask.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        todo = await two_projects_and_a_task(pilot)
+        build_project(["misc"])
+        build_project(["work", "misc"])
+
+        screen = await open_move(pilot)
+        await pilot.press(*list("misc"))
+
+        assert listed(screen) == ["misc", "work/misc"]
+
+        # The one at the top of the tree, which is written in as the same
+        # bare name that was typed
+        await pilot.press("down")
+        assert screen._input.value == "misc"
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, MoveScreen)
+        assert screen._warning == ""
+        assert todo.parent_project.description == "misc"
+        assert todo.parent_project.parent_project.is_root
+
+
+async def test_picking_the_deeper_of_two_names_files_it_there():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        todo = await two_projects_and_a_task(pilot)
+        build_project(["misc"])
+        build_project(["work", "misc"])
+
+        screen = await open_move(pilot)
+        await pilot.press(*list("misc"))
+
+        await pilot.press("down")
+        await pilot.press("down")
+        assert screen._input.value == "work/misc"
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, MoveScreen)
+        assert todo.parent_project.description == "misc"
+        assert todo.parent_project.parent_project.description == "work"
+
+
+async def test_a_pick_typed_over_is_no_longer_the_answer():
+    """
+    What was picked was an answer about the name as it stood
+
+    Typed into again, the name is asking afresh — and a name two projects
+    answer to is turned down however it was arrived at.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        todo = await two_projects_and_a_task(pilot)
+        build_project(["misc"])
+        build_project(["work", "misc"])
+
+        screen = await open_move(pilot)
+        await pilot.press(*list("misc"))
+        await pilot.press("down")
+
+        # Back to the very same name, typed rather than picked
+        await pilot.press("backspace")
+        await pilot.press("c")
+        assert screen._input.value == "misc"
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert isinstance(app.screen, MoveScreen)
+        assert screen._warning != ""
+        assert todo.parent_project == project_named("inbox")
+
+        await pilot.press("escape")
+        await pilot.pause()

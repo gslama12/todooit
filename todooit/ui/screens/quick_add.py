@@ -374,8 +374,13 @@ class QuickAddScreen(ProjectCompletion, BaseScreen, ModalScreen):
             )
 
         found = find_projects(spec.project)
-        color = theme.primary if len(found) == 1 else theme.red
-        name = found[0].description if len(found) == 1 else spec.project
+        settled = self.picked_among(found)
+
+        if settled is None and len(found) == 1:
+            settled = found[0]
+
+        color = theme.primary if settled is not None else theme.red
+        name = settled.description if settled is not None else spec.project
 
         return Text(f"{PROJECT_ICON} {name}", style=Style(color=color))
 
@@ -447,6 +452,13 @@ class QuickAddScreen(ProjectCompletion, BaseScreen, ModalScreen):
             return self.default_project
 
         found = find_projects(spec.project)
+
+        # A name picked out of the list means the project it was picked from,
+        # whatever else answers to it: the list asked which, and it was said
+        picked = self.picked_among(found)
+
+        if picked is not None:
+            return picked
 
         if len(found) > 1:
             raise QuickAddError(
