@@ -48,6 +48,16 @@ class Input:
     # Inputs that only show a derived value refuse to be edited
     editable: bool = True
 
+    def asks_for_calendar(self) -> bool:
+        """
+        Whether what has been typed is a request for the calendar
+
+        Only a field holding a date has a month behind it to open, so every
+        other field reads the word as the word it is and puts it in the buffer.
+        """
+
+        return False
+
     def __init__(self, value="") -> None:
         self._value = value
         self._cursor_position = len(self._value)

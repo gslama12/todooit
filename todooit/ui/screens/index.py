@@ -1,3 +1,5 @@
+from datetime import date
+from functools import partial
 from typing import Optional, Type
 from rich.markup import escape
 from sqlalchemy.event import listen
@@ -40,6 +42,7 @@ from todooit.ui.api.events import (
     SpawnHelp,
     SpawnMove,
     SpawnNote,
+    SpawnCalendar,
     SpawnQuickAdd,
     SpawnSearch,
     BarNotification,
@@ -49,6 +52,7 @@ from todooit.ui.api.events.events import ProjectType
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
 from todooit.ui.widgets import BarSwitcher, Dashboard, ModelTree
 from .base import BaseScreen
+from .calendar import CalendarScreen, calendar_title
 from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
@@ -111,7 +115,20 @@ class MainScreen(BaseScreen):
         # that would otherwise turn up on top of the copy it just did
         event.stop()
 
-        key = self.resolve_key(event)
+        await self.route_key(self.resolve_key(event))
+        return True
+
+    async def route_key(self, key: str) -> None:
+        """
+        Hand a key to whatever is taking keys right now, and write down what
+        it left different
+
+        Split out from the event so that the app can send itself one: a date
+        picked off the calendar is settled by the very enter a hand would have
+        pressed, and it has to go the same way that enter would have gone --
+        the history step included, or a day picked off the month would be the
+        one change in the app that nothing could undo.
+        """
 
         # Resolved on the way in rather than per bar: a bar that is typed into
         # wants the character that was pressed, not the name of the key
@@ -121,7 +138,6 @@ class MainScreen(BaseScreen):
             await self.api.handle_key(key)
 
         self.record_change()
-        return True
 
     @property
     def mid_edit(self) -> bool:
@@ -293,6 +309,39 @@ class MainScreen(BaseScreen):
 
         tree.force_refresh()
         tree.flash_row(project.uuid)
+
+    @on(SpawnCalendar)
+    def spawn_calendar(self, event: SpawnCalendar) -> None:
+        """
+        Opens the month over the date field that asked for it
+
+        The field stays mid-edit behind the window, so what comes back has
+        somewhere to land: which tree and which column that is rides along on
+        the event, since a window covering the panes cannot ask them.
+        """
+
+        self.app.push_screen(
+            CalendarScreen(calendar_title(event.column), event.initial),
+            partial(self.calendar_done, event.tree, event.column),
+        )
+
+    async def calendar_done(
+        self, tree: ModelTree, column: str, day: Optional[date]
+    ) -> None:
+        """
+        Keeps the day that was picked, exactly as a typed one is kept
+
+        The day goes into the buffer and the app then sends itself the enter
+        that settles it, so a date picked off the month runs through the same
+        column check, the same notification on a date a todo may not have, and
+        the same bar teardown as one typed by hand.
+        """
+
+        if day is None:
+            return
+
+        if tree.take_picked_day(column, day):
+            await self.route_key("enter")
 
     @on(SpawnMove)
     def spawn_move(self, event: SpawnMove) -> None:

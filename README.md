@@ -14,6 +14,7 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Priority `p0`-`p3`** — Todoist's scale, typed as a chord and shown as a colored checkbox rather than a column of its own.
 - **Agent flag `a`** — an hourglass in its own column on the tasks handed to an AI that is off working on them.
 - **Natural language dates** — due and scheduled dates are typed as words, shown with their day name, and colored green through red as they come closer.
+- **Calendar picker** — typing `cal` into a date field (`s` or `d`) opens an Austrian month over the app: Monday-first weeks, German names, public holidays in red, walked with `j`/`ö`/`k`/`l` and `J`/`Ö` for whole months, `t` back to today, and `enter` to pick. A time the task already carries is kept.
 - **Recurrence on the scheduled date** — a recurring task moves its scheduled date on instead of carrying a due date.
 - **Projects as folders** — projects nest and count their children, and a task is ticked off by hand rather than by its last step being done.
 - **Moving tasks** — `I` / `U` file a task under the one above it or pull it back out, `ctrl+c` / `ctrl+v` copy and paste through the system clipboard, and `ctrl+n` takes a task's note without opening it.

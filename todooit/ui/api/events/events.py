@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import date, timedelta, datetime
 from typing import Any, Callable, Literal, Optional, Union
 from textual.message import Message
 
@@ -110,6 +110,22 @@ class SpawnMove(DooitEvent):
     def __init__(self, todo: Todo) -> None:
         super().__init__()
         self.todo = todo
+
+
+class SpawnCalendar(DooitEvent):
+    """
+    Emitted when a date is to be picked off a month rather than typed
+
+    Carries the tree the edit is happening in rather than the field itself:
+    the window is pushed by the screen, and what it hands back has to find its
+    way into the buffer the keystrokes were going to.
+    """
+
+    def __init__(self, tree: Any, column: str, initial: Optional[date]) -> None:
+        super().__init__()
+        self.tree = tree
+        self.column = column
+        self.initial = initial
 
 
 class ModeChanged(DooitEvent):

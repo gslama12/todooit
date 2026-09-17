@@ -1,3 +1,4 @@
+from datetime import date
 from functools import cache
 from typing import (
     TYPE_CHECKING,
@@ -27,6 +28,7 @@ from textual.widgets.option_list import Option, OptionDoesNotExist
 from todooit.api import Todo, Project
 from todooit.ui.api.events import (
     ModeChanged,
+    SpawnCalendar,
     StartSort,
     BarNotification,
 )
@@ -661,6 +663,56 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self.update_current_prompt()
 
+    def offer_calendar(self) -> None:
+        """
+        Open the month over a field that has just asked for one
+
+        The ask is a word typed into the field rather than a key of its own,
+        so it is looked for after every keystroke; only a date field ever says
+        yes, and every other field takes the same three letters as text. The
+        word is taken back out before the window goes up, so the field is
+        holding what it held all along by the time anything can be escaped
+        back to it.
+
+        The window is posted at the screen rather than pushed from here, the
+        same way the note and move windows are: the screen package imports the
+        trees, so reaching the other way would close the circle.
+        """
+
+        column = self.current.editing
+        component = self.current._get_component(column)
+
+        if not component.asks_for_calendar():
+            return
+
+        component.take_back_word()
+        self.update_current_prompt()
+
+        self.post_message(SpawnCalendar(self, column, component.calendar_day()))
+
+    def take_picked_day(self, column: str, day: date) -> bool:
+        """
+        Put the day the calendar handed back into the field it came out of
+
+        Only written into the buffer here; settling the edit is left to the
+        enter the screen sends straight after, so that a date picked off the
+        month is kept by exactly the same path as one typed by hand. Whether
+        there was still an edit to write into is what comes back, so the
+        screen knows whether that enter has anything left to settle.
+
+        The edit can be gone by the time the window closes -- the row dropped
+        out from under it by the poller, say -- and then the day has nowhere
+        to land and is let go.
+        """
+
+        if not self.is_editing or self.current.editing != column:
+            return False  # pragma: no cover
+
+        self.current._get_component(column).set_day(day)
+        self.update_current_prompt()
+
+        return True
+
     async def handle_keypress(self, key: str) -> bool:
         if self.is_editing:
             if key in ["escape", "enter"]:
@@ -669,6 +721,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
                 self.stop_edit(cancel=key == "escape")
             else:
                 self.current.handle_keypress(key)
+                self.offer_calendar()
 
             self.update_current_prompt()
             return True
