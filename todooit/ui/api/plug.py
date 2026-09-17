@@ -4,6 +4,7 @@ from functools import partial
 from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Type
+from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 
 from todooit.ui.api.event_handlers import DOOIT_EVENT_ATTR, DOOIT_TIMER_ATTR
@@ -31,7 +32,6 @@ class PluginManager:
     def __init__(self, api: "DooitAPI", config: Optional[Path] = None) -> None:
         self.config = config or config_file()
         self.events: defaultdict[Type[DooitEvent], List[Callable]] = defaultdict(list)
-        self.timers: defaultdict[float, List[Callable]] = defaultdict(list)
         self.api = api
         self.app = api.app
 
@@ -46,10 +46,17 @@ class PluginManager:
         res = obj(self.api, *params)
         setattr(obj, "__dooit_value", res)
 
+        # A bar widget on a timer goes on ticking whatever else is happening,
+        # and at both ends of the app's life there is no bar for it to redraw:
+        # on the way up no screen has been pushed yet, and on the way down the
+        # last one has already been popped. Neither is worth reporting -- the
+        # value has been worked out and kept either way, and whatever draws it
+        # next reads it from there -- so the tick is let go quietly rather than
+        # being allowed to take the app down with it.
         try:
             if bar := getattr(self.app, "bar", None):
                 bar.refresh()
-        except NoMatches:
+        except (NoMatches, ScreenStackError):
             pass
 
     def on_event(self, event: DooitEvent):

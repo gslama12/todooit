@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from uuid import uuid4
 from dataclasses import dataclass
 
@@ -8,8 +8,6 @@ from todooit.ui.api.api_components.formatters._decorators import MUTLIPLE_FORMAT
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.dooit_api import DooitAPI
-
-FormatterReturnType = Union[str, Tuple[str, bool]]
 
 
 @dataclass
@@ -42,9 +40,6 @@ class FormatterStore:
             func,
         )
         return id
-
-    def get_formatter_by_id(self, id: str) -> Optional[FormatterFunc]:
-        return self.formatters.get(id)
 
     @trigger_refresh
     def remove(self, id: str) -> None:

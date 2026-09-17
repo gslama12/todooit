@@ -1,13 +1,10 @@
 from collections import defaultdict
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 from textual.widgets import OptionList
 from textual.widgets.option_list import Option
 from textual import events, on
 
-from todooit.api import Todo, Project
 from ._decorators import require_highlighted_node
-
-ModelType = Union[Todo, Project]
 
 if TYPE_CHECKING:  # pragma: no cover
     from ....ui.tui import Dooit, DooitAPI

@@ -261,7 +261,7 @@ def scan_markup(
     # Drawn the same way the trees draw a link in a description, and read off
     # the same scan the `o` key opens one with: what is underlined here is
     # exactly what standing on it will open
-    for link in find_links(line) if links is None else links:
+    for link in links:
         yield byte(link.start), byte(link.end), LINK
 
     for match in EMPH_RE.finditer(line):

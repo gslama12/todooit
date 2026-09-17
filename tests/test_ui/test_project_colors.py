@@ -3,7 +3,7 @@ Colors a project can be given, and the "c" that means two different things
 depending on which pane it is pressed over
 """
 
-from todooit.api import Project, Todo
+from todooit.api import Project
 from todooit.utils.default_config import (
     PROJECT_COLOR_NAMES,
     project_color,
@@ -18,7 +18,6 @@ from tests.test_ui.ui_base import (
     new_project,
     new_todo,
     run_pilot,
-    visible_todos,
 )
 
 
@@ -264,7 +263,7 @@ async def test_the_digit_over_a_sub_project_colors_the_whole_tree():
 async def test_a_sub_project_made_after_the_color_arrives_wearing_it():
     async with run_pilot() as pilot:
         app = await boot(pilot)
-        project = await new_project(pilot, "painted")
+        await new_project(pilot, "painted")
 
         await pilot.press("c", "8")
         await pilot.pause()

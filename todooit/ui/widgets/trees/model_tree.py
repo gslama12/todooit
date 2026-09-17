@@ -1,4 +1,3 @@
-from collections import defaultdict
 from functools import cache
 from typing import (
     TYPE_CHECKING,
@@ -177,7 +176,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         tree = self.__class__.__name__
         super().__init__(id=f"{tree}_{model.uuid}")
         self._model = model
-        self.expaned = defaultdict(bool)
         self._renderers: RenderDictType = render_dict
         self._static_rows: Dict[str, Callable[[], RenderableType]] = {}
 

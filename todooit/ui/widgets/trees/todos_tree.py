@@ -31,7 +31,6 @@ from todooit.ui.api.events import (
 from todooit.ui.api.events.events import TodoSelected
 from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
-from ..renderers.todo_renderer import TodoRender
 from ._decorators import refresh_tree, require_highlighted_node
 from ._render_dict import TodoRenderDict
 
@@ -416,12 +415,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     @property
     def render_layout(self):
         return self.api.layouts.todo_layout
-
-    def add_todo(self) -> str:
-        todo = self.model.add_todo()
-        render = TodoRender(todo, tree=self)
-        self.add_option(Option(render.prompt, id=render.id))
-        return todo.uuid
 
     def _add_first_item(self) -> Todo:
         return self.model.add_todo()

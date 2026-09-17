@@ -10,8 +10,6 @@ from todooit.api import FixedProject, Project, Todo
 ProjectType = Union[Project, FixedProject]
 
 ModeType = Literal["NORMAL", "INSERT", "DATE", "SORT", "CONFIRM"]
-EmptyWidgetType = Literal["todo", "project", "no_search_results"]
-PositionType = Literal["project", "todo"]
 NotificationType = Literal["info", "warning", "error"]
 
 
@@ -79,12 +77,6 @@ class Startup(DooitEvent):
 class ShutDown(DooitEvent):
     """
     Emitted when user presses the exit app keybind
-    """
-
-
-class SwitchTab(DooitEvent):
-    """
-    Emitted when user needs to focus other pane
     """
 
 

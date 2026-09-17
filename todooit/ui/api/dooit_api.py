@@ -8,7 +8,6 @@ from .events import (
     ShowConfirm,
     SpawnQuickAdd,
     SpawnSearch,
-    SwitchTab,
     QuitApp,
 )
 from todooit.ui.widgets import ModelTree
@@ -134,15 +133,6 @@ class DooitAPI:
         """Add an item described by whatever is on the clipboard"""
 
         self.focused.paste_as_sibling()
-
-    def switch_focus(self):
-        """Switch focus between the project and the todo list"""
-
-        if self.app.bar_switcher.is_focused:
-            return
-
-        if w := self.app.focused:
-            w.post_message(SwitchTab())
 
     def focus_projects(self):
         """Move focus to the projects pane"""

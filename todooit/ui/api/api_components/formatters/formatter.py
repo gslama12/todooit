@@ -11,4 +11,3 @@ class Formatter(ApiComponent):
     def __init__(self, api: "DooitAPI") -> None:
         self.todos = TodoFormatter(api)
         self.projects = ProjectFormatter(api)
-        self.app = api

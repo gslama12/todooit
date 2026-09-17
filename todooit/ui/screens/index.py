@@ -28,7 +28,6 @@ from todooit.ui.api.events import (
     ProjectSelected,
     RevealTodo,
     GotoFixedProject,
-    SwitchTab,
     SpawnHelp,
     SpawnMove,
     SpawnNote,
@@ -63,14 +62,6 @@ class DualSplit(Container):
         }
     }
     """
-
-
-class DualSplitLeft(Container):
-    pass
-
-
-class DualSplitRight(Container):
-    pass
 
 
 class MainScreen(BaseScreen):
@@ -119,11 +110,6 @@ class MainScreen(BaseScreen):
     @on(BarNotification)
     def show_notification(self, event: BarNotification):
         self.app.bar_switcher.switch_to_notification(event)
-
-    @on(SwitchTab)
-    def switch_tab(self, event: SwitchTab) -> None:
-        event.stop()
-        self.app.action_focus_next()
 
     @on(SpawnHelp)
     async def spawn_help(self, _: SpawnHelp) -> None:

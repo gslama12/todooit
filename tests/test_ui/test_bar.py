@@ -117,3 +117,34 @@ async def test_field_bar_edits_a_hidden_column():
         todo = Todo.all()[0]
         assert todo.scheduled is not None
         assert todo.scheduled.date() == date.today() + timedelta(days=1)
+
+
+async def test_a_bar_widget_tick_survives_the_screen_going_away():
+    """
+    A tick that lands while the app is tearing down is let go, not raised
+
+    A bar widget on a timer goes on ticking whatever else is happening, and
+    the tick that arrives after the last screen has been popped used to take
+    the whole app down with it: the redraw it asks for reaches for a bar that
+    is no longer on any screen. Only the redraw is skipped; the value is still
+    worked out and kept, since that half of the tick needs no screen at all.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        def tick(api):
+            return "09:19:58"
+
+        # Emptied by hand: mid-teardown is a window no test can land on
+        # reliably, and waiting around for it is what made this a flake
+        # rather than a failure
+        stack = list(app._screen_stack)
+        app._screen_stack.clear()
+
+        try:
+            app.api.plugin_manager._update_dooit_value(tick)
+        finally:
+            app._screen_stack.extend(stack)
+
+        assert getattr(tick, "__dooit_value") == "09:19:58"

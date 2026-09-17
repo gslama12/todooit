@@ -16,24 +16,6 @@ class MultipleParentError(DooitError):
     """
 
 
-class SiblingAdditionError(DooitError):
-    """
-    Raised when user tries to add a sibling to a non-parented node (i.e Manager Object)
-    """
-
-
-class ProjectAdditionError(DooitError):
-    """
-    Raised when user tries to add a project to a todo object
-    """
-
-
-class TodoAdditionError(DooitError):
-    """
-    Raised when user tries to add a todo to manager class
-    """
-
-
 class NoNodeError(DooitError):
     """
     Raised when user tried to perform an operation that requires a node, but no node is selected

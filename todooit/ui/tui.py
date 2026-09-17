@@ -13,12 +13,6 @@ from todooit.utils import CssManager, open_url
 from .api import DooitAPI
 from ..api import manager, drop_blank_models
 
-PRINTABLE = (
-    "0123456789"
-    + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    + "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ "
-)
-
 
 class Dooit(App):
     CSS_PATH = CssManager().css_file
