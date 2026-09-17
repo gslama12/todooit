@@ -6,12 +6,13 @@
 #
 #   1. stages everything and shows you the status
 #   2. asks for a commit message and commits
-#   3. brings local dev level with origin/dev and merges dev into this branch,
-#      so conflicts surface here, in your own branch
+#   3. brings local dev level with origin/dev and replays this branch on top of
+#      dev, so conflicts surface here, in your own branch, and no merge commit
+#      is written - the branch never leaves your machine, so rewriting it is safe
 #   4. shows what would land, asks, then fast-forwards dev onto this branch and
 #      pushes dev - the feature branch itself never leaves your machine
 #
-# On conflicts it stops and lists them: resolve, commit, run push.sh again.
+# On conflicts it stops and lists them: resolve, continue, run push.sh again.
 # Nothing is cleaned up here; clean.sh still removes worktrees and branches.
 set -euo pipefail
 
@@ -26,6 +27,12 @@ die()  { printf '\n  %s%s%s\n\n' "$RED" "$*" "$OFF" >&2; exit 1; }
 wt="$(git rev-parse --show-toplevel 2>/dev/null)" ||
   die "not inside a worktree - cd into one and run push.sh there"
 cd "$wt"
+
+# A rebase left half-finished parks you on a detached HEAD; name the real cause.
+if [ -d "$(git rev-parse --git-path rebase-merge)" ] ||
+   [ -d "$(git rev-parse --git-path rebase-apply)" ]; then
+  die "a rebase is in progress in $(basename "$wt") - finish it with git rebase --continue, or drop it with git rebase --abort, then run push.sh again"
+fi
 
 branch="$(git branch --show-current)"
 [ -n "$branch" ] || die "detached HEAD in $(basename "$wt") - nothing to push"
@@ -51,13 +58,26 @@ commit_all() {
   fi
 }
 
+# List what is conflicted, say how to carry on with $1, and get out of the way.
+conflicts_stop() {
+  printf '\n  %sconflicts:%s\n' "$RED" "$OFF"
+  git diff --name-only --diff-filter=U | sed 's/^/    /'
+  printf '\n  %sresolve them, then: git add <files> && %s && bash push.sh%s\n\n'     "$DIM" "$1" "$OFF"
+  exit 1
+}
+
 # Merge $1 into the current branch, or stop and hand the conflicts over.
 merge_or_stop() {
   git merge --no-edit "$1" && return 0
-  printf '\n  %sconflicts:%s\n' "$RED" "$OFF"
-  git diff --name-only --diff-filter=U | sed 's/^/    /'
-  printf '\n  %sresolve them, then: git add <files> && git commit && bash push.sh%s\n\n'     "$DIM" "$OFF"
-  exit 1
+  conflicts_stop "git commit"
+}
+
+# Replay the current branch on top of $1, or stop and hand the conflicts over.
+# A rebase, not a merge: dev fast-forwards onto it either way, but this leaves
+# just the commits you wrote - no "Merge branch 'dev' into feat-xy" alongside.
+rebase_or_stop() {
+  git rebase "$1" && return 0
+  conflicts_stop "git rebase --continue"
 }
 
 # What a push would change: $1 = where the remote is, $2 = what we would send.
@@ -108,13 +128,13 @@ git -C "$dev_wt" diff --quiet && git -C "$dev_wt" diff --cached --quiet ||
 
 commit_all
 
-# Level dev with the remote, then merge it into this branch. Both halves of a
-# conflict live here; dev is never left half-merged.
+# Level dev with the remote, then replay this branch on top of it. Both halves
+# of a conflict live here; dev is never left half-merged.
 land() {
   fetch_dev
   git -C "$dev_wt" merge --ff-only --quiet origin/dev ||
     die "local dev has commits that are not on origin/dev - sort that out in $dev_wt"
-  merge_or_stop dev
+  rebase_or_stop dev
 }
 land
 
@@ -140,7 +160,7 @@ for attempt in 1 2; do
   fi
   git -C "$dev_wt" reset --hard --quiet "$dev_before"
   [ "$attempt" = 1 ] || break
-  say "origin/dev moved while we were merging - merging again"
+  say "origin/dev moved while we were landing - rebasing again"
   land
 done
 die "could not push dev - it is back where it was, run push.sh again"
