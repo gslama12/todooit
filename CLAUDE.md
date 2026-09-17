@@ -53,7 +53,7 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 
 ### Helper scripts
 
-All three are tracked in the repo, so every worktree carries its own copy.
+All four are tracked in the repo, so every worktree carries its own copy.
 They are the user's tools, not yours — you never call them — but what they do
 decides where you put things:
 
@@ -61,6 +61,12 @@ decides where you put things:
   the app from that worktree against that worktree's instance and leaves the
   user standing there. This is how the user tries out your change, and it
   opens **the same database you seeded**.
+- `bash run_tests.sh`, run **from inside a worktree** with no arguments, asks
+  what to run — smoke, the whole suite, one feature marker, one layer, one
+  file, the last failures, a `-m` expression of the user's own, the CI command,
+  or coverage — and runs it in that worktree's environment, printing the pytest
+  command first. It is the menu form of [Which tests to run](#which-tests-to-run);
+  you still run pytest yourself rather than calling this.
 - `bash clean.sh`, run from anywhere inside the repo, deletes every
   `feat-*`/`fix-*` worktree that has no uncommitted changes, force-deletes its
   branch, and removes its instance directory; it prints the plan as a table
