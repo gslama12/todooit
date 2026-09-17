@@ -20,7 +20,7 @@ class FormatterFunc:
 def trigger_refresh(func: Callable) -> Callable:
     def wrapper(self: "FormatterStore", *args, **kwargs):
         res = func(self, *args, **kwargs)
-        self.trigger()
+        self._fire()
         return res
 
     return wrapper
@@ -31,6 +31,25 @@ class FormatterStore:
         self.formatters = dict()
         self.trigger = trigger
         self.api = api
+
+    def _fire(self) -> None:
+        """
+        Redraws what the formatters are drawn into, or leaves it to the batch
+
+        Every formatter registered redraws the panes, which is right for one
+        added by hand while the app is running and wrong for the run of them
+        the config lays down at startup: there a pane is rebuilt once per
+        formatter, and the only draw anybody sees is the last of them. Inside
+        a batch the trigger is written down instead, and each distinct one is
+        run once when the batch closes.
+        """
+
+        batch = getattr(self.api, "_formatter_batch", None)
+
+        if batch is None:
+            self.trigger()
+        elif self.trigger not in batch:
+            batch.append(self.trigger)
 
     @trigger_refresh
     def add(self, func: Callable, id: Optional[str] = None) -> str:

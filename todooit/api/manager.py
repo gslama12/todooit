@@ -31,6 +31,7 @@ class Manager:
             add_agent_column,
             add_bin_columns,
             add_completed_at_column,
+            add_indexes,
             add_note_column,
             add_project_color_column,
             add_scheduled_column,
@@ -56,6 +57,12 @@ class Manager:
         add_agent_column(self.engine)
         sync_project_colors(self.engine)
         BaseModel.metadata.create_all(bind=self.engine)
+
+        # After `create_all`, not beside the migrations above: an index needs a
+        # table to be laid on, and `create_all` is what makes one on a database
+        # that had none
+        add_indexes(self.engine)
+
         self._db_last_modified = self._get_db_last_modified()
 
     def _get_db_last_modified(self) -> Optional[float]:

@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Optional
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
 from todooit.ui.api.plug import PluginManager
 from todooit.api import (
@@ -54,6 +55,12 @@ class DooitAPI:
         app: "Dooit",
     ) -> None:
         self.app = app
+
+        # Set before anything that holds a formatter store is built: a store
+        # fires as soon as it is written to, and reads this to find out
+        # whether anybody is collecting. None means nobody is
+        self._formatter_batch: Optional[List[Callable]] = None
+
         self.plugin_manager = PluginManager(self, app.config)
         self.css = CssManager()
         self.keys = KeyManager(self.app.get_dooit_mode, self.key_scope)
@@ -65,6 +72,35 @@ class DooitAPI:
         self.history = History()
 
         self.css.refresh_css()
+
+    @contextmanager
+    def batch_formatter_refresh(self) -> Iterator[None]:
+        """
+        Collects the redraws the formatters ask for and runs each once
+
+        A run of formatters registered together is one change to how the panes
+        are drawn, not one per formatter. Held open around it, this turns the
+        whole run into a single redraw of each pane the run touched.
+
+        Re-entrant: an inner batch is the outer one, which keeps whoever opens
+        it from having to know whether anybody already has. The flush is in a
+        `finally`, so a handler that raises still leaves the batch closed and
+        the panes drawn rather than wedging every later formatter open.
+        """
+
+        if self._formatter_batch is not None:
+            yield
+            return
+
+        self._formatter_batch = []
+
+        try:
+            yield
+        finally:
+            pending, self._formatter_batch = self._formatter_batch, None
+
+            for trigger in pending:
+                trigger()
 
     def no_op(self):
         """<NOP>"""

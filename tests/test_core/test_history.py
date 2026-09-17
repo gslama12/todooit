@@ -241,3 +241,160 @@ def test_the_revision_counter_moves_with_the_commits(create_project):
     create_project("one")
 
     assert manager.revision > before
+
+
+# --- notes and the history -------------------------------------------------
+#
+# Notes sit outside undo, for the reasons in `history.NOTE`. What that must
+# never mean is a note being destroyed by a key pressed somewhere else, so the
+# two ways that could happen are pinned down here.
+
+
+def test_undoing_an_edit_leaves_the_note_alone(create_project):
+    """
+    The row is put back by being rewritten, and the note must survive it
+
+    The snapshot the row comes back from never held the note, so a rewrite
+    that took the snapshot at its word would blank it.
+    """
+
+    project = create_project("project")
+    todo = Todo(description="before", parent_project=project, note="keep me")
+    todo.save()
+
+    history = started_history()
+
+    todo.description = "after"
+    todo.save()
+    assert history.record()
+
+    history.undo()
+
+    (restored,) = Todo.all()
+    assert restored.description == "before"
+    assert restored.note == "keep me"
+
+
+def test_undoing_a_deletion_brings_the_note_back(create_project):
+    """
+    A deleted row's note cannot be read back off the row, so it is taken down
+    as the row goes
+    """
+
+    project = create_project("project")
+    todo = Todo(description="doomed", parent_project=project, note="precious")
+    todo.save()
+
+    history = started_history()
+
+    todo.drop()
+    assert history.record()
+    assert Todo.all() == []
+
+    history.undo()
+
+    (restored,) = Todo.all()
+    assert restored.description == "doomed"
+    assert restored.note == "precious"
+
+
+def test_a_note_carried_off_by_its_project_comes_back_with_it(create_project):
+    """The same, for a todo deleted by the project it was filed in going"""
+
+    project = create_project("project")
+    todo = Todo(description="step", parent_project=project, note="precious")
+    todo.save()
+
+    history = started_history()
+
+    project.drop()
+    assert history.record()
+    assert Todo.all() == []
+
+    history.undo()
+
+    (restored,) = Todo.all()
+    assert restored.note == "precious"
+
+
+def test_redo_of_a_deletion_can_be_undone_again(create_project):
+    """The note has to survive the whole way round, not just the first undo"""
+
+    project = create_project("project")
+    todo = Todo(description="doomed", parent_project=project, note="precious")
+    todo.save()
+
+    history = started_history()
+
+    todo.drop()
+    history.record()
+
+    history.undo()
+    assert Todo.all()[0].note == "precious"
+
+    history.redo()
+    assert Todo.all() == []
+
+    history.undo()
+    assert Todo.all()[0].note == "precious"
+
+
+def test_a_note_edit_is_not_a_change_to_take_back(create_project):
+    """
+    The cost of keeping notes out of the snapshot, written down on purpose
+
+    Typing into a note records nothing, so `ctrl+z` in the panes steps over
+    it to whatever was changed before. The note window has its own undo on
+    the same key, which is where the typing happens.
+    """
+
+    project = create_project("project")
+    todo = Todo(description="task", parent_project=project, note="first")
+    todo.save()
+
+    history = started_history()
+
+    todo.note = "second"
+    todo.save()
+
+    assert not history.record()
+    assert not history.can_undo
+    assert Todo.all()[0].note == "second"
+
+
+def test_a_note_written_beside_a_real_change_stays_written(create_project):
+    """
+    A change that is taken back does not drag the note back with it
+    """
+
+    project = create_project("project")
+    todo = Todo(description="before", parent_project=project, note="old note")
+    todo.save()
+
+    history = started_history()
+
+    todo.description = "after"
+    todo.note = "new note"
+    todo.save()
+    assert history.record()
+
+    history.undo()
+
+    (restored,) = Todo.all()
+    assert restored.description == "before"
+    # The description came back; the note did not, and was not lost either
+    assert restored.note == "new note"
+
+
+def test_the_snapshot_does_not_carry_notes(create_project):
+    """What the whole thing is for: the history never holds the note text"""
+
+    from todooit.api.history import _capture
+
+    project = create_project("project")
+    Todo(description="task", parent_project=project, note="x" * 5000).save()
+
+    snapshot = _capture()
+    (row,) = snapshot["todo"].values()
+
+    assert "note" not in row

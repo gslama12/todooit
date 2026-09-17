@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
 from datetime import date, datetime, timedelta
 from typing import List
-from sqlalchemy import ForeignKey, select, nulls_last
+from sqlalchemy import ForeignKey, Index, select, nulls_last, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from .model import DooitModel
 from .manager import manager
@@ -97,6 +97,22 @@ def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
 
 
 class Todo(DooitModel):
+    # The two ways a pane asks for todos that a foreign key does not already
+    # cover: the day panes read pending work by the day it is planned for, and
+    # the Bin reads the rows that have one at all. The Bin index is partial
+    # because that is exactly the question `binned_tasks` asks -- the rows
+    # with no bin date are the overwhelming majority and are never looked up
+    # through it. The names match `todooit/utils/database.py`, which is what
+    # puts the same indexes on a database written before they existed.
+    __table_args__ = (
+        Index("ix_todo_pending_scheduled", "pending", "scheduled"),
+        Index(
+            "ix_todo_binned_at",
+            "binned_at",
+            sqlite_where=text("binned_at IS NOT NULL"),
+        ),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
     description: Mapped[str] = mapped_column(default="")
@@ -126,21 +142,30 @@ class Todo(DooitModel):
     origin_path: Mapped[str] = mapped_column(default="")
     # Free text hanging off the todo, edited in a window of its own rather than
     # in the row: the phone number to call, the steps, the reason it is blocked
-    note: Mapped[str] = mapped_column(default="")
+    #
+    # Left behind when a todo is read, and fetched only when something asks for
+    # it. It is the one field with no length to speak of, and nearly everything
+    # that reads todos reads a great many of them to draw a pane -- a query for
+    # a day's work would otherwise carry every note in the database across with
+    # it. The window that edits it asks for one note at a time, which is the
+    # only place the text is actually wanted.
+    note: Mapped[str] = mapped_column(default="", deferred=True)
 
     # --------------------------------------------------------------
     # ------------------- Relationships ----------------------------
     # --------------------------------------------------------------
 
     parent_project_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("project.id")
+        ForeignKey("project.id"), index=True
     )
     parent_project: Mapped[Optional["Project"]] = relationship(
         "Project",
         back_populates="todos",
     )
 
-    parent_todo_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todo.id"))
+    parent_todo_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("todo.id"), index=True
+    )
     parent_todo: Mapped[Optional["Todo"]] = relationship(
         "Todo",
         back_populates="todos",

@@ -13,6 +13,7 @@ from typing import (
     TypeVar,
     Union,
 )
+from textual import events, on
 from textual.app import ComposeResult
 from rich.cells import cell_len
 from rich.markup import escape
@@ -196,6 +197,11 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         # Rows still fading, each with the steps it has left to go
         self._flashing: Dict[str, int] = {}
         self._flash_timer: Optional[Timer] = None
+
+        # Whether a redraw was asked for while the pane was out of sight, and
+        # so is still owed. Per pane, not per class: which panes are behind
+        # the one in front is the whole question
+        self._needs_refresh = False
 
     def flash_row(self, _id: str) -> None:
         """Start the row at full brightness, and keep the fade running"""
@@ -440,10 +446,46 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         return self.query_one("#empty_message", expect_type=Label)
 
     def force_refresh(self) -> None:
+        """
+        Redraws the pane, or takes down that it has to be redrawn
+
+        A pane behind the one in front is drawn for nobody, and the panes are
+        never thrown away: one per project visited stays mounted for the rest
+        of the session, so a change to a single todo would redraw every
+        project ever opened. The work is left until the pane is next brought
+        forward, which is both the moment it is worth doing and the moment a
+        fixed project would go back to the database anyway.
+        """
+
+        if not self.display:
+            self._needs_refresh = True
+            return
+
+        self._refresh_now()
+
+    def _refresh_now(self) -> None:
+        self._needs_refresh = False
         self._refresh_and_restore_highlight()
 
         if self.has_focus:
             self.highlight_first_node()
+
+    def refresh_if_dirty(self) -> None:
+        """
+        Draws whatever was left undone while the pane was out of sight
+        """
+
+        if self._needs_refresh:
+            self._refresh_now()
+
+    @on(events.Show)
+    def _refresh_when_shown(self, _: events.Show) -> None:
+        # A backstop, not the way it normally happens: the pane being switched
+        # to is drawn by whoever switched to it, synchronously, because the
+        # cursor is put on a row the moment after. This catches a pane that
+        # comes back into view some other way, and is a no-op when it is
+        # already drawn
+        self.refresh_if_dirty()
 
     @fix_highlight
     def _refresh_and_restore_highlight(self) -> None:
@@ -744,6 +786,12 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         return True
 
     def refresh_options(self) -> None:
+        # A pane owed a redraw is holding rows that may no longer have a model
+        # behind them, and drawing one would go looking for it. The rebuild it
+        # is waiting for owns those rows
+        if self._needs_refresh:
+            return
+
         for i in self._options:
             assert i.id is not None
 
@@ -933,6 +981,16 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         for _id in ids:
             self._renderers.pop(_id, None)
             self.expanded_nodes.pop(_id, None)
+
+            # The row goes with the renderer. A pane redrawing right now would
+            # drop it anyway, but one waiting its turn out of sight would be
+            # left holding a row it can no longer draw -- and the renderer it
+            # would reach for is built by looking the model up, which is the
+            # one thing that is gone
+            try:
+                self.remove_option(_id)
+            except OptionDoesNotExist:
+                pass
 
     def quoted_name(self) -> str:
         """

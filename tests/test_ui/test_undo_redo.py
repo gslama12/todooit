@@ -259,12 +259,14 @@ async def test_a_step_says_how_much_it_moved():
         assert notification_message(app) == "Redone — 1 row back"
 
 
-async def test_a_note_written_over_the_panes_is_taken_back_from_them():
+async def test_a_note_written_over_the_panes_is_not_a_step_to_take_back():
     """
-    The note window has an undo of its own; closing it hands the change here
+    Writing a note is not something `ctrl+z` in the panes takes back
 
-    Its keys never reach the panes, so what it wrote is picked up when the
-    panes come back into view rather than when it was typed.
+    The history does not keep notes -- see `history.NOTE` for why -- so a key
+    that only wrote one leaves nothing behind to step onto, and `ctrl+z`
+    carries on to whatever was changed before it. The note window has an undo
+    of its own, on the same key, which is where writing is actually done.
     """
 
     async with run_pilot() as pilot:
@@ -282,9 +284,11 @@ async def test_a_note_written_over_the_panes_is_taken_back_from_them():
 
         assert todo.note.strip() == "call them"
 
+        # The note stands. What the step takes back is the change before it --
+        # here, the making of the todo the note was written on
         await undo(pilot)
 
-        assert todo.note.strip() == ""
+        assert Todo.all() == []
 
 
 async def test_ctrl_z_is_left_alone_while_a_row_is_being_typed_into():

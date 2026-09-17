@@ -18,9 +18,11 @@ from tests.test_ui.ui_base import (
     boot,
     commit_line,
     create_and_move_to_todo,
+    descriptions,
     new_project,
     new_todo,
     notification_message,
+    reveal_project,
     run_pilot,
     tree_options,
     visible_todos,
@@ -73,12 +75,6 @@ def slipped_mark(days: int = 1) -> str:
     """What a row planned that many days back is expected to lead with"""
 
     return reschedule_mark(datetime.now() - timedelta(days=days))
-
-
-def descriptions(tree):
-    """What the pane's stored rows say, top to bottom"""
-
-    return [tree._renderers[o.id].model.description for o in tree_options(tree)]
 
 
 def drawn_segments(tree, option):
@@ -656,8 +652,12 @@ async def test_today_takes_a_new_step_under_a_row():
         # than undated inside work that is already spoken for
         assert step.scheduled == task.scheduled
 
-        # And the project it really belongs to has it too
-        assert descriptions(tree) == ["task", "step"]
+        # And the project it really belongs to has it too, once it is the pane
+        # being looked at
+        assert descriptions(await reveal_project(pilot, tree.model)) == [
+            "task",
+            "step",
+        ]
 
 
 async def test_upcoming_takes_a_new_step_under_a_row():
@@ -849,7 +849,7 @@ async def test_binning_from_today_removes_it_everywhere():
 
         today_tree = visible_todos(app)
         assert tree_options(today_tree) == []
-        assert tree_options(tree) == []
+        assert tree_options(await reveal_project(pilot, tree.model)) == []
 
         todo = Todo.all()[0]
         assert todo.is_binned

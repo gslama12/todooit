@@ -25,7 +25,7 @@ class Project(DooitModel):
     # --------------------------------------------------------------
 
     parent_project_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("project.id"), default=None
+        ForeignKey("project.id"), default=None, index=True
     )
     parent_project: Mapped[Optional["Project"]] = relationship(
         "Project",

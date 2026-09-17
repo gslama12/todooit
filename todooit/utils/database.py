@@ -199,3 +199,53 @@ def delete_all_data(session: Session):
     for table in reversed(meta.sorted_tables):
         session.execute(table.delete())
     session.commit()
+
+
+# The columns the panes are looked up by. Everything here is either a foreign
+# key a relationship is walked through, or a column one of the fixed projects
+# filters on -- the two shapes that turn a pane into a run of full table scans
+# once the database has some history in it.
+#
+# The two date columns the logs are read by are deliberately absent.
+# `completed_at` and `binned_at` are sorted in Python, not in SQL, so an index
+# on either buys nothing on its own; the Bin gets a partial one only because
+# `binned_tasks` asks for `IS NOT NULL`, which is the whole of that index.
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_todo_parent_todo_id ON todo (parent_todo_id)",
+    "CREATE INDEX IF NOT EXISTS ix_todo_parent_project_id ON todo (parent_project_id)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_project_parent_project_id "
+        "ON project (parent_project_id)"
+    ),
+    "CREATE INDEX IF NOT EXISTS ix_todo_pending_scheduled ON todo (pending, scheduled)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_todo_binned_at ON todo (binned_at) "
+        "WHERE binned_at IS NOT NULL"
+    ),
+)
+
+
+def add_indexes(engine: Engine):
+    """
+    Index the columns the panes are looked up by
+
+    Unlike every migration above it, this one runs *after* `create_all` rather
+    than before it. `create_all` skips a table it already found -- indexes and
+    all -- so a database written before these existed never gets the ones
+    declared on the models, and a database written from scratch has no tables
+    to index until `create_all` has made them. Running here is the one moment
+    both are true.
+
+    The names match what the models declare, so the two ways in converge on
+    one set of indexes rather than each laying down its own.
+    """
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
+    if not {"todo", "project"} <= tables:  # pragma: no cover
+        return
+
+    with engine.begin() as connection:
+        for statement in INDEXES:
+            connection.execute(text(statement))

@@ -36,11 +36,12 @@ class PluginManager:
         self.app = api.app
 
     def scan(self):
-        load_file(self, DEFAULT_CONFIG)
-        if is_running_under_pytest():
-            return
+        with self.api.batch_formatter_refresh():
+            load_file(self, DEFAULT_CONFIG)
+            if is_running_under_pytest():
+                return
 
-        load_file(self, self.config)
+            load_file(self, self.config)
 
     def _update_dooit_value(self, obj, *params):
         res = obj(self.api, *params)
@@ -64,9 +65,14 @@ class PluginManager:
             e for e in self.events.keys() if issubclass(event.__class__, e)
         ]
 
-        for e in matched_events:
-            for obj in self.events[e]:
-                self._update_dooit_value(obj, event)
+        # One event is one change as far as the panes are concerned, however
+        # many handlers answer it. The formatters the startup handlers lay
+        # down are the case that matters -- there are forty-odd of them, and
+        # without this each one rebuilds every pane on its own
+        with self.api.batch_formatter_refresh():
+            for e in matched_events:
+                for obj in self.events[e]:
+                    self._update_dooit_value(obj, event)
 
     def _register_events(self, events: List[Type[DooitEvent]], obj: Callable):
         for event in events:

@@ -24,11 +24,30 @@ only moves the cursor is two numbers compared.
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, event, insert, select
 
 from .manager import manager
 from .project import Project
 from .todo import Todo
+
+# The one field the history does not keep, and the reason it does not.
+#
+# A note is the only thing on a row that has no length worth speaking of, and
+# it is read here more often than anything else in the app: every key that
+# writes reads both tables to see what it changed. Counting the notes in makes
+# that cost the size of everything ever written down rather than the number of
+# rows, and makes the baseline the history holds a second copy of the whole
+# database in memory.
+#
+# So notes sit outside undo. `ctrl+z` no longer takes back what was typed into
+# a note -- the note window has its own undo on the same key, which is where
+# writing is actually done -- and no change ever puts a note back to an older
+# version of itself. What undo must still never do is *lose* one, and there
+# are two ways it could: rewriting a row would blank the note the row is
+# carrying, and restoring a deleted row would bring it back empty. Both are
+# answered below, so nothing typed into a note is ever destroyed by a key
+# pressed somewhere else.
+NOTE = "note"
 
 # The tables the panes are drawn from, parents before children. Rows are put
 # back in this order and taken out in the reverse of it, so a project is never
@@ -71,13 +90,17 @@ def _capture() -> Snapshot:
     and written to the database at whatever moment the first project happens
     to need it. Counted here, that moment would end up inside somebody's
     change, and undoing that change would take the tree down with it.
+
+    Notes are left out -- see `NOTE` above for why, and for what is done
+    instead so that none is ever lost.
     """
 
     snapshot: Snapshot = {}
 
     for model in TABLES:
         table = model.__table__
-        query = select(table)
+        columns = [column for column in table.c if column.name != NOTE]
+        query = select(*columns)
 
         if model is Project:
             query = query.where(table.c.is_root == False)
@@ -86,6 +109,32 @@ def _capture() -> Snapshot:
         snapshot[table.name] = {row["id"]: dict(row) for row in rows}
 
     return snapshot
+
+
+# The notes of todos on their way out of the database, kept from the moment
+# the row is deleted until the change that deleted it has been written down.
+#
+# A note that is not in the snapshot cannot be read back off a row that is
+# gone, and undoing a deletion has to bring the note back with the task. This
+# is the one place a note is copied, and it holds only what a single key threw
+# away.
+_notes_of_deleted: Dict[int, str] = {}
+
+
+@event.listens_for(Todo, "before_delete")
+def _remember_note(_mapper, _connection, target: Todo) -> None:
+    """
+    Takes down a todo's note while there is still a row to read it from
+
+    Hung off the model rather than written into the keys that delete, so that
+    every way a todo can go -- deleted on its own, emptied out of the Bin, or
+    carried off by the project it was filed in -- is covered by the one hook.
+    """
+
+    note = getattr(target, NOTE, "")
+
+    if note:
+        _notes_of_deleted[target.id] = note
 
 
 @dataclass
@@ -170,6 +219,17 @@ def _diff(before: Snapshot, after: Snapshot) -> Optional[Change]:
         old[name] = {_id: was.get(_id) for _id in ids}
         new[name] = {_id: now.get(_id) for _id in ids}
 
+        # A row that is gone takes its note with it, and there is nothing left
+        # to read it back off. Whatever the deletion took down is written into
+        # the side of the change that puts the row back, and only there: the
+        # rows that are still in the database carry their own notes already
+        if model is Todo:
+            for _id, row in old[name].items():
+                note = _notes_of_deleted.get(_id)
+
+                if note and now.get(_id) is None and row is not None:
+                    row[NOTE] = note
+
     if not old:
         return None
 
@@ -193,6 +253,26 @@ def _apply(fragment: Fragment, leaving: Fragment) -> Restored:
     session = manager.session
     restored = Restored()
 
+    # What the todos being rewritten are carrying in their notes right now.
+    # A row here is put back by being deleted and inserted again, and the row
+    # going back in was read from a snapshot that never held a note -- so
+    # without this, taking back an edit to a description would quietly empty
+    # the note on the same task. Read before anything is deleted, which is the
+    # last moment there is a row to read it from
+    todo_table = Todo.__table__
+    todo_ids = list(fragment.get(Todo.__tablename__, {}))
+    kept_notes: Dict[int, str] = {}
+
+    if todo_ids:
+        kept_notes = {
+            row.id: row.note
+            for row in session.execute(
+                select(todo_table.c.id, todo_table.c.note).where(
+                    todo_table.c.id.in_(todo_ids)
+                )
+            )
+        }
+
     # Out in child-first order, so nothing is left pointing at a row that has
     # already gone
     for model in reversed(TABLES):
@@ -212,6 +292,15 @@ def _apply(fragment: Fragment, leaving: Fragment) -> Restored:
             continue
 
         values = [row for row in rows.values() if row is not None]
+
+        # The note the row goes back with: the one it was carrying a moment
+        # ago, or -- for a row that was not there to carry one -- the one the
+        # deletion took down with it
+        if model is Todo:
+            values = [
+                {**row, NOTE: row.get(NOTE, kept_notes.get(row["id"], ""))}
+                for row in values
+            ]
 
         if values:
             session.execute(insert(model.__table__), values)
@@ -291,6 +380,10 @@ class History:
         self._baseline = _capture()
         self._revision = manager.revision
 
+        # Whatever was thrown away before this moment belongs to no change
+        # that is still to be written down
+        _notes_of_deleted.clear()
+
     def record(self) -> bool:
         """
         Writes down whatever the key just pressed changed, if it changed
@@ -308,6 +401,10 @@ class History:
 
         after = _capture()
         change = _diff(self._baseline, after)
+
+        # The change has taken what it needed out of them, and the next key
+        # starts with nothing thrown away
+        _notes_of_deleted.clear()
 
         self._baseline = after
         self._revision = manager.revision

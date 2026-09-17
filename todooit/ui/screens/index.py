@@ -149,7 +149,10 @@ class MainScreen(BaseScreen):
         the focus while it runs, but the edit itself is still the tree's.
         """
 
-        return any(tree.is_editing for tree in self.query(ModelTree))
+        # Only the panes in front: one behind them is not being typed into,
+        # and a pane still owed a redraw can be holding a row whose model has
+        # gone, which asking it what it is editing would go looking for
+        return any(tree.is_editing for tree in self.query(ModelTree) if tree.display)
 
     def record_change(self) -> None:
         """
@@ -539,10 +542,19 @@ class MainScreen(BaseScreen):
         existing = switcher.query(f"#{tree.id}")
         if not existing:
             await switcher.add_content(tree, set_current=True)
+            # Mounted out of sight, so the pane's own first draw was put off
+            tree.refresh_if_dirty()
             return tree
 
         switcher.current = tree.id
-        return existing.first(TodosTree)
+
+        # Here rather than off the `Show` the switcher's flip sends: that
+        # arrives a tick later, and the caller puts the cursor on a row the
+        # moment this returns. Whatever changed while the pane was behind is
+        # drawn before anybody can look at it
+        shown = existing.first(TodosTree)
+        shown.refresh_if_dirty()
+        return shown
 
     @on(ProjectSelected)
     async def project_selected(self, event: ProjectSelected):
