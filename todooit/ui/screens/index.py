@@ -281,13 +281,18 @@ class MainScreen(BaseScreen):
         self.post_message(TodoChanged(todo))
         await self.reveal_todo(todo)
 
-        where = escape(project.description) if project else ""
         what = escape(todo.description)
-        into = "to new project" if result.project_created else "to"
 
-        self.post_message(
-            BarNotification(f"Added [b]{what}[/b] {into} [b]{where}[/b]", "info")
-        )
+        # Where it went is half of what the line is being told, so it is only
+        # left out when there is no project to name
+        if project is None:  # pragma: no cover
+            message = f"Added [b]{what}[/b]"
+        else:
+            where = escape(project.description)
+            into = "to new project" if result.project_created else "to"
+            message = f"Added [b]{what}[/b] {into} [b]{where}[/b]"
+
+        self.post_message(BarNotification(message, "info"))
 
     def reveal_project(self, project: Project) -> None:
         """
@@ -491,7 +496,7 @@ class MainScreen(BaseScreen):
 
     @on(ShowConfirm)
     def show_confirm(self, event: ShowConfirm):
-        self.app.bar_switcher.switch_to_confirm(event.callback, event.message)
+        self.app.bar_switcher.switch_to_confirm(event)
         self.post_message(ModeChanged("CONFIRM"))
 
     @on(ProjectRemoved)

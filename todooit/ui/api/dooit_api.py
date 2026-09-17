@@ -321,12 +321,17 @@ class DooitAPI:
         # every other delete does, whether this is really meant
         label = "task" if tasks == 1 else "tasks"
         message = rf"Delete {tasks} {label} in the Bin for good? \[y/N]"
+        confirmed = f"Bin emptied — {tasks} {label} deleted"
+        cancelled = "Bin left as it was"
 
         if not self.vars.show_confirm:
             self._empty_bin()
+            self.notify(confirmed, "warning")
             return
 
-        self.app.screen.post_message(ShowConfirm(self._empty_bin, message))
+        self.app.screen.post_message(
+            ShowConfirm(self._empty_bin, message, confirmed, cancelled)
+        )
 
     def _empty_bin(self) -> None:
         """

@@ -172,16 +172,25 @@ class ShowConfirm(DooitEvent):
     """
     Emitted when confirmation from user is required
 
-    The question can be spelled out by whatever is asking it: an edit that
-    takes more than the row under the cursor with it has to say so, since the
-    bar is the only place the size of it is ever mentioned. Leaving it out
-    falls back to the plain "Are you sure?".
+    The question and both of its answers are spelled out by whatever asks it.
+    A bar that only says "Are you sure?" is asking about a keypress rather than
+    about an edit: the bar is the one place the thing being deleted is ever
+    named, and by the time the question is answered the row can be off screen
+    or gone. So the asker names it, and names what became of it either way.
     """
 
-    def __init__(self, callback: Callable, message: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        callback: Callable,
+        message: str,
+        confirmed: str,
+        cancelled: str,
+    ) -> None:
         super().__init__()
         self.callback = callback
         self.message = message
+        self.confirmed = confirmed
+        self.cancelled = cancelled
 
 
 # Project events

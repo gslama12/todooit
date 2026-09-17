@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     BORDER_TITLE = "PROJECTS"
+    NODE_NOUN = "project"
     show_header = True
     CHILDREN_ATTR = "projects"
 
@@ -214,7 +215,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         self.post_message(ProjectRemoved(self.current_model))
         return super()._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Throws the highlighted project away, keeping what was filed in it
 
@@ -232,6 +233,21 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         self.expanded_nodes.pop(project.uuid, None)
 
         move_project_to_bin(project)
+        return True
+
+    def _binned_message(self, subject: str) -> str:
+        """
+        Where a dropped project went, which is not one place
+
+        The project row itself is simply gone; what it was holding is in the
+        Bin, and fetching one of those back is what builds the project again.
+        So the tasks are what the bar points at — when there were any.
+        """
+
+        if self._current_has_children:
+            return f"Dropped {subject} — its tasks are in the Bin"
+
+        return f"Dropped {subject}"
 
     # ---------------------------------------------------------------
     # Nothing about a fixed project is stored, so every edit that would

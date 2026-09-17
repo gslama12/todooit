@@ -2,6 +2,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 from rich.console import RenderableType
+from rich.markup import escape
 from rich.styled import Styled
 from textual import on
 from textual.color import Color
@@ -49,6 +50,7 @@ HEADING_FADE = 0.25
 
 class TodosTree(ModelTree[Model, TodoRenderDict]):
     BORDER_TITLE = "TASKS"
+    NODE_NOUN = "task"
     show_header = True
     CHILDREN_ATTR = "todos"
 
@@ -428,7 +430,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return super()._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Throws the highlighted task away, with everything filed under it
 
@@ -442,10 +444,21 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         if todo.is_binned:
             self._already_binned()
-            return
+            return False
 
         move_todo_to_bin(todo)
         self.post_message(TodoChanged(todo))
+        return True
+
+    def _binned_message(self, subject: str) -> str:
+        """
+        Where a binned task went, and the two keys that walk back to it
+
+        The cursor does not follow it in, so the key that fetches one back is
+        no use where it was pressed: the Bin has to be opened first.
+        """
+
+        return f"Binned {subject} — [b]gb[/b] then [b]u[/b] puts it back"
 
     def _already_binned(self) -> None:
         self.post_message(
@@ -506,8 +519,12 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for project in projects:
             tree.flash_row(project.uuid)
 
+        # Named after what was rebuilt, not after what came back: the task is
+        # already on screen with the cursor on it, and the row that appeared in
+        # the other pane is the part nothing else accounts for
+        home = escape(projects[-1].description)
         self.post_message(
-            BarNotification(f"Brought back [b]{projects[-1].description}[/b]", "info")
+            BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
         )
 
     def _row_above(self, todo: Todo) -> Optional[Todo]:

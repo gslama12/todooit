@@ -6,16 +6,36 @@ pane borrows when a hidden column is edited. (The old modal sort bar has no
 key bound to it any more; the sort chords are tested in test_sort.py.)
 """
 
-from todooit.api import Todo
+from typing import Optional
+
+from todooit.api import BIN, Todo
+from todooit.ui.tui import Dooit
 from todooit.ui.widgets.bars import StatusBar
 from tests.test_ui.ui_base import (
     boot,
+    commit_line,
     create_and_move_to_todo,
     new_project,
     new_todo,
     notification_message,
     run_pilot,
 )
+
+
+async def settle(pilot):
+    """Waits out the jump a key that opens another pane sends the app on"""
+
+    for _ in range(5):
+        await pilot.pause()
+
+
+def confirm_message(app: Dooit) -> Optional[str]:
+    """The question the bar is holding the keyboard for, if it is asking one"""
+
+    if app.bar_switcher.current != "confirm_bar":
+        return None
+
+    return app.bar_switcher.visible_content.message
 
 
 async def test_the_status_bar_is_the_default():
@@ -54,12 +74,16 @@ async def test_confirm_bar_takes_the_keyboard_and_answers_no():
         assert app.bar_switcher.current == "confirm_bar"
         assert app.bar_switcher.is_focused
 
+        # The question names the row rather than the keypress: by the time it
+        # is answered the row can be off screen, or gone
+        assert confirm_message(app) == r"Delete [b]precious[/b] for good? \[y/N]"
+
         # While the question stands, other keys are answers, not commands
         await pilot.press("n")
         await pilot.pause()
 
         assert todo in Todo.all()
-        assert notification_message(app) == "The items were retained"
+        assert notification_message(app) == "Kept [b]precious[/b]"
 
 
 async def test_confirm_bar_answers_yes():
@@ -74,7 +98,130 @@ async def test_confirm_bar_answers_yes():
         await pilot.pause()
 
         assert Todo.all() == []
-        assert notification_message(app) == "The items were deleted"
+        assert notification_message(app) == "Deleted [b]doomed[/b]"
+
+
+async def test_the_question_says_what_leaves_with_the_row():
+    """
+    A task with steps under it takes them with it, and nothing in the Bin
+    afterwards can fetch any of them back -- so the question says so
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "project")
+        await new_todo(pilot, "whole thing")
+
+        await pilot.press("N")
+        await commit_line(pilot, "a step")
+        await pilot.pause()
+
+        # Back up to the task the step was filed under
+        await pilot.press("k")
+        await pilot.press("y", "y")
+        await pilot.pause()
+
+        message = confirm_message(app)
+        assert message is not None
+        assert "[b]whole thing[/b] and everything under it" in message
+
+
+async def test_the_question_is_asked_of_a_binned_row_too():
+    """
+    `yy` in the Bin is the second half of a delete, and the pane it is pressed
+    in is no part of the question: it still names the task about to be lost
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "project")
+        await new_todo(pilot, "thrown away")
+
+        await pilot.press("x", "x")
+        await pilot.pause()
+        await pilot.press("g", "b")
+        await settle(pilot)
+
+        await pilot.press("y", "y")
+        await pilot.pause()
+
+        assert confirm_message(app) == r"Delete [b]thrown away[/b] for good? \[y/N]"
+
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert Todo.all() == []
+        assert notification_message(app) == "Deleted [b]thrown away[/b]"
+
+
+async def test_a_nameless_row_is_called_after_its_pane():
+    """
+    Clearing a project's name drops it, and one holding work asks first -- with
+    nothing left to quote, so the question says what kind of thing is going
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "doomed")
+
+        await pilot.press("ö", "n")
+        await commit_line(pilot, "work inside it")
+        await pilot.press("j")
+
+        # Empty the description and commit it
+        await pilot.press("i")
+        await pilot.press("ctrl+l")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        message = confirm_message(app)
+        assert message is not None
+        assert "this project and everything under it" in message
+
+
+async def test_a_long_description_is_cut_short_in_the_question():
+    """The bar has one line, and the front of a description is what names it"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "project")
+        await new_todo(pilot, "w" * 80)
+
+        await pilot.press("y", "y")
+        await pilot.pause()
+
+        message = confirm_message(app)
+        assert message is not None
+        assert "…" in message
+        assert "w" * 80 not in message
+
+
+async def test_emptying_the_bin_counts_what_goes_and_says_what_went():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "project")
+        await new_todo(pilot, "one")
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        await pilot.press("Y", "Y")
+        await pilot.pause()
+
+        assert confirm_message(app) == r"Delete 1 task in the Bin for good? \[y/N]"
+
+        await pilot.press("n")
+        await pilot.pause()
+
+        assert notification_message(app) == "Bin left as it was"
+        assert len(BIN.todos) == 1
+
+        await pilot.press("Y", "Y")
+        await pilot.pause()
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert notification_message(app) == "Bin emptied — 1 task deleted"
+        assert BIN.todos == []
 
 
 async def test_field_bar_edits_a_hidden_column():
@@ -148,3 +295,69 @@ async def test_a_bar_widget_tick_survives_the_screen_going_away():
             app._screen_stack.extend(stack)
 
         assert getattr(tick, "__dooit_value") == "09:19:58"
+
+
+async def test_binning_says_where_it_went_and_how_to_get_back():
+    """
+    `xx` and `yy` both make a row vanish, and the pane cannot tell them apart:
+    the bar is where the difference between them is said
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "project")
+        await new_todo(pilot, "off the list")
+
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert notification_message(app) == (
+            "Binned [b]off the list[/b] — [b]gb[/b] then [b]u[/b] puts it back"
+        )
+        assert Todo.all()[0].is_binned
+
+
+async def test_dropping_a_project_points_at_the_tasks_it_left_behind():
+    """
+    The project row simply goes; what it was holding is what lands in the Bin,
+    and restoring one of those is what builds the project again
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "abandoned")
+        await new_todo(pilot, "orphaned work")
+
+        await pilot.press("j")  # back onto the project
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert notification_message(app) == (
+            "Dropped [b]abandoned[/b] — its tasks are in the Bin"
+        )
+        assert len(BIN.todos) == 1
+
+
+async def test_dropping_an_empty_project_points_at_nothing():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "never used")
+
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert notification_message(app) == "Dropped [b]never used[/b]"
+        assert BIN.todos == []
+
+
+async def test_copying_a_description_says_the_key_landed():
+    """A copy leaves nothing on screen, the same way the note beside it does"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await new_project(pilot, "nixos")
+
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+
+        assert notification_message(app) == "Description copied to clipboard"

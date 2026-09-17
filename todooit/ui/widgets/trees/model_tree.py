@@ -9,11 +9,13 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Tuple,
     TypeVar,
     Union,
 )
 from textual.app import ComposeResult
 from rich.cells import cell_len
+from rich.markup import escape
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.measure import Measurement
 from rich.segment import Segment
@@ -130,6 +132,12 @@ class GroupHeading:
         return Measurement(0, 0)
 
 
+# How much of a description the bar will quote before it is cut short: enough
+# to tell one row from another, short of filling the line it has to share with
+# the question around it
+QUOTED_NAME_MAX = 40
+
+
 ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 RenderDictType = TypeVar("RenderDictType", bound=RenderDict)
 
@@ -153,6 +161,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     # The attribute a node's children hang off, walked into when the node is
     # expanded: "projects" for the projects pane, "todos" for the tasks pane
     CHILDREN_ATTR: str = ""
+
+    # What a row of this pane is called where the bar has to talk about one
+    # that cannot be quoted by name
+    NODE_NOUN: str = "item"
 
     # Whether a nested row is drawn hanging off the row above it. A pane that
     # gathers its rows from all over the tree shows them as the flat list they
@@ -742,7 +754,15 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @require_highlighted_node
     def copy_description_to_clipboard(self):
+        """
+        Puts the highlighted row's description on the system clipboard
+
+        A copy leaves nothing on screen to look at, so the bar is what says the
+        key landed — the same way it does for the note beside it.
+        """
+
         copy_text(self.app, self.current_model.description)
+        self.post_message(BarNotification("Description copied to clipboard", "info"))
 
     @refresh_tree
     def _expand_node(self, _id: str) -> None:
@@ -873,7 +893,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         description = " ".join(paste_text(self.app).split())
 
         if not description:
-            self.post_message(BarNotification("Clipboard is empty", "warning"))
+            self.post_message(
+                BarNotification("Clipboard is empty — nothing to paste", "warning")
+            )
             return
 
         node = self._new_sibling()
@@ -912,6 +934,53 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             self._renderers.pop(_id, None)
             self.expanded_nodes.pop(_id, None)
 
+    def quoted_name(self) -> str:
+        """
+        The highlighted row, named the way the bar will quote it
+
+        Cut short where a description would fill the line: the bar has one of
+        them, and the front of a description is what tells one row from
+        another. Blank comes back blank — a row can be deleted straight out of
+        an edit that never gave it a name, and there the pane it is in is all
+        there is left to call it.
+        """
+
+        description = " ".join(self.current_model.description.split())
+
+        if len(description) > QUOTED_NAME_MAX:
+            description = description[: QUOTED_NAME_MAX - 1].rstrip() + "…"
+
+        return escape(description)
+
+    def quoted_subject(self) -> str:
+        """
+        The highlighted row as the bar will refer to it
+
+        Its name where it has one, and what the pane calls a row where it has
+        not: a row can be acted on straight out of an edit that never named it.
+        """
+
+        name = self.quoted_name()
+        return f"[b]{name}[/b]" if name else f"this {self.NODE_NOUN}"
+
+    def delete_confirmation(self) -> Tuple[str, str, str]:
+        """
+        The question a delete for good asks, and what it says either way
+
+        What goes with the row is named as well: the rows filed under it leave
+        with it, and unlike a trip to the Bin there is nothing left afterwards
+        to fetch any of them back with.
+        """
+
+        subject = self.quoted_subject()
+        held = " and everything under it" if self._current_has_children else ""
+
+        return (
+            rf"Delete {subject}{held} for good? \[y/N]",
+            f"Deleted {subject}{held}",
+            f"Kept {subject}",
+        )
+
     @require_confirmation
     @refresh_tree
     def _remove_node(self):
@@ -923,10 +992,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Move the highlighted node to the Bin, keeping everything it holds
+
+        False when nothing moved, which is a pane having said why itself.
         """
+
+        raise NotImplementedError  # pragma: no cover
+
+    def _binned_message(self, subject: str) -> str:
+        """What the bar says once the highlighted row has gone to the Bin"""
 
         raise NotImplementedError  # pragma: no cover
 
@@ -948,9 +1024,20 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         Nothing goes for good here: what is dropped lands in the Bin, whole,
         and stays there until it is either restored or deleted on purpose.
         Which is what lets the key act on the spot instead of asking first.
+
+        The row leaving the pane is the only thing on screen that says the key
+        landed, and it looks exactly like the row being deleted outright — so
+        the bar is where the difference between the two is said, along with the
+        way back. Both are read off the row before it goes.
         """
 
-        self._bin_node()
+        subject = self.quoted_subject()
+        message = self._binned_message(subject)
+
+        if not self._bin_node():
+            return
+
+        self.post_message(BarNotification(message, "info"))
 
     @require_highlighted_node
     def delete_node(self):
