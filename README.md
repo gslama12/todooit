@@ -9,7 +9,7 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 - **Quick add** — `C` types a whole task in one line, with its project, priority and day, from wherever the cursor happens to be.
 - **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one that is picked.
 - **Notes** — every task carries a note (`space`) with an insert mode, selection, copy and paste; `m` opens a pinned scratchpad note for thoughts with no task yet.
-- **Note markup** — `ctrl+e` emphasises in orange, delimited by zero-width marks so the words go loud with nothing at all around them; `ctrl+b` (or a typed `> `) sets a line off as a green quote, `ctrl+l` (or a typed `- `) bullets a line and `tab` / `shift+tab` nest it, `ctrl+t` closes a line off as a heading, and a typed `---` turns into a separator.
+- **Note markup** — markdown as you type it, with no formatting keys to learn: `- ` or `* ` opens a bullet and `tab` / `shift+tab` nest it, `1. ` numbers one, `> ` sets a line off as a green quote — lists inside one work, and go green with it — `# ` draws the rule a heading is titled over, `---` turns into a separator, and `*stars*` go orange, the stars themselves swapped for zero-width marks so emphasis opening a line costs no column.
 - **Link opening** — `o` opens the link under the cursor, on a task row and inside a note alike.
 - **Priority `p0`-`p3`** — Todoist's scale, typed as a chord and shown as a colored checkbox rather than a column of its own.
 - **Agent flag `a`** — an hourglass in its own column on the tasks handed to an AI that is off working on them.

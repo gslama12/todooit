@@ -19,6 +19,7 @@ from todooit.ui.screens.note import (
     QUOTE,
     QUOTE_BAR,
     QUOTE_GLYPH,
+    QUOTE_ITEM,
     RULE,
     RULE_SPAN,
     NoteScreen,
@@ -195,26 +196,23 @@ async def test_note_marks_the_row():
 
 
 async def test_emph_and_bullet_markup():
+    """Both are written rather than pressed, and both are drawn as typed"""
+
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press(*list("word"))
+        # markdown's own `- `, and emphasis wrapped in markdown's own stars -
+        # which are swapped for the marks that cost no columns on the way in,
+        # exactly as the dash is swapped for the bullet
+        await pilot.press(*list("- say *this* twice"))
+        assert screen.editor.text == (
+            "• say " + EMPH_MARK + "this" + EMPH_MARK + " twice"
+        )
 
-        # Select the line and mark it up as emphasis
-        await pilot.press("ctrl+a", "ctrl+e")
-        assert screen.editor.text == EMPH_MARK + "word" + EMPH_MARK
+        names = [name for _, _, name in list(scan_note([screen.editor.text]))[0]]
 
-        # A bullet goes at the head of the line
-        await pilot.press("ctrl+l")
-        assert screen.editor.text == "• " + EMPH_MARK + "word" + EMPH_MARK
-
-        # And comes off it again
-        await pilot.press("ctrl+l")
-        assert screen.editor.text == EMPH_MARK + "word" + EMPH_MARK
-
-        # The same key takes the emphasis off again
-        await pilot.press("ctrl+a", "ctrl+e")
-        assert screen.editor.text == "word"
+        assert names[0] == "note-bullet-0"
+        assert EMPH in names
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -239,22 +237,20 @@ async def test_emph_is_drawn_in_its_own_color():
     ]
 
 
-async def test_emph_toggles_off_a_selection_made_by_eye():
-    """The marks cannot be seen, so they are never in what is picked out"""
+async def test_the_formatting_keys_no_longer_format():
+    """
+    The markup is typed, not pressed: the four keys that used to write it are
+    off the window, and none of them leaves a mark on the note any more
+    """
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press(*list("one two"))
+        await pilot.press(*list("plain"))
+        await pilot.press("ctrl+e", "ctrl+b", "ctrl+l", "ctrl+t")
+        await pilot.pause()
 
-        # Pick "two" out and emphasise it
-        await pilot.press("shift+left", "shift+left", "shift+left")
-        await pilot.press("ctrl+e")
-        assert screen.editor.text == "one " + EMPH_MARK + "two" + EMPH_MARK
-
-        # The same three letters, and the key takes the marks back out
-        await pilot.press("ctrl+e")
-        assert screen.editor.text == "one two"
+        assert screen.editor.text == "plain"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -268,12 +264,18 @@ async def test_markdown_stars_still_read_as_emphasis():
     assert EMPH in [name for _, _, name in spans]
 
 
-async def test_star_markers_are_painted_out():
-    """A `*` has already cost a column; the least it can do is not be seen"""
+async def test_star_markers_are_faint_but_not_hidden():
+    """
+    A `*` that survives - pasted in, or written before the swap - costs its
+    column either way, and one painted the color of the paper reads as an
+    indent that is not there. Faint, then, but visible
+    """
 
     theme = build_theme(DooitThemeBase)
+    marker = theme.syntax_styles[MARKER].color.triplet
 
-    assert theme.syntax_styles[MARKER].color.triplet == theme.base_style.bgcolor.triplet
+    assert marker != theme.base_style.bgcolor.triplet
+    assert marker != theme.syntax_styles[EMPH].color.triplet
 
 
 async def test_typing_a_quote_marker():
@@ -337,6 +339,108 @@ async def test_typing_a_bullet_marker():
         await pilot.pause()
 
 
+async def test_a_star_opens_a_bullet_too():
+    """markdown's other list mark, arriving as the one glyph the note draws"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("* item"))
+        assert screen.editor.text == "• item"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_star_pair_at_the_head_of_a_line_costs_no_column():
+    """
+    The bug: a `*` painted out to be unseen still took the column it was
+    written in, so emphasis opening a line read as an indent that was not
+    there. The pair is swapped for the zero-width marks the moment it closes,
+    and what is left on the page is the words and nothing else
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("*loud* and clear"))
+
+        assert screen.editor.text == (
+            EMPH_MARK + "loud" + EMPH_MARK + " and clear"
+        )
+        assert cell_len(screen.editor.text) == len("loud and clear")
+
+        # The words are what is emphasised, and the two marks over the top of
+        # them are the pair - drawn, and worth nothing on the page
+        text = screen.editor.text
+        spans = list(scan_note([text]))[0]
+
+        assert [
+            (text.encode()[start:end].decode(), name) for start, end, name in spans
+        ] == [("loud", EMPH), (EMPH_MARK, MARKER), (EMPH_MARK, MARKER)]
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_stars_leaning_on_a_space_stay_stars():
+    """What markdown asks of a pair: `2 * 3 * 4` is arithmetic, not emphasis"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("2 * 3 * 4"))
+        assert screen.editor.text == "2 * 3 * 4"
+        assert list(scan_note([screen.editor.text]))[0] == []
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_next_to_a_mark_takes_the_emphasis_off():
+    """
+    The marks cannot be seen, so taking only the one backspace landed on would
+    look like nothing happening and strand the other in the note for good
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this*"))
+        assert screen.editor.text == "say " + EMPH_MARK + "this" + EMPH_MARK
+
+        await pilot.press("backspace")
+        assert screen.editor.text == "say this"
+        assert screen.editor.cursor_location == (0, 8)
+
+        # And what is typed next lands after the words, not inside them
+        await pilot.press(*list(" twice"))
+        assert screen.editor.text == "say this twice"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enumerations_are_drawn_like_bullets():
+    """A numbered list is a list: the number wears the bullet's own color"""
+
+    lines = ["1. first", "  2. nested", "10. tenth"]
+    spans = list(scan_note(lines))
+    names = [[name for _, _, name in row] for row in spans]
+
+    assert names == [["note-bullet-0"], ["note-bullet-1"], ["note-bullet-0"]]
+
+    # And it is the number itself that is colored, not the words after it
+    start, end, _ = spans[0][0]
+    assert lines[0].encode()[start:end].decode() == "1. "
+
+
+async def test_a_number_mid_line_is_not_an_enumeration():
+    """`1.` opens a list only where a list could open: at the head of a line"""
+
+    assert list(scan_note(["worth about 1. of a point"]))[0] == []
+
+
 async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
     """The glyph says how deep the line sits, however the bullet got there"""
 
@@ -384,17 +488,100 @@ async def test_dashes_still_reach_the_separator():
         await pilot.pause()
 
 
-async def test_ctrl_b_quotes_a_written_line():
+async def test_a_bullet_opens_inside_a_quote():
+    """A quote is a wrapper, not a kind of line: a list in one is still a list"""
+
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press(*list("already written"))
-        await pilot.press("ctrl+b")
-        assert screen.editor.text == QUOTE_GLYPH + "already written"
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- quoted item"))
+        assert screen.editor.text == QUOTE_GLYPH + "• quoted item"
 
-        # And takes it back out again
-        await pilot.press("ctrl+b")
-        assert screen.editor.text == "already written"
+        # Enter carries both markers on, so the list goes on inside the quote
+        await pilot.press("enter")
+        await pilot.press(*list("and another"))
+        assert screen.editor.text == (
+            QUOTE_GLYPH
+            + "• quoted item\n"
+            + QUOTE_GLYPH
+            + "• and another"
+        )
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_quoted_marker_is_green_rather_than_its_depth():
+    """
+    Inside a quote the color is spoken for - it says the line is quoted - so
+    the glyph and the indent are left to say how deep the item sits
+    """
+
+    lines = [
+        QUOTE_GLYPH + "• an item worth quoting",
+        QUOTE_GLYPH + "  ◦ and one under it",
+        QUOTE_GLYPH + "1. numbered, and quoted too",
+    ]
+    names = [[name for _, _, name in row] for row in scan_note(lines)]
+
+    assert names == [[QUOTE, QUOTE_BAR, QUOTE_ITEM]] * 3
+
+    theme = build_theme(DooitThemeBase)
+
+    assert (
+        theme.syntax_styles[QUOTE_ITEM].color.triplet
+        == theme.syntax_styles[QUOTE].color.triplet
+    )
+    assert theme.syntax_styles[QUOTE_ITEM].bold
+
+
+async def test_tab_nests_a_bullet_inside_its_quote():
+    """The bar stays at the head of the line; the indent grows after it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- top"))
+        await pilot.press("enter")
+        await pilot.press(*list("child"))
+        await pilot.press("tab")
+
+        assert screen.editor.text == (
+            QUOTE_GLYPH + "• top\n" + QUOTE_GLYPH + "  ◦ child"
+        )
+
+        # Still quoted at every level it reaches
+        names = [
+            [name for _, _, name in row]
+            for row in scan_note(screen.editor.text.splitlines())
+        ]
+        assert names == [[QUOTE, QUOTE_BAR, QUOTE_ITEM]] * 2
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_empty_quoted_item_unwinds_one_marker_at_a_time():
+    """The bullet ends the list, and the bar ends the quote after it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- item"))
+
+        written = QUOTE_GLYPH + "• item\n"
+
+        await pilot.press("enter")
+        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+
+        await pilot.press("enter")
+        assert screen.editor.text == written + QUOTE_GLYPH
+
+        await pilot.press("enter")
+        assert screen.editor.text == written
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -685,8 +872,7 @@ async def test_tab_nests_a_bullet():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("ctrl+l")
-        await pilot.press(*list("top"))
+        await pilot.press(*list("- top"))
 
         # Enter carries the bullet on, tab takes the new one a level in - and
         # the glyph changes with it, so the depth is readable without counting
@@ -723,8 +909,7 @@ async def test_enter_in_front_of_a_bullet_opens_a_line_above():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        await pilot.press("ctrl+l")
-        await pilot.press(*list("one"))
+        await pilot.press(*list("- one"))
         await pilot.press("enter")
         await pilot.press(*list("two"))
         assert editor.text == "• one\n• two"
@@ -747,8 +932,7 @@ async def test_enter_between_glyph_and_words_keeps_the_marker_whole():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        await pilot.press("ctrl+l")
-        await pilot.press(*list("top"))
+        await pilot.press(*list("- top"))
         await pilot.press("enter")
         await pilot.press(*list("child"))
         await pilot.press("tab")
@@ -779,8 +963,7 @@ async def test_enter_at_the_words_still_opens_an_empty_bullet_above():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        await pilot.press("ctrl+l")
-        await pilot.press(*list("item"))
+        await pilot.press(*list("- item"))
 
         editor.move_cursor((0, 2))
         await pilot.press("enter")
@@ -858,7 +1041,7 @@ async def test_three_dashes_become_the_separator():
         assert lines[0] == "above"
 
         # A blank line is kept above it: a rule tight under words is a header,
-        # and `ctrl+t` is the key for meaning that
+        # and `# ` is how a header is meant on purpose
         assert lines[1] == ""
         assert set(lines[2]) == {RULE}
 
@@ -894,21 +1077,59 @@ async def test_a_separator_is_not_a_header():
     assert separator == [RULE_SPAN]
 
 
-async def test_header_draws_a_rule_under_the_line():
+async def test_a_hash_draws_the_rule_the_title_is_typed_over():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
+        await pilot.press(*list("# "))
+        await pilot.pause()
+
+        # The mark goes and the rule arrives; the title line is left empty,
+        # with the cursor standing on it
+        lines = screen.editor.text.splitlines()
+        assert lines[0] == ""
+        assert set(lines[1]) == {RULE}
+
+        # Which is where the title is typed, and it is a title from its first
+        # letter, because the rule saying so is already underneath it
         await pilot.press(*list("Section"))
-        await pilot.press("ctrl+t")
         await pilot.pause()
 
         lines = screen.editor.text.splitlines()
         assert lines[0] == "Section"
+
+        names = [name for row in scan_note(lines) for _, _, name in row]
+        assert names == [HEADER, RULE_SPAN]
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_run_of_hashes_opens_the_one_header_there_is():
+    """Every depth of markdown heading means heading; this note has one"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("### "))
+        await pilot.pause()
+
+        lines = screen.editor.text.splitlines()
+        assert lines[0] == ""
         assert set(lines[1]) == {RULE}
 
-        # The same key takes the rule away again
-        await pilot.press("ctrl+t")
-        assert screen.editor.text == "Section"
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_hash_mid_line_stays_a_number_sign():
+    """Only a mark at the head of a line is opening one"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("issue #4 again"))
+        assert screen.editor.text == "issue #4 again"
 
         await pilot.press("escape", "escape")
         await pilot.pause()

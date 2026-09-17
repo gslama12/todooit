@@ -65,18 +65,28 @@ HEADER_WIDTH = 40
 QUOTE_GLYPH = "▎ "
 QUOTE_MARK = ">"
 
-# What a list item is typed as before it becomes the bullet: markdown's own
-# `-`, which is what the fingers reach for whether or not this window is the
-# one they learned it in
-BULLET_MARK = "-"
+# The two below and the `>` above are all read the same way, and the space
+# after them is what says they mean it: a `-` in the middle of a word is a
+# hyphen, a `*` is half of an emphasis and a `#` is a number sign. Only a mark
+# with nothing but indent in front of it and a space behind it opens a line.
 
-# The marks a following space turns into the glyph they stand for, and the
-# space is what says they mean it: a `-` in the middle of a word is a hyphen,
-# and only a mark with nothing but indent in front of it and a space behind
-# it is opening a line. `>` becomes the quote bar; `-` becomes the bullet for
-# however deep the line is already indented, so the glyph is looked up rather
-# than stored here
-MARKDOWN_MARKS = (QUOTE_MARK, BULLET_MARK)
+# What a list item is typed as before it becomes the bullet: markdown's own
+# `-` and `*`, whichever of the two the fingers reach for. Both arrive as the
+# same glyph, because the note draws one kind of bullet - the mark says only
+# that a list is being written. Which glyph arrives follows how deep the line
+# is already indented, so it is looked up rather than stored here
+BULLET_MARKS = ("-", "*")
+
+# The `*` on its own, which is the other thing a star does here: a pair of
+# them around a phrase is markdown's emphasis. Which of the two a star means
+# is settled by what follows it - a space opens a list, anything else is words
+# on the way to being emphasised
+EMPH_STAR = "*"
+
+# What a title is typed as before the rule is drawn underneath it: markdown's
+# `#`. A run of them opens one too, since every depth of markdown heading
+# means heading, and this note has exactly the one to give them all
+HEADER_MARK = "#"
 
 # What `---` is typed as before it becomes the rule. Two dashes and a third
 # on the way, which is the moment the line is swapped for the rule itself.
@@ -93,6 +103,7 @@ HEADER = "note-header"
 LINK = "note-link"
 QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
+QUOTE_ITEM = "note-quote-item"
 
 # What emphasis is delimited by: a zero-width space either side of the words.
 #
@@ -105,17 +116,30 @@ QUOTE_BAR = "note-quote-bar"
 # up no more room on the page than the rule under a heading takes out of it
 EMPH_MARK = "\N{ZERO WIDTH SPACE}"
 
-# Either mark, so that emphasis written before this - or pasted in from
-# somewhere that speaks markdown - goes on being emphasis. `ctrl+e` only ever
-# writes the zero-width one; the `*` are painted the color of the paper, which
-# is the most that can be done for a marker that already costs a column
+# Either mark. The `*` is what emphasis is *typed* with, being the pair of
+# characters markdown has always used for it, but a finished pair is swapped
+# for the zero-width marks on the way in, the same way `- ` is swapped for the
+# bullet it stands for: a `*` costs a column whatever else is true of it, and
+# one at the head of a line reads as an indent that is not there.
+#
+# The `*` form is still read, for a note pasted in from somewhere that speaks
+# markdown or written before the swap - and it is read the way markdown reads
+# it, needing something between the two stars with neither of them leaning on
+# a space, so that the `a * b * c` of an arithmetic stays arithmetic
 EMPH_RE = re.compile(
-    rf"{EMPH_MARK}(?P<emph>[^{EMPH_MARK}]+){EMPH_MARK}" r"|\*(?P<star>[^*]+)\*"
+    rf"{EMPH_MARK}(?P<emph>[^{EMPH_MARK}]+){EMPH_MARK}"
+    r"|\*(?P<star>[^*\s](?:[^*]*[^*\s])?)\*"
 )
 
 BULLET_RE = re.compile(
     rf"^(?P<indent>[ \t]*)(?P<marker>[{''.join(BULLET_GLYPHS)}] )"
 )
+
+# An enumerated item, kept exactly as it was typed. There is no glyph to swap
+# the number for - which number it is, is the half of it that matters - so
+# unlike a bullet it is only ever colored, and it is colored the same way,
+# because a numbered list and a dashed one are one list with two markers
+ORDERED_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>\d+\. )")
 
 QUOTE_RE = re.compile(rf"^(?P<indent>[ \t]*)(?P<marker>{QUOTE_GLYPH})")
 
@@ -178,24 +202,85 @@ def bullet_glyph(depth: int) -> str:
     return BULLET_GLYPHS[min(depth, len(BULLET_GLYPHS) - 1)] + " "
 
 
+def split_quote(line: str) -> Tuple[str, str]:
+    """
+    One line as (its quote bar, everything after it), with an empty bar when
+    the line is not quoted
+
+    A quote is not a kind of line but a wrapper around one, so this is the
+    first thing every reader here does: a bullet inside a quote is a bullet
+    that happens to be quoted, and from this call on it is read as one.
+    """
+
+    match = QUOTE_RE.match(line)
+
+    return (line[: match.end()], line[match.end() :]) if match else ("", line)
+
+
 def line_prefix(line: str) -> str:
     """
-    What a line opens with before its words start: its indent and the bullet
-    or quote glyph after it, or "" when it opens with neither
+    What a line opens with before its words start: its quote bar, its indent
+    and the bullet after them, or "" when it opens with none of the three
 
     This is what `enter` carries onto the next line, so that a list goes on
-    being a list and a quote goes on being a quote.
+    being a list, a quote goes on being a quote, and a list inside a quote
+    goes on being both.
     """
 
-    match = BULLET_RE.match(line) or QUOTE_RE.match(line)
+    bar, body = split_quote(line)
+    bullet = BULLET_RE.match(body)
 
-    return line[: match.end()] if match else ""
+    return bar + (body[: bullet.end()] if bullet else "")
+
+
+def marker_start(line: str) -> int:
+    """
+    Where the innermost marker of `line` begins - the column an item with
+    nothing written on it is unwound from
+
+    A list ends one marker at a time. The bullet of an empty quoted item goes
+    first and leaves the bar it was written inside, and the bar goes on the
+    next `enter`: so this is where the bullet starts when there is one, and
+    where the bar starts when there is not.
+    """
+
+    bar, body = split_quote(line)
+    bullet = BULLET_RE.match(body)
+
+    if not bullet:
+        return 0
+
+    return len(bar) + len(bullet.group("indent"))
+
+
+def star_pair(line: str, column: int) -> Optional[int]:
+    """
+    Where the `*` that a star typed at `column` closes is, or None when it
+    closes nothing and is only a star
+
+    What markdown asks of a pair is asked here: something between the two
+    stars, and neither of them leaning on a space. The second star of
+    `a * b * c` closes nothing, and stays the star it was typed as.
+    """
+
+    opening = line.rfind(EMPH_STAR, 0, column)
+
+    if opening < 0:
+        return None
+
+    inner = line[opening + 1 : column]
+
+    if not inner or inner[0].isspace() or inner[-1].isspace():
+        return None
+
+    return opening
 
 
 def split_indent(line: str) -> Tuple[str, str, str]:
     """
-    One line as (indent, bullet, the rest), with an empty bullet when there
-    is none - the three pieces a line is re-indented out of
+    One line - already past its quote bar, if it had one - as (indent, bullet,
+    the rest), with an empty bullet when there is none: the three pieces a
+    line is re-indented out of
     """
 
     match = BULLET_RE.match(line)
@@ -243,20 +328,31 @@ def scan_markup(
         yield 0, byte(len(line)), HEADER
         return
 
-    quote = QUOTE_RE.match(line)
-    if quote:
+    bar, body = split_quote(line)
+
+    if bar:
         # The whole line goes green and the bar over the top of it, and then
-        # the ordinary scans run on afterwards: a quoted line is still a line
-        # of the note, so a link in one is still underlined and still opens
+        # the ordinary scans run on afterwards over what is left: a quoted
+        # line is still a line of the note, so a list in one is still a list
+        # and a link in one is still underlined and still opens
         yield 0, byte(len(line)), QUOTE
-        yield byte(quote.start("marker")), byte(quote.end("marker")), QUOTE_BAR
+        yield 0, byte(len(bar)), QUOTE_BAR
 
-    bullet = BULLET_RE.match(line)
-    if bullet:
-        depth = indent_depth(bullet.group("indent"))
-        span = BULLET_SPANS[min(depth, len(BULLET_SPANS) - 1)]
+    # A bullet and a number are one thing here: both are the marker a list
+    # item opens with. Outside a quote the color says how deep the item sits;
+    # inside one it says the item is quoted, and that outranks depth - so the
+    # glyph and the indent are left to say how deep it is, which is what they
+    # are for anyway
+    item = BULLET_RE.match(body) or ORDERED_RE.match(body)
+    if item:
+        depth = indent_depth(item.group("indent"))
+        span = QUOTE_ITEM if bar else BULLET_SPANS[min(depth, len(BULLET_SPANS) - 1)]
 
-        yield byte(bullet.start("marker")), byte(bullet.end("marker")), span
+        yield (
+            byte(len(bar) + item.start("marker")),
+            byte(len(bar) + item.end("marker")),
+            span,
+        )
 
     # Drawn the same way the trees draw a link in a description, and read off
     # the same scan the `o` key opens one with: what is underlined here is
@@ -467,16 +563,21 @@ def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
             # The one kind of emphasis the note has, and orange because that is
             # the loudest color in the palette that means nothing else in here
             EMPH: Style(color=theme.orange, bold=True),
-            # For the `*` of anything written before the mark went zero-width,
-            # or pasted in from somewhere that speaks markdown: the paper's own
-            # color, which is as close to gone as a marker can get once it has
-            # already taken a column. The zero-width mark takes none, so this
-            # does nothing at all to it
-            MARKER: Style(color=theme.background2),
+            # For the `*` of anything pasted in from somewhere that speaks
+            # markdown, or written before a finished pair was swapped on the
+            # way in. Faint, but not painted out: a `*` costs a column
+            # whatever color it is, and one hidden at the head of a line reads
+            # as an indent that is not there - which is worse than a marker
+            # that can be seen and deleted. The zero-width mark takes no
+            # column, so none of this does anything at all to it
+            MARKER: Style(color=blend(theme.orange, theme.background2, 0.55)),
             # A quoted line, drawn the way markdown draws one: the text set
-            # off in green, and a bar down the left where the `>` was typed
+            # off in green, and a bar down the left where the `>` was typed.
+            # A list marker inside one goes green as well, and bold to stand
+            # off the words around it
             QUOTE: Style(color=theme.green),
             QUOTE_BAR: Style(color=blend(theme.green, theme.background2, 0.45)),
+            QUOTE_ITEM: Style(color=theme.green, bold=True),
             **{
                 span: Style(color=color, bold=True)
                 for span, color in zip(BULLET_SPANS, bullet_colors)
@@ -515,19 +616,25 @@ class NoteEditor(TextArea):
     motion picks text out, `ctrl+a` takes the lot, and `ctrl+c`/`ctrl+x`/`ctrl+v`
     do what they do in any other text field. Since the last two are edits, they
     take the note into INSERT rather than being refused there.
+
+    Nothing is formatted from a key. Every piece of markup here is written the
+    way markdown writes it - `- ` or `* ` for a bullet, `1. ` for a numbered
+    one, `> ` for a quote, `# ` for a title, `---` for a rule, `*stars*` for
+    emphasis - and is drawn as what it means the moment it is finished. There
+    is one thing left for the keyboard, and it is not formatting but nesting:
+    `tab` takes a line a level in, `shift+tab` back out.
+
+    A quote wraps a line rather than replacing it, so everything above goes on
+    working inside one: a list written in a quote is a list, nested by the same
+    `tab`, and drawn in the quote's own green rather than the list palette,
+    because in there the color is already saying something.
     """
 
     BINDINGS = [
-        # Takes the key off TextArea, where it walks the cursor to the end of
-        # the line - which `end` and `$` both already do
-        Binding("ctrl+e", "toggle_emph", "Emphasis", show=False),
-        # `b` for block quote. The key is free because bold is gone from the
-        # note, and its old meaning is the nearest thing to this one: both are
-        # what you press to make a line stand apart from the ones around it
-        Binding("ctrl+b", "toggle_quote", "Quote", show=False),
-        # The keys for a line that is already written; a line being written
-        # reaches both by typing what markdown types - `> ` and `- `
-        Binding("ctrl+l", "toggle_bullet", "Bullet", show=False),
+        # The one key the markup needs, because nesting is the one thing about
+        # a line that cannot be read off the characters on it: a level in is a
+        # level of indent, and there is no mark for "indent me" to type.
+        #
         # `tab` and nothing else: `ctrl+i` is the same byte on every terminal
         # that does not speak the kitty protocol, so naming it too would be
         # naming this key twice. Nothing is given up by taking the key: this
@@ -535,10 +642,6 @@ class NoteEditor(TextArea):
         # focus to anyway
         Binding("tab", "indent", "Indent", show=False),
         Binding("shift+tab", "dedent", "Unindent", show=False),
-        # `ctrl+h` would be the mnemonic, but every terminal that does not
-        # speak the kitty protocol sends it as a backspace; `t` for title is
-        # the next letter along and is spent on nothing else here
-        Binding("ctrl+t", "toggle_header", "Header", show=False),
         # Takes the key off TextArea, where it deletes the character to the
         # right of the cursor; here the whole note goes, after a y/N
         Binding("ctrl+d", "clear_note", "Clear the note", show=False),
@@ -633,125 +736,49 @@ class NoteEditor(TextArea):
         for row, spans in enumerate(scan_note(lines)):
             highlights[row].extend(spans)
 
-    def _marks_around(self, start, end) -> Optional[Tuple[tuple, tuple]]:
+    def _emph_pair(self, row: int, column: int) -> Optional[Tuple[int, int]]:
         """
-        Where the emphasis marks either side of `start`..`end` are, if it is
-        already emphasised from just outside itself
+        The columns of the two marks the one left of the cursor is half of, or
+        None when there is no mark of a pair there
 
-        The marks take up no room, so they are never what is picked out: a
-        selection made by eye stops at the last letter, with the closing mark
-        sitting just past it. Toggling has to look one character further out
-        than it was handed, or it would wrap what is already wrapped.
+        Read off the same scan that draws the emphasis, so the pair taken out
+        is exactly the pair that was being drawn.
         """
 
-        (top, left), (bottom, right) = start, end
+        line = self.document[row]
 
-        opens = left and self.document[top][left - 1] == EMPH_MARK
-        closes = right < len(self.document[bottom]) and (
-            self.document[bottom][right] == EMPH_MARK
-        )
-
-        if not (opens and closes):
+        if not column or line[column - 1] != EMPH_MARK:
             return None
 
-        return ((top, left - 1), (top, left)), ((bottom, right), (bottom, right + 1))
+        for match in EMPH_RE.finditer(line):
+            if match.group("emph") is None:
+                continue
 
-    def action_toggle_emph(self) -> None:
+            start, end = match.span()
+
+            if column - 1 in (start, end - 1):
+                return start, end - 1
+
+        return None
+
+    def _take_emph_off(self, row: int, column: int, pair: Tuple[int, int]) -> None:
         """
-        Emphasise what is picked out, or take the emphasis away again
+        Take both marks of `pair` out, and leave the cursor in the words
 
-        The marks are zero-width, so what this writes is the words going
-        orange and nothing else appearing around them - which is the whole of
-        why the mark is the character it is.
-        """
-
-        # Marking text up is writing it: the note is being edited from here on
-        self.enter_insert()
-
-        start, end = sorted(self.selection)
-        selected = self.selected_text
-
-        if not selected:
-            # Nothing picked out: drop an empty pair in and sit between them,
-            # so that what is typed next arrives already emphasised
-            row, column = self.cursor_location
-            self.insert(EMPH_MARK * 2, (row, column))
-            self.move_cursor((row, column + 1))
-            return
-
-        if (
-            selected.startswith(EMPH_MARK)
-            and selected.endswith(EMPH_MARK)
-            and len(selected) > 2
-        ):
-            self.replace(selected[1:-1], start, end)
-            return
-
-        marks = self._marks_around(start, end)
-
-        if marks is not None:
-            opening, closing = marks
-
-            # The closing one first: taking the opening one out would move it
-            self.replace("", *closing, maintain_selection_offset=False)
-            self.replace("", *opening, maintain_selection_offset=False)
-            return
-
-        self.replace(EMPH_MARK + selected + EMPH_MARK, start, end)
-
-    def _toggle_marker(self, pattern: "re.Pattern", glyph: str) -> None:
-        """
-        Put `glyph` at the head of the current line, or take it away again
-
-        What a bullet and a quote both are: one glyph in front of the words,
-        after whatever indent the line already carries.
+        The closing one first: taking the opening one out would move it.
         """
 
-        self.enter_insert()
+        opening, closing = pair
 
-        row, column = self.cursor_location
-        line = self.document[row]
-        match = pattern.match(line)
+        self.replace(
+            "", (row, closing), (row, closing + 1), maintain_selection_offset=False
+        )
+        self.replace(
+            "", (row, opening), (row, opening + 1), maintain_selection_offset=False
+        )
 
-        if match:
-            marker = match.group("marker")
-
-            self.replace("", (row, match.start("marker")), (row, match.end("marker")))
-            self.move_cursor((row, max(match.start("marker"), column - len(marker))))
-            return
-
-        indent = line[: len(line) - len(line.lstrip(" \t"))]
-
-        self.insert(glyph, (row, len(indent)))
-        self.move_cursor((row, column + len(glyph)))
-
-    def action_toggle_quote(self) -> None:
-        """
-        Set the current line off as a quote, or take it back out again
-
-        The same thing `> ` does in markdown, and typing that is the other way
-        to reach it; this is the key for a line that is already written.
-        """
-
-        self._toggle_marker(QUOTE_RE, QUOTE_GLYPH)
-
-    def action_toggle_bullet(self) -> None:
-        """
-        Put a bullet at the head of the current line, or take it away again
-
-        Which glyph it gets follows how far the line is already indented, so a
-        bullet put on a line that has been tabbed in arrives as the marker for
-        the level it is actually at.
-
-        The same thing `- ` does in markdown, and typing that is the other way
-        to reach it; this is the key for a line that is already written.
-        """
-
-        row, _ = self.cursor_location
-        line = self.document[row]
-        indent = line[: len(line) - len(line.lstrip(" \t"))]
-
-        self._toggle_marker(BULLET_RE, bullet_glyph(indent_depth(indent)))
+        # One mark went from in front of the cursor, or both did
+        self.move_cursor((row, column - (2 if column - 1 == closing else 1)))
 
     def _set_depth(self, row: int, levels: int) -> None:
         """
@@ -761,6 +788,10 @@ class NoteEditor(TextArea):
         spaces in front of it lands on a level instead of staying between two;
         and a bullet is re-glyphed on the way, since the marker is half of what
         says how deep a line sits.
+
+        A quoted line nests inside its bar rather than behind it: the bar stays
+        where it is and the indent grows after it, so a list written in a quote
+        is still in the quote at every level it reaches.
         """
 
         # The one rewrite that puts a whole line back the way it found it, so
@@ -768,10 +799,11 @@ class NoteEditor(TextArea):
         # folded text it would write the names of the links back over the
         # addresses behind them, and the addresses would be gone
         line = self._stored_line(row)
-        indent, bullet, rest = split_indent(line)
+        bar, body = split_quote(line)
+        indent, bullet, rest = split_indent(body)
 
         depth = max(0, indent_depth(indent) + levels)
-        head = INDENT * depth + (bullet_glyph(depth) if bullet else "")
+        head = bar + INDENT * depth + (bullet_glyph(depth) if bullet else "")
 
         if head + rest == line:
             return
@@ -787,16 +819,17 @@ class NoteEditor(TextArea):
         # The cursor keeps its place in the words rather than its column: the
         # point of indenting a line is to move the words, not to leave the
         # cursor standing on a different one of them
-        self.move_cursor((row, max(0, column + len(head) - len(indent + bullet))))
+        self.move_cursor((row, max(0, column + len(head) - len(bar + indent + bullet))))
 
     def action_indent(self) -> None:
         """
         Take the current line one level in - which is how a bullet is nested
 
-        Refused in NORMAL rather than dropping into INSERT the way the other
-        formatting keys do: `tab` is one keystroke with no modifier on it, and
-        a bare key that rewrites the note is exactly what NORMAL is for not
-        having.
+        Refused in NORMAL rather than dropping into INSERT: `tab` is one
+        keystroke with no modifier on it, and a bare key that rewrites the
+        note is exactly what NORMAL is for not having. Every other piece of
+        markup is typed rather than pressed, so this is the only key the
+        question comes up for.
         """
 
         if self.read_only:
@@ -825,22 +858,6 @@ class NoteEditor(TextArea):
 
         return RULE * max(3, min(HEADER_WIDTH, self.wrap_width or HEADER_WIDTH))
 
-    def _delete_line(self, row: int) -> None:
-        """
-        Take a whole line out, along with the newline that ends it - or, for
-        the last line of the note, the one that starts it, since there is no
-        other way to leave the line count one shorter than it was
-        """
-
-        if row + 1 < self.document.line_count:
-            start, end = (row, 0), (row + 1, 0)
-        elif row:
-            start, end = (row - 1, len(self.document[row - 1])), (row, len(self.document[row]))
-        else:
-            start, end = (row, 0), (row, len(self.document[row]))
-
-        self.replace("", start, end, maintain_selection_offset=False)
-
     def _title_above(self, row: int) -> bool:
         """
         Whether there are words directly over `row` for it to be the rule of
@@ -853,55 +870,29 @@ class NoteEditor(TextArea):
 
         return row > 0 and bool(self.document[row - 1].strip())
 
-    def _rule_row(self, row: int) -> Optional[int]:
+    def _draw_header(self, row: int) -> None:
         """
-        Where the rule of the header `row` belongs to is, if there is one
+        Swap the `#` on `row` for the rule that will close the title over it
 
-        Standing on the rule counts as standing on the header it closes, so
-        the key undoes a header from either of the two lines it is made of.
-        A separator belongs to no title and is left for its own key.
+        The header is the help window's section break: a title with a rule
+        drawn across underneath it. There is nothing to write on the title
+        line yet - the `# ` is the whole of what has been typed - so what this
+        leaves is the rule, and the cursor on the empty line above it, which
+        is where the title is about to be typed. It is drawn as a title from
+        its first letter, because the rule saying so is already there.
+
+        Whatever indent the mark was typed at goes with it. By the time it is
+        drawn a header is a whole line of the note, the rule under it as wide
+        as the window allows, so there is no level for it to sit at.
         """
 
-        if RULE_RE.match(self.document[row]):
-            return row if self._title_above(row) else None
-
-        below = row + 1
-        closed = (
-            self.document[row].strip()
-            and below < self.document.line_count
-            and RULE_RE.match(self.document[below])
+        self.replace(
+            "\n" + self.rule,
+            (row, 0),
+            (row, len(self.document[row])),
+            maintain_selection_offset=False,
         )
-
-        return below if closed else None
-
-    def action_toggle_header(self) -> None:
-        """
-        Close the current line off as a section title with a rule, or take the
-        rule away again
-
-        The header is the help window's section break: the title, and the rule
-        drawn across underneath it. Only the rule is ever added or removed -
-        the title is the line that was already there, and goes on being
-        ordinary text that can be typed over, marked up and deleted.
-        """
-
-        self.enter_insert()
-
-        row, column = self.cursor_location
-        rule_row = self._rule_row(row)
-
-        if rule_row is not None:
-            self._delete_line(rule_row)
-
-            # Standing on the rule, the title is the line above; standing on
-            # the title, it is where it already was
-            title = row - 1 if rule_row == row else row
-            self.move_cursor((max(title, 0), column if title == row else 0))
-            return
-
-        line = self.document[row]
-        self.insert("\n" + self.rule, (row, len(line)), maintain_selection_offset=False)
-        self.move_cursor((row, column))
+        self.move_cursor((row, 0))
 
     def _draw_separator(self, row: int) -> None:
         """
@@ -910,7 +901,7 @@ class NoteEditor(TextArea):
         A blank line is put above it when there are words directly over it,
         because a rule tight under a line of words is not a separator at all -
         it is a header, and would be drawn as one the moment it was written.
-        `ctrl+t` is the key for meaning that.
+        `# ` is how a header is meant on purpose.
         """
 
         line = self.document[row]
@@ -1202,7 +1193,7 @@ class NoteEditor(TextArea):
                 event.stop()
                 event.prevent_default()
 
-                glyph_at = len(prefix) - len(prefix.lstrip(" \t"))
+                glyph_at = marker_start(line)
 
                 if column < len(prefix):
                     # The cursor is still in front of the words, somewhere in
@@ -1215,12 +1206,54 @@ class NoteEditor(TextArea):
                 elif line[len(prefix) :].strip():
                     self.insert("\n" + prefix, maintain_selection_offset=False)
                 else:
-                    # An empty bullet is where the list ends: the marker goes,
-                    # rather than another one arriving underneath it. A quote
-                    # with nothing in it ends the same way
+                    # An empty item is where the list ends: the marker goes,
+                    # rather than another one arriving underneath it. It goes
+                    # one marker at a time, so an empty bullet inside a quote
+                    # leaves the bar standing and the quote ends on the next
+                    # `enter`, the way an unquoted one ends on the first
                     self.replace("", (row, glyph_at), (row, len(line)))
                     self.move_cursor((row, glyph_at))
 
+                return
+
+        if event.key == "backspace" and self.selection.is_empty:
+            row, column = self.cursor_location
+            pair = self._emph_pair(row, column)
+
+            if pair is not None:
+                # The marks cannot be seen, so a backspace that took only the
+                # one it landed on would look like nothing happening at all
+                # and leave the other behind for good. Both go, and what that
+                # looks like is the emphasis coming off - which is the one
+                # thing anyone reaching for backspace next to a mark can mean
+                event.stop()
+                event.prevent_default()
+                self._take_emph_off(row, column, pair)
+                return
+
+        if event.character == EMPH_STAR and self.selection.is_empty:
+            row, column = self.cursor_location
+            opening = star_pair(self.document[row], column)
+
+            # The star that closes a pair, swapped along with the one it
+            # closes for the marks that cost no columns - the same swap `- `
+            # makes into a bullet, and for the same reason: what the note
+            # holds is what the window draws. A `*` left standing at the head
+            # of a line would read as an indent that is not there
+            if opening is not None:
+                event.stop()
+                event.prevent_default()
+
+                self.replace(
+                    EMPH_MARK,
+                    (row, opening),
+                    (row, opening + 1),
+                    maintain_selection_offset=False,
+                )
+                self.insert(
+                    EMPH_MARK, (row, column), maintain_selection_offset=False
+                )
+                self.move_cursor((row, column + 1))
                 return
 
         if event.character == DASHES[0]:
@@ -1239,27 +1272,51 @@ class NoteEditor(TextArea):
         if event.character == " ":
             row, column = self.cursor_location
             line = self.document[row]
-            indent = line[: len(line) - len(line.lstrip(" \t"))]
 
-            # The space of a markdown `> ` or `- `, which is where the mark is
-            # known to be one and not a stray angle bracket or a hyphen. The
-            # indent is allowed to come first and is kept, so a mark typed on
-            # a line already tabbed in opens at the level it is standing on
-            if column == len(line) and line[len(indent) :] in MARKDOWN_MARKS:
+            # Past the quote bar before anything else is read, so that a mark
+            # typed inside a quote opens inside it: `- ` after the bar is a
+            # bullet in the quote, not a hyphen in its words
+            bar, body = split_quote(line)
+            indent = body[: len(body) - len(body.lstrip(" \t"))]
+
+            # The space of a markdown `> `, `- `, `* ` or `# `, which is where
+            # the mark is known to be one and not a stray angle bracket, a
+            # hyphen, a star or a number sign. Nothing but the bar and the
+            # indent may stand in front of it and nothing at all behind it,
+            # and both are kept, so a mark typed on a line already tabbed in
+            # opens at the level it is standing on
+            mark = body[len(indent) :] if column == len(line) else ""
+
+            glyph = None
+
+            # The two that are whole lines rather than things inside one, and
+            # so have nothing to mean in a quote: a quote inside a quote has
+            # no second bar to be drawn with, and a title is a line with a
+            # rule under it, which is not a line a quote can hold
+            if not bar:
+                if mark and set(mark) == {HEADER_MARK}:
+                    event.stop()
+                    event.prevent_default()
+                    self._draw_header(row)
+                    return
+
+                if mark == QUOTE_MARK:
+                    glyph = QUOTE_GLYPH
+
+            if glyph is None and mark in BULLET_MARKS:
+                glyph = bullet_glyph(indent_depth(indent))
+
+            if glyph is not None:
                 event.stop()
                 event.prevent_default()
 
-                glyph = (
-                    QUOTE_GLYPH
-                    if line[len(indent) :] == QUOTE_MARK
-                    else bullet_glyph(indent_depth(indent))
-                )
+                at = len(bar) + len(indent)
 
                 self.replace(
-                    glyph, (row, len(indent)), (row, column),
+                    glyph, (row, at), (row, column),
                     maintain_selection_offset=False,
                 )
-                self.move_cursor((row, len(indent) + len(glyph)))
+                self.move_cursor((row, at + len(glyph)))
                 return
 
         await super()._on_key(event)
@@ -1302,17 +1359,18 @@ class NoteScreenBase(BaseScreen):
             "i insert    jklö move    o link    gg/G ends    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
-        # The formatting keys are what is worth advertising here; the
-        # clipboard keys had to go to make room for them, and are the ones on
-        # the line that every other text field in the world already taught.
+        # The marks are what is worth advertising here, since none of them is
+        # a key to be found by pressing things: the line is the list of what
+        # the note answers to. The clipboard keys had to go to make room, and
+        # are the ones every other text field in the world already taught.
         #
         # Kept to eighty columns, which is what the window is wide in a
         # terminal of the usual size: a hint line that has to wrap breaks
         # wherever it runs out of room, and where it runs out of room is
-        # between a key and the word saying what it does as often as not
+        # between a mark and the word saying what it does as often as not
         MODE_INSERT: (
-            "ctrl+e emph   ctrl+b quote   ctrl+l bullet   tab nest   "
-            "ctrl+t head   esc normal"
+            "- bullet  1. list  > quote  # head  --- rule  *emph*  "
+            "tab nest  esc normal"
         ),
     }
 
