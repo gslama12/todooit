@@ -197,8 +197,8 @@ class Project(DooitModel):
     def save(self) -> None:
         # A sub project is always drawn in the color of the project it sits
         # in, so the slot is taken off the parent here rather than being
-        # copied at each of the places a project can come into being -- added,
-        # cloned, or built back out of a binned todo's path. Asked before the
+        # copied at each of the places a project can come into being -- added
+        # or built back out of a binned todo's path. Asked before the
         # root is filled in below, since a project that is about to be given
         # the root has no color to take from it anyway, and the root at that
         # point may not be in the session to be asked.
@@ -220,80 +220,3 @@ class Project(DooitModel):
     def all(cls) -> List["Project"]:
         query = select(Project).where(Project.is_root == False)
         return list(manager.session.execute(query).scalars().all())
-
-    @staticmethod
-    def clone_from_id(id: int, order_index: int) -> "Project":
-        project = Project.from_id(str(id))
-        fields = ["description", "color"]
-        attrs = {field: getattr(project, field) for field in fields}
-        attrs["parent_project_id"] = project.parent_project_id
-        attrs["order_index"] = order_index
-
-        new_project = Project(**attrs)
-        new_project.save()
-
-        # Clone all child projects recursively
-        for child_project in project.projects:
-            Project._clone_project_recursively(child_project, new_project)
-
-        # Clone all todos
-        for todo in project.todos:
-            fields = [
-                "description",
-                "due",
-                "scheduled",
-                "agent",
-                "recurrence",
-                "priority",
-                "pending",
-                "completed_at",
-            ]
-            attrs = {field: getattr(todo, field) for field in fields}
-            attrs["parent_project"] = new_project
-
-            todo_clone = Todo(**attrs)
-            todo_clone.save()
-
-            # Clone all child todos
-            for child_todo in todo.todos:
-                Todo._clone_todo_recursively(child_todo, todo_clone)
-
-        return new_project
-
-    @staticmethod
-    def _clone_project_recursively(
-        source_project: "Project", parent_clone: "Project"
-    ) -> None:
-        fields = ["description", "order_index", "color"]
-        attrs = {field: getattr(source_project, field) for field in fields}
-        attrs["parent_project"] = parent_clone
-
-        project_clone = Project(**attrs)
-        project_clone.save()
-
-        # Clone child projects
-        for child_project in source_project.projects:
-            Project._clone_project_recursively(child_project, project_clone)
-
-        # Clone todos
-        for todo in source_project.todos:
-            fields = [
-                "description",
-                "due",
-                "scheduled",
-                "agent",
-                "recurrence",
-                "priority",
-                "pending",
-                "completed_at",
-                "order_index",
-            ]
-            attrs = {field: getattr(todo, field) for field in fields}
-            attrs["parent_project"] = project_clone
-
-            todo_clone = Todo(**attrs)
-            todo_clone.save()
-
-            # Clone child todos
-            for child_todo in todo.todos:
-                Todo._clone_todo_recursively(child_todo, todo_clone)

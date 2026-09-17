@@ -3,13 +3,13 @@ A color labels a whole project tree
 
 The slot is held by the project at the top of the tree and handed down from
 there, so a sub project is never drawn in a color of its own -- whether it was
-there when the color was picked, made afterwards, cloned, or built back out of
-a binned todo's path.
+there when the color was picked, made afterwards, or built back out of a
+binned todo's path.
 """
 
 from sqlalchemy import text
 
-from todooit.api import Project, manager
+from todooit.api import manager
 from todooit.utils.database import sync_project_colors
 from tests.test_core.core_base import *  # noqa
 
@@ -115,19 +115,6 @@ def test_a_sibling_of_a_top_level_project_starts_uncolored(create_project):
     other = work.add_sibling()
 
     assert other.color is None
-
-
-def test_a_clone_carries_the_color_all_the_way_down(create_project):
-    top = create_project("work")
-    child = top.add_project()
-    child.add_project()
-
-    top.set_color(6)
-
-    clone = Project.clone_from_id(top.id, top.order_index + 1)
-
-    assert clone.color == 6
-    assert [p.color for p in clone.descendants] == [6, 6]
 
 
 def test_descendants_walks_every_level(create_project):

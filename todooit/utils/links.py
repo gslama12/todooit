@@ -142,22 +142,6 @@ def find_links(text: str) -> List[Link]:
     return links
 
 
-def link_at(text: str, column: int) -> Optional[Link]:
-    """
-    The link the cursor is standing on, if it is standing on one
-
-    The character *under* the cursor is what counts: a block cursor sitting
-    one past the last character of a URL is on the space after the link, the
-    same way it is everywhere else in the editor.
-    """
-
-    for link in find_links(text):
-        if link.start <= column < link.end:
-            return link
-
-    return None
-
-
 def first_link(text: str) -> Optional[Link]:
     """
     The link a row is opened by: the first one written in it

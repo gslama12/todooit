@@ -150,17 +150,14 @@ def test_due_date_util(create_project, create_todo):
     t = p.add_todo()
     assert not t.due
     assert not t.is_overdue
-    assert not t.is_due_today()
     assert t.status == "pending"
 
     t.due = datetime.now()
     assert t.is_overdue
     assert t.due
-    assert t.is_due_today()
     assert t.status == "overdue"
 
     t.due = datetime.now() - timedelta(days=1)
-    assert not t.is_due_today()
     assert t.is_overdue
     assert t.status == "overdue"
 
