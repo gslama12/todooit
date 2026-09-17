@@ -417,6 +417,31 @@ class Todo(DooitModel):
         self.save()
         return grandparent
 
+    def move_to(self, project: "Project") -> None:
+        """
+        File this todo under another project, at the bottom of what is there
+
+        The whole task moves, its steps along with it, and it lands at the end
+        of that project's run — where a task added to it by hand would have
+        gone, and where a task arriving from elsewhere is looked for.
+
+        A step of another task is lifted out of it on the way: what a project
+        holds is tasks, so a step moved into one stops being a step. Nothing
+        else about the todo changes — one in the Bin is still in the Bin
+        afterwards, and comes back out into the project it has just been given.
+        """
+
+        # What the project holds already, this todo left out of it: a step
+        # moved into the project it was already filed somewhere inside is
+        # taken out of the run before being put back on the end of it
+        run = [todo for todo in project.todos if todo.id != self.id]
+
+        self.parent_todo = None
+        self.parent_project = project
+        self._renumber(run + [self])
+
+        self.save()
+
     # ----------- HELPER FUNCTIONS --------------
 
     def set_priority(self, priority: int) -> None:

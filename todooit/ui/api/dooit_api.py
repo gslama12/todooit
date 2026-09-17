@@ -223,6 +223,12 @@ class DooitAPI:
         if isinstance(self.focused, TodosTree):
             self.focused.unindent_node()
 
+    def move_todo(self):
+        """File the highlighted task under another project"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.move_node()
+
     def go_to_top(self):
         """Move the cursor to the top of the list"""
         self.focused.action_first()

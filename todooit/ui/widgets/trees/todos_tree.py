@@ -23,6 +23,7 @@ from todooit.api.fixed_projects import PATH_SEPARATOR
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
+    SpawnMove,
     SpawnNote,
     TodoChanged,
     TodoRemoved,
@@ -619,6 +620,20 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         # Posted rather than pushed from here: the screen package imports the
         # trees, so reaching the other way would close the circle
         self.post_message(SpawnNote(self.current_model))
+
+    @require_highlighted_node
+    def move_node(self):
+        """
+        Asks which project the highlighted task is to be filed under
+
+        Which project that turns out to be is the move window's business, and
+        so is the move itself: the pane the task is leaving cannot say where it
+        is going, and after it has gone it is not this pane's row any more.
+        """
+
+        assert isinstance(self.current_model, Todo)
+
+        self.post_message(SpawnMove(self.current_model))
 
     @require_highlighted_node
     def copy_note_to_clipboard(self):
