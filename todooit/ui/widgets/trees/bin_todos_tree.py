@@ -18,5 +18,11 @@ class BinTodosTree(FixedTodosTree):
 
     shows_binned = True
 
+    # Nothing in here is being got on with, so there is nothing in here to
+    # break into steps either: a task in the Bin is waiting to be put back or
+    # be rid of, and a step written into one would be work nobody can reach
+    # without restoring it first
+    takes_new_steps = False
+
     def toggle_complete(self):
         self._not_here("Tasks can't be ticked off")

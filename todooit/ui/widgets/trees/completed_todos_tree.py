@@ -37,6 +37,12 @@ class CompletedTodosTree(FixedTodosTree):
     is the row that was actually unticked that is pointed at.
     """
 
+    # A finished task is finished. A step written into one would be work left
+    # in a row the log is only holding because there is none, and the task
+    # would go on saying it was done with it sitting there; unticking it,
+    # which sends it home, is what makes it something to add to again
+    takes_new_steps = False
+
     def toggle_complete(self):
         todo = self.current_model
         assert isinstance(todo, Todo)

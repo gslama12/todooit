@@ -587,7 +587,7 @@ async def test_reticking_in_completed_stays_put():
         assert visible_todos(app) is not completed
 
 
-async def test_fixed_panes_refuse_reordering_and_adding():
+async def test_fixed_panes_refuse_reordering_and_new_tasks():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
@@ -601,7 +601,6 @@ async def test_fixed_panes_refuse_reordering_and_adding():
 
         for keys, refused in (
             (("n",), "added"),
-            (("N",), "added"),
             (("K",), "reordered"),
             (("L",), "reordered"),
             (("I",), "reordered"),
@@ -614,6 +613,223 @@ async def test_fixed_panes_refuse_reordering_and_adding():
             assert message is not None and refused in message, keys
 
         assert len(Todo.all()) == 1
+
+
+async def test_today_takes_a_new_step_under_a_row():
+    """
+    `N` in Today files a step under the task, in the task's own project
+
+    Nothing about it is Today's: the step lands exactly where it would have
+    from the project's own pane, and joins the day the task is planned for the
+    way a step written into a planned task does anywhere else.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        tree = await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["task"]
+
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+        await settle(pilot)
+
+        # Drawn under the row it was typed on, with the cursor left on it
+        assert descriptions(today) == ["task", "step"]
+        assert today.current_model.description == "step"
+
+        task = [todo for todo in Todo.all() if todo.description == "task"][0]
+        step = [todo for todo in Todo.all() if todo.description == "step"][0]
+
+        assert step.parent_todo is task
+        assert step.parent_project is None
+
+        # The day belongs to the whole task, so the step arrived on it rather
+        # than undated inside work that is already spoken for
+        assert step.scheduled == task.scheduled
+
+        # And the project it really belongs to has it too
+        assert descriptions(tree) == ["task", "step"]
+
+
+async def test_upcoming_takes_a_new_step_under_a_row():
+    """A day ahead is a day to break work down on, the same way today is"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await schedule(pilot, "tomorrow")
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+        assert descriptions(upcoming) == ["task"]
+
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+        await settle(pilot)
+
+        assert descriptions(upcoming) == ["task", "step"]
+
+        # One block still, and still tomorrow's: the step joined the day its
+        # task was planned for rather than opening a day of its own
+        assert [g.label for g in upcoming.todo_groups] == ["Tomorrow"]
+
+        task = [todo for todo in Todo.all() if todo.description == "task"][0]
+        step = [todo for todo in Todo.all() if todo.description == "step"][0]
+        assert step.scheduled == task.scheduled
+
+
+async def test_a_new_step_goes_under_a_scheduled_step_too():
+    """
+    The row the key was pressed on is the row it goes under, context or not
+
+    A step planned on its own is drawn under the task it belongs to, which is
+    there for context alone. The cursor is on the step, so that is what takes
+    the new one — and the task above stays what it was, a row the pane drew to
+    say what the work is part of.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["step"]
+
+        await pilot.press("N")
+        await commit_line(pilot, "sub-step")
+        await settle(pilot)
+
+        assert descriptions(today) == ["step", "sub-step"]
+
+        step = [todo for todo in Todo.all() if todo.description == "step"][0]
+        sub = [todo for todo in Todo.all() if todo.description == "sub-step"][0]
+        assert sub.parent_todo is step
+
+        # The task above is still drawn for context and nothing else
+        task = [todo for todo in Todo.all() if todo.description == "task"][0]
+        assert context_ids(today) == [today._context_id(0, task)]
+
+
+async def test_a_new_step_left_unnamed_is_dropped():
+    """Escape throws away a step never given a name, as it does anywhere else"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+
+        await pilot.press("N")
+        await pilot.press("escape")
+        await settle(pilot)
+
+        assert descriptions(today) == ["task"]
+        assert len(Todo.all()) == 1
+
+
+async def test_the_refusal_points_at_the_key_that_does_work():
+    """
+    A task of its own has no project to land in here, and a step does
+
+    Which is the whole of the difference, so the refusal says it: there is
+    nowhere in a pane gathered out of the tree for a task beside another one,
+    but the row under the cursor is somewhere a step can go.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "planned")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        await pilot.press("n")
+        await pilot.pause()
+
+        message = notification_message(app)
+        assert message is not None
+        assert "Tasks can't be added in [b]Today[/b]" in message
+        assert "N" in message and "step" in message
+
+        assert len(Todo.all()) == 1
+
+
+async def test_the_log_and_the_bin_refuse_new_steps():
+    """
+    Nothing in either of them is being worked on, so nothing in them is broken
+    down: a step written into a finished task would leave the log holding a row
+    with work left in it, and one written into a binned task would be out of
+    reach until the task came back.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "done deal")
+        await pilot.press("c")
+        await pilot.pause()
+
+        await pilot.press("n")
+        await commit_line(pilot, "dropped")
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        for keys, title in ((("g", "c"), "Completed"), (("g", "b"), "Bin")):
+            await pilot.press(*keys)
+            await settle(pilot)
+
+            await pilot.press("N")
+            await pilot.pause()
+
+            message = notification_message(app)
+            assert message is not None, title
+            assert f"Steps can't be added in [b]{title}[/b]" in message, title
+
+            # And a task of its own is turned away with nothing to point at
+            # instead, since there is nothing here that does work
+            await pilot.press("n")
+            await pilot.pause()
+
+            message = notification_message(app)
+            assert message == f"Tasks can't be added in [b]{title}[/b]", title
+
+        assert len(Todo.all()) == 2
 
 
 async def test_binning_from_today_removes_it_everywhere():
