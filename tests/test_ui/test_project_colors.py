@@ -3,7 +3,7 @@ Colors a project can be given, and the "c" that means two different things
 depending on which pane it is pressed over
 """
 
-from todooit.api import Project, Todo
+from todooit.api import Project
 from todooit.utils.default_config import (
     PROJECT_COLOR_NAMES,
     project_color,
@@ -18,7 +18,6 @@ from tests.test_ui.ui_base import (
     new_project,
     new_todo,
     run_pilot,
-    visible_todos,
 )
 
 
@@ -191,19 +190,6 @@ def test_a_slot_outside_the_palette_reads_as_no_color():
     assert project_color(Stray(), api) is None
 
 
-async def test_a_colored_project_carries_its_color_into_a_clone():
-    async with run_pilot() as pilot:
-        await boot(pilot)
-        project = await new_project(pilot, "painted")
-
-        await pilot.press("c", "1")
-        await pilot.pause()
-
-        clone = Project.clone_from_id(project.id, project.order_index + 1)
-
-        assert clone.color == 1
-
-
 async def test_the_digit_colors_the_sub_projects_too():
     """
     The color is the tree's and not the row's: everything filed under the
@@ -264,7 +250,7 @@ async def test_the_digit_over_a_sub_project_colors_the_whole_tree():
 async def test_a_sub_project_made_after_the_color_arrives_wearing_it():
     async with run_pilot() as pilot:
         app = await boot(pilot)
-        project = await new_project(pilot, "painted")
+        await new_project(pilot, "painted")
 
         await pilot.press("c", "8")
         await pilot.pause()

@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
 from datetime import date, datetime, timedelta
 from typing import List
-from sqlalchemy import ForeignKey, select, nulls_last
+from sqlalchemy import ForeignKey, Index, select, nulls_last, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from .model import DooitModel
 from .manager import manager
@@ -97,7 +97,22 @@ def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
 
 
 class Todo(DooitModel):
-    # id: Mapped[int] = mapped_column(primary_key=True, default=generate_unique_id)
+    # The two ways a pane asks for todos that a foreign key does not already
+    # cover: the day panes read pending work by the day it is planned for, and
+    # the Bin reads the rows that have one at all. The Bin index is partial
+    # because that is exactly the question `binned_tasks` asks -- the rows
+    # with no bin date are the overwhelming majority and are never looked up
+    # through it. The names match `todooit/utils/database.py`, which is what
+    # puts the same indexes on a database written before they existed.
+    __table_args__ = (
+        Index("ix_todo_pending_scheduled", "pending", "scheduled"),
+        Index(
+            "ix_todo_binned_at",
+            "binned_at",
+            sqlite_where=text("binned_at IS NOT NULL"),
+        ),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
     description: Mapped[str] = mapped_column(default="")
@@ -127,21 +142,30 @@ class Todo(DooitModel):
     origin_path: Mapped[str] = mapped_column(default="")
     # Free text hanging off the todo, edited in a window of its own rather than
     # in the row: the phone number to call, the steps, the reason it is blocked
-    note: Mapped[str] = mapped_column(default="")
+    #
+    # Left behind when a todo is read, and fetched only when something asks for
+    # it. It is the one field with no length to speak of, and nearly everything
+    # that reads todos reads a great many of them to draw a pane -- a query for
+    # a day's work would otherwise carry every note in the database across with
+    # it. The window that edits it asks for one note at a time, which is the
+    # only place the text is actually wanted.
+    note: Mapped[str] = mapped_column(default="", deferred=True)
 
     # --------------------------------------------------------------
     # ------------------- Relationships ----------------------------
     # --------------------------------------------------------------
 
     parent_project_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("project.id")
+        ForeignKey("project.id"), index=True
     )
     parent_project: Mapped[Optional["Project"]] = relationship(
         "Project",
         back_populates="todos",
     )
 
-    parent_todo_id: Mapped[Optional[int]] = mapped_column(ForeignKey("todo.id"))
+    parent_todo_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("todo.id"), index=True
+    )
     parent_todo: Mapped[Optional["Todo"]] = relationship(
         "Todo",
         back_populates="todos",
@@ -417,6 +441,31 @@ class Todo(DooitModel):
         self.save()
         return grandparent
 
+    def move_to(self, project: "Project") -> None:
+        """
+        File this todo under another project, at the bottom of what is there
+
+        The whole task moves, its steps along with it, and it lands at the end
+        of that project's run — where a task added to it by hand would have
+        gone, and where a task arriving from elsewhere is looked for.
+
+        A step of another task is lifted out of it on the way: what a project
+        holds is tasks, so a step moved into one stops being a step. Nothing
+        else about the todo changes — one in the Bin is still in the Bin
+        afterwards, and comes back out into the project it has just been given.
+        """
+
+        # What the project holds already, this todo left out of it: a step
+        # moved into the project it was already filed somewhere inside is
+        # taken out of the run before being put back on the end of it
+        run = [todo for todo in project.todos if todo.id != self.id]
+
+        self.parent_todo = None
+        self.parent_project = project
+        self._renumber(run + [self])
+
+        self.save()
+
     # ----------- HELPER FUNCTIONS --------------
 
     def set_priority(self, priority: int) -> None:
@@ -430,12 +479,6 @@ class Todo(DooitModel):
     def toggle_complete(self) -> None:
         self.pending = not self.pending
         self.save()
-
-    def is_due_today(self) -> bool:
-        if not self.due:
-            return False
-
-        return self.due and self.due.day == datetime.today().day
 
     @property
     def is_completed(self) -> bool:
@@ -478,63 +521,3 @@ class Todo(DooitModel):
     def all(cls) -> List["Todo"]:
         query = select(Todo)
         return list(manager.session.execute(query).scalars().all())
-
-    @staticmethod
-    def clone_from_id(id: int, order_index: int) -> "Todo":
-        todo = Todo.from_id(str(id))
-        fields = [
-            "description",
-            "due",
-            "scheduled",
-            "agent",
-            "recurrence",
-            "priority",
-            "pending",
-            "completed_at",
-            "note",
-        ]
-        attrs = {field: getattr(todo, field) for field in fields}
-        attrs.update(
-            {
-                "parent_project": todo.parent_project,
-                "parent_todo": todo.parent_todo,
-                "order_index": order_index,
-            }
-        )
-        new_todo = Todo(**attrs)
-        new_todo.save()
-
-        # Clone all child todos recursively
-        for i, child_todo in enumerate(todo.todos):
-            attrs = {field: getattr(child_todo, field) for field in fields}
-            attrs["parent_todo"] = new_todo
-            child_clone = Todo(**attrs)
-            child_clone.save()
-
-            # Recursively clone any nested todos
-            for grandchild in child_todo.todos:
-                Todo._clone_todo_recursively(grandchild, child_clone)
-
-        return new_todo
-
-    @staticmethod
-    def _clone_todo_recursively(source_todo: "Todo", parent_clone: "Todo") -> None:
-        fields = [
-            "description",
-            "due",
-            "scheduled",
-            "agent",
-            "recurrence",
-            "priority",
-            "pending",
-            "completed_at",
-            "note",
-            "order_index",
-        ]
-        attrs = {field: getattr(source_todo, field) for field in fields}
-        attrs["parent_todo"] = parent_clone
-        todo_clone = Todo(**attrs)
-        todo_clone.save()
-
-        for child in source_todo.todos:
-            Todo._clone_todo_recursively(child, todo_clone)

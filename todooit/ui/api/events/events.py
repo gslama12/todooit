@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import date, timedelta, datetime
 from typing import Any, Callable, Literal, Optional, Union
 from textual.message import Message
 
@@ -10,8 +10,6 @@ from todooit.api import FixedProject, Project, Todo
 ProjectType = Union[Project, FixedProject]
 
 ModeType = Literal["NORMAL", "INSERT", "DATE", "SORT", "CONFIRM"]
-EmptyWidgetType = Literal["todo", "project", "no_search_results"]
-PositionType = Literal["project", "todo"]
 NotificationType = Literal["info", "warning", "error"]
 
 
@@ -82,12 +80,6 @@ class ShutDown(DooitEvent):
     """
 
 
-class SwitchTab(DooitEvent):
-    """
-    Emitted when user needs to focus other pane
-    """
-
-
 class SpawnHelp(DooitEvent):
     """
     Emitted when user presses `?` in NORMAL mode
@@ -108,6 +100,32 @@ class SpawnNote(DooitEvent):
     def __init__(self, todo: Todo) -> None:
         super().__init__()
         self.todo = todo
+
+
+class SpawnMove(DooitEvent):
+    """
+    Emitted when the user wants to file a task under another project
+    """
+
+    def __init__(self, todo: Todo) -> None:
+        super().__init__()
+        self.todo = todo
+
+
+class SpawnCalendar(DooitEvent):
+    """
+    Emitted when a date is to be picked off a month rather than typed
+
+    Carries the tree the edit is happening in rather than the field itself:
+    the window is pushed by the screen, and what it hands back has to find its
+    way into the buffer the keystrokes were going to.
+    """
+
+    def __init__(self, tree: Any, column: str, initial: Optional[date]) -> None:
+        super().__init__()
+        self.tree = tree
+        self.column = column
+        self.initial = initial
 
 
 class ModeChanged(DooitEvent):
@@ -154,16 +172,25 @@ class ShowConfirm(DooitEvent):
     """
     Emitted when confirmation from user is required
 
-    The question can be spelled out by whatever is asking it: an edit that
-    takes more than the row under the cursor with it has to say so, since the
-    bar is the only place the size of it is ever mentioned. Leaving it out
-    falls back to the plain "Are you sure?".
+    The question and both of its answers are spelled out by whatever asks it.
+    A bar that only says "Are you sure?" is asking about a keypress rather than
+    about an edit: the bar is the one place the thing being deleted is ever
+    named, and by the time the question is answered the row can be off screen
+    or gone. So the asker names it, and names what became of it either way.
     """
 
-    def __init__(self, callback: Callable, message: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        callback: Callable,
+        message: str,
+        confirmed: str,
+        cancelled: str,
+    ) -> None:
         super().__init__()
         self.callback = callback
         self.message = message
+        self.confirmed = confirmed
+        self.cancelled = cancelled
 
 
 # Project events
@@ -352,6 +379,20 @@ class StartFieldEdit(DooitEvent):
         super().__init__()
         self.tree = tree
         self.column = column
+
+
+class HistoryStep(DooitEvent):
+    """
+    Emitted when the user wants the last change taken back, or put back
+
+    The step itself is not taken here: a change can drop the project a pane is
+    built around, and only the screen that holds the panes can let go of one.
+    So the key says which way to walk and the screen does the walking.
+    """
+
+    def __init__(self, forward: bool) -> None:
+        super().__init__()
+        self.forward = forward
 
 
 class QuitApp(DooitEvent):

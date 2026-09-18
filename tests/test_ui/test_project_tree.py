@@ -395,3 +395,77 @@ async def test_copy_description():
         await pilot.pause()
 
         assert app.clipboard == "nixos"
+
+
+async def test_pane_that_fits_has_no_scrollbar():
+    """
+    The scrollbar keeps off a projects pane whose rows fit in it
+
+    Completed and Bin are held against the floor by a run of blank lines over
+    their rule, and that run is measured off the pane's own height. On the
+    first window opened in a process the measurement can be taken before the
+    app's stylesheet has been applied, while the pane is still wearing
+    OptionList's own padding -- a column either side rather than a line above
+    and below -- and so reports two rows of floor it is not going to have.
+    The gap that comes out of that is two lines too long, which is exactly
+    enough to push the pinned block past the bottom and leave a scrollbar
+    standing over a pane that fits.
+
+    The measurement is taken again when the styles land, so a gap worked out
+    against the wrong pane does not survive into the drawn one.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        await new_project(pilot, "Work")
+        await new_project(pilot, "Home")
+        await pilot.pause()
+
+        fitted = ptree._bottom_gap
+
+        # Filled to the floor and no further: the pinned block sits on the
+        # last row rather than below it
+        assert ptree.virtual_size.height == ptree.scrollable_content_region.height
+        assert not ptree.show_vertical_scrollbar
+
+        # The gap a measurement taken against the unstyled pane would leave
+        ptree._bottom_gap = fitted + 2
+        ptree.refresh_options()
+        await pilot.pause()
+
+        assert ptree.show_vertical_scrollbar
+
+        # The word the pane gets that its floor moved
+        ptree.notify_style_update()
+        await pilot.pause()
+        await pilot.pause()
+
+        assert ptree._bottom_gap == fitted
+        assert not ptree.show_vertical_scrollbar
+
+
+async def test_pane_that_overflows_still_scrolls():
+    """
+    A pane with more rows than it has room for is scrollable, as before
+
+    The gap is what holds the pinned block down while there is floor to spare;
+    once the projects have taken all of it there is nothing left to pad with,
+    and the block becomes the last thing in a list that scrolls like any
+    other.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        for _ in range(ptree.scrollable_content_region.height + 5):
+            ptree.add_project()
+
+        ptree.force_refresh()
+        await pilot.pause()
+
+        assert ptree._bottom_gap == 0
+        assert ptree.virtual_size.height > ptree.scrollable_content_region.height
+        assert ptree.show_vertical_scrollbar

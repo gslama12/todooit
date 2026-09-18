@@ -27,7 +27,7 @@ ModelTree {
     &:focus {
         border: $border_type $primary;
 
-        .option-list--option-highlighted, .option-list--option-hover-highlighted {
+        .option-list--option-highlighted {
             background: $secondary 40%;
             color: $foreground3;
         }
@@ -39,7 +39,7 @@ ModelTree {
         color: $foreground1 50%;
     }
 
-    .option-list--option-highlighted, .option-list--option-hover-highlighted {
+    .option-list--option-highlighted {
         background: $background3;
     }
 
@@ -133,6 +133,61 @@ QuickAddScreen {
   & > #quick-add-hint {
     width: 70%;
     padding: 0 2;
+    color: $foreground1 60%;
+    text-align: center;
+  }
+}
+
+/* The move window, laid over the app the same way the one line entry is, and
+   the same width: the one thing it asks for is the one thing that overlay
+   completes, and a name is a name whichever of the two is being typed into. */
+MoveScreen {
+  align: center middle;
+  background: $background1 70%;
+
+  & > #move-panel {
+    width: 70%;
+    height: auto;
+    background: $background2;
+    border: $border_type $secondary;
+    border-title-background: $primary;
+    border-title-color: $background1;
+    border-title-align: center;
+    padding: 0 1;
+  }
+
+  & > #move-hint {
+    width: 70%;
+    padding: 0 2;
+    color: $foreground1 60%;
+    text-align: center;
+  }
+}
+
+/* The calendar, laid over the app the way the windows above it are, and the
+   only one of them sized to its contents rather than to the app: a month is
+   seven days across however wide the terminal is, and a week stretched over
+   half a screen is a week nobody can read as one. */
+CalendarScreen {
+  align: center middle;
+  background: $background1 70%;
+
+  & > #calendar-panel {
+    width: 32;
+    height: auto;
+    background: $background2;
+    border: $border_type $secondary;
+    border-title-background: $primary;
+    border-title-color: $background1;
+    border-title-align: center;
+    padding: 0 1;
+  }
+
+  /* No side padding, unlike the hints under the wider windows: the panel it
+     sits under is only as wide as a week, and every column of that is needed
+     to keep the second line off a third one */
+  & > #calendar-hint {
+    width: 32;
     color: $foreground1 60%;
     text-align: center;
   }

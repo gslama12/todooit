@@ -1,72 +1,78 @@
 # todooit
 
-A beautiful, versatile todo app in your terminal for a keyboard based workflow. For those wanting a fancy TUI todo list that can do more than just add/complete tasks. Started as a fork of "Dooit" extended with many features of "Todoist".
+[![Docs](https://img.shields.io/badge/docs-todooit-7AA2F7?style=flat-square&logo=readthedocs&logoColor=white)](https://gslama12.github.io/todooit/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-9ECE6A?style=flat-square)](LICENSE)
 
-## Added Features (inspired by Todoist)
+A keyboard-driven todo app for the terminal: todos in a tree of projects, vim-like
+keys, notes, dates and search. Started as a fork of
+[dooit](https://github.com/dooit-org/dooit) and extended with the parts of Todoist
+it was missing.
 
-- **Today / Upcoming / Completed / Bin** — fixed projects built from the real ones, jumped to with `gt`, `gu`, `gc`, `gb`, each with its own grouping.
-- **Bin instead of deletion** — `xx` throws a task away, `u` fetches it back, `yy` deletes one for good and `YY` empties the whole Bin.
-- **Quick add** — `C` types a whole task in one line, with its project, priority and day, from wherever the cursor happens to be.
-- **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one that is picked.
-- **Notes** — every task carries a note (`space`) with an insert mode, selection, copy and paste; `m` opens a pinned scratchpad note for thoughts with no task yet.
-- **Note markup** — `ctrl+e` emphasises in orange, delimited by zero-width marks so the words go loud with nothing at all around them; `ctrl+b` (or a typed `> `) sets a line off as a green quote, `ctrl+l` (or a typed `- `) bullets a line and `tab` / `shift+tab` nest it, `ctrl+t` closes a line off as a heading, and a typed `---` turns into a separator.
-- **Link opening** — `o` opens the link under the cursor, on a task row and inside a note alike.
-- **Priority `p0`-`p3`** — Todoist's scale, typed as a chord and shown as a colored checkbox rather than a column of its own.
-- **Agent flag `a`** — an hourglass in its own column on the tasks handed to an AI that is off working on them.
-- **Natural language dates** — due and scheduled dates are typed as words, shown with their day name, and colored green through red as they come closer.
-- **Recurrence on the scheduled date** — a recurring task moves its scheduled date on instead of carrying a due date.
-- **Projects as folders** — projects nest and count their children, and a task is ticked off by hand rather than by its last step being done.
-- **Moving tasks** — `I` / `U` file a task under the one above it or pull it back out, `ctrl+c` / `ctrl+v` copy and paste through the system clipboard, and `ctrl+n` takes a task's note without opening it.
-- **Sorting** — `SP`, `SD`, `SS` read a project by priority, due date or scheduled date.
-- **Help screen** — `?` held down shows every keybind, grouped by what it is for.
-- **Reworked look** — Tokyo Night colors, a status bar with the current mode, icons, headers, rounded lines, alternating row shading (`q`), and completed tasks struck through and grayed out.
+<p align="center">
+  <img src="site/docs/public/demo.gif" alt="todooit" width="900">
+</p>
 
-## Install & run
+📖 **[Documentation](https://gslama12.github.io/todooit/)**
 
-> NOTE: Todooit was only tested on WezTerm. Other terminals may not show some of the  cons correctly.
+## Features
 
-Pick whichever environment manager you already use; each installs the app editable, so editing the source is editing the running app.
+- **Fixed views** — Today, Upcoming, Completed and a Bin, built from your real projects and jumped to with `gt` / `gu` / `gc` / `gb`.
+- **Projects and steps** — projects nest as deep as you want, and so do tasks. `h` folds a task shut; planning a task plans every step under it.
+- **Quick add** — `C` types a whole task in one line, with its project, priority and day.
+- **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one you pick.
+- **Notes** — every task carries a markdown note (`space`), and `m` opens a pinned scratchpad for thoughts with no task yet.
+- **Dates** — due and scheduled dates typed as words (`next friday`) or picked off a calendar, and `r` makes a task recur.
+- **Ordering** — `K` / `L` move a task, `I` / `U` nest it, `M` sends it to another project, and `SP` / `SD` / `SS` read a project by priority or date.
+- **The small things** — `ctrl+c` / `ctrl+v` move tasks through the system clipboard, `o` opens the link under the cursor, `a` flags a task handed to an AI, `ctrl+z` takes back anything.
 
-With [uv](https://docs.astral.sh/uv/):
+`?` shows the rest.
+
+## Install
+
+Needs Python 3.9+ on macOS, Linux or WSL, and a
+[Nerd Font](https://www.nerdfonts.com/font-downloads) in your terminal — the
+checkboxes, folders and calendars are all Nerd Font glyphs. Tested on
+[WezTerm](https://wezterm.org/).
 
 ```bash
+git clone https://github.com/gslama12/todooit
+cd todooit
 uv venv .venv && source .venv/bin/activate
 uv pip install -e .
 todooit
 ```
 
-With the standard library's `venv`:
+Other environment managers and the terminal setup are in the
+[installation guide](https://gslama12.github.io/todooit/guide/installation).
 
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-todooit
-```
+## Configuration
 
-With conda:
-
-```bash
-conda create -n todooit python=3.12 && conda activate todooit
-pip install -e .
-todooit
-```
-
-> Supported Operating Systems: MacOS, Linux, WSL.
-
-## Layout
-
-- `todooit/` — the app: a Textual TUI, todos in a tree of projects, SQLite via SQLAlchemy
-- `todooit/extras/` — formatter / status-bar widget library (merged in from dooit-extras, trimmed to what the config uses)
-- `todooit/utils/default_config.py` — the configuration: keybinds, formatters, bar, dashboard, colors
-- `tests/` — the test suite (`python -m pytest tests`)
+Keybinds, colors, columns, the status bar and the dashboard are all set in Python
+in `todooit/utils/default_config.py`, and your own file on top of it overrides any
+of them — see [Configuration](https://gslama12.github.io/todooit/reference/configuration).
 
 ## Data
 
-Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in `~/.cache/todooit`.
+Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in
+`~/.cache/todooit` and an optional config file in `~/.config/todooit`. Setting
+`TODOOIT_HOME` moves all three into that one directory instead, giving a fully
+isolated instance; `todooit --dev` is shorthand for one at
+`~/.local/share/todooit-dev`, handy for trying changes out without touching your
+real todos.
 
-Setting `TODOOIT_HOME` moves the database, CSS cache and config into that one
-directory instead, giving a fully isolated instance. `todooit --dev` is
-shorthand for `TODOOIT_HOME=~/.local/share/todooit-dev` - handy for trying out config changes next to a running instance without touching your real todos.
+## Contributing
+
+```bash
+uv sync
+uv run pytest -q              # -m smoke -n 4 for the quick check
+uv run todooit --dev          # the app against a throwaway database
+```
+
+Branch off `dev`, never `main`. Appearance and behaviour changes belong in
+`todooit/utils/default_config.py`; structural and rendering ones in `todooit/ui/`.
+New features need tests — every test carries a marker for its feature, so
+`uv run pytest -m notes` runs just that one. More in
+[Development](https://gslama12.github.io/todooit/reference/development).
 
 ## Credits
 

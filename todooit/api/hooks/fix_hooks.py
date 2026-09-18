@@ -19,7 +19,7 @@ def fix_order_id_project(_, connection, target: Project):
             SET order_index = order_index + 1
             WHERE order_index >= :current_index
             """),
-            {"current_index": target.order_index, "target_id": target.id},
+            {"current_index": target.order_index},
         )
 
 
@@ -35,5 +35,5 @@ def fix_order_id_todo(_, connection, target: Todo):
             SET order_index = order_index + 1
             WHERE order_index >= :current_index
             """),
-            {"current_index": target.order_index, "target_id": target.id},
+            {"current_index": target.order_index},
         )

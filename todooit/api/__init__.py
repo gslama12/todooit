@@ -30,6 +30,7 @@ from .recycle import (
     restore_todo,
     revive_home,
 )
+from .history import History, Restored
 from .manager import manager
 from .hooks import fix_hooks, validation_hooks, update_hooks
 
@@ -84,6 +85,8 @@ __all__ = [
     "fixed_projects",
     "register_fixed_project",
     "binned_tasks",
+    "History",
+    "Restored",
     "manager",
     "drop_blank_models",
     "fix_hooks",

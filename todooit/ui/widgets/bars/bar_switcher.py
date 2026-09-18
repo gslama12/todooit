@@ -3,7 +3,7 @@ from textual.await_complete import AwaitComplete
 from textual.widget import Widget
 from textual.widgets import ContentSwitcher
 from todooit.api.model import DooitModel
-from todooit.ui.api.events.events import BarNotification
+from todooit.ui.api.events.events import BarNotification, ShowConfirm
 from todooit.ui.widgets.bars._base import BarBase
 from .status_bar import StatusBar
 from .confirm_bar import ConfirmBar
@@ -49,8 +49,13 @@ class BarSwitcher(ContentSwitcher):
             set_current=True,
         )
 
-    def switch_to_confirm(self, callback: Callable, message: Optional[str] = None):
-        confirm_bar = ConfirmBar(callback, message) if message else ConfirmBar(callback)
+    def switch_to_confirm(self, event: ShowConfirm):
+        confirm_bar = ConfirmBar(
+            event.callback,
+            event.message,
+            event.confirmed,
+            event.cancelled,
+        )
         self.add_content(
             widget=confirm_bar,
             id="confirm_bar",

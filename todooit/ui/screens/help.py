@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import List, Tuple
 from rich.console import Group, RenderableType
 from rich.rule import Rule
@@ -30,10 +29,9 @@ class DooitKeyTable(Static):
     }
     BORDER_TITLE = "Key Bindings"
 
-    def __init__(self, keybinds: KeyManager, no_op: Callable):
+    def __init__(self, keybinds: KeyManager):
         super().__init__()
         self.keybinds = keybinds
-        self.no_op = no_op
 
     # Keys that arrive as a character nobody can see, and so have to be named
     KEY_LABELS = {" ": "space"}
@@ -145,7 +143,7 @@ class HelpScreen(BaseScreen):
     ]
 
     def compose(self) -> ComposeResult:
-        yield DooitKeyTable(self.api.keys, self.api.no_op)
+        yield DooitKeyTable(self.api.keys)
 
     def key_down(self):
         self.scroll_down()

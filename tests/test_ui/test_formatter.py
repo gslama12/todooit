@@ -142,3 +142,95 @@ async def test_multiple_formatting_toggle():
         store.remove("italic")
         formatted = store.format_value(p1.description, p1)
         assert formatted.markup == "this is a test description 123"
+
+
+async def test_a_batch_redraws_once_however_many_formatters_it_holds():
+    """
+    Registering a run of formatters is one change to how the panes are drawn
+
+    The config lays down forty-odd of them at startup, and every one used to
+    rebuild every pane on its own -- forty-one full redraws to show the one
+    the last of them produced.
+    """
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        assert isinstance(app, Dooit)
+
+        fired = []
+        store = FormatterStore(lambda: fired.append(1), app.api)
+
+        with app.api.batch_formatter_refresh():
+            for _ in range(10):
+                store.add(add_icon_skip_multiple)
+
+            # Nothing is drawn while the batch is open
+            assert fired == []
+
+        assert fired == [1]
+
+
+async def test_a_formatter_added_outside_a_batch_redraws_at_once():
+    """Batching is for a run of them; one on its own still shows immediately"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        assert isinstance(app, Dooit)
+
+        fired = []
+        store = FormatterStore(lambda: fired.append(1), app.api)
+
+        store.add(add_icon_skip_multiple)
+        assert fired == [1]
+
+
+async def test_a_batch_keeps_every_distinct_trigger():
+    """
+    Two panes are two redraws
+
+    The triggers dedupe so that one pane is not drawn ten times, not so that
+    a second pane is dropped.
+    """
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        assert isinstance(app, Dooit)
+
+        todos, projects = [], []
+        todo_store = FormatterStore(lambda: todos.append(1), app.api)
+        project_store = FormatterStore(lambda: projects.append(1), app.api)
+
+        with app.api.batch_formatter_refresh():
+            todo_store.add(add_icon_skip_multiple)
+            project_store.add(add_icon_skip_multiple)
+            todo_store.add(set_italic)
+
+        assert todos == [1]
+        assert projects == [1]
+
+
+async def test_a_raising_handler_still_closes_the_batch():
+    """
+    A batch left open would swallow every redraw for the rest of the session
+    """
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        assert isinstance(app, Dooit)
+
+        fired = []
+        store = FormatterStore(lambda: fired.append(1), app.api)
+
+        try:
+            with app.api.batch_formatter_refresh():
+                store.add(add_icon_skip_multiple)
+                raise RuntimeError("a config that blew up")
+        except RuntimeError:
+            pass
+
+        # What it had collected was still drawn, and the batch is closed
+        assert fired == [1]
+        assert app.api._formatter_batch is None
+
+        store.add(set_italic)
+        assert fired == [1, 1]

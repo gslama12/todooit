@@ -1,14 +1,23 @@
-from typing import TYPE_CHECKING, Optional
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
 from todooit.ui.api.plug import PluginManager
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, binned_tasks, empty_bin
+from todooit.api import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    UPCOMING,
+    History,
+    binned_tasks,
+    empty_bin,
+)
 from .events import (
     DooitEvent,
     GotoFixedProject,
+    HistoryStep,
     ShowConfirm,
     SpawnQuickAdd,
     SpawnSearch,
-    SwitchTab,
     QuitApp,
 )
 from todooit.ui.widgets import ModelTree
@@ -46,6 +55,12 @@ class DooitAPI:
         app: "Dooit",
     ) -> None:
         self.app = app
+
+        # Set before anything that holds a formatter store is built: a store
+        # fires as soon as it is written to, and reads this to find out
+        # whether anybody is collecting. None means nobody is
+        self._formatter_batch: Optional[List[Callable]] = None
+
         self.plugin_manager = PluginManager(self, app.config)
         self.css = CssManager()
         self.keys = KeyManager(self.app.get_dooit_mode, self.key_scope)
@@ -54,8 +69,38 @@ class DooitAPI:
         self.bar = BarManager(self)
         self.vars = VarManager(self)
         self.dashboard = DashboardManager(self.app)
+        self.history = History()
 
         self.css.refresh_css()
+
+    @contextmanager
+    def batch_formatter_refresh(self) -> Iterator[None]:
+        """
+        Collects the redraws the formatters ask for and runs each once
+
+        A run of formatters registered together is one change to how the panes
+        are drawn, not one per formatter. Held open around it, this turns the
+        whole run into a single redraw of each pane the run touched.
+
+        Re-entrant: an inner batch is the outer one, which keeps whoever opens
+        it from having to know whether anybody already has. The flush is in a
+        `finally`, so a handler that raises still leaves the batch closed and
+        the panes drawn rather than wedging every later formatter open.
+        """
+
+        if self._formatter_batch is not None:
+            yield
+            return
+
+        self._formatter_batch = []
+
+        try:
+            yield
+        finally:
+            pending, self._formatter_batch = self._formatter_batch, None
+
+            for trigger in pending:
+                trigger()
 
     def no_op(self):
         """<NOP>"""
@@ -135,15 +180,6 @@ class DooitAPI:
 
         self.focused.paste_as_sibling()
 
-    def switch_focus(self):
-        """Switch focus between the project and the todo list"""
-
-        if self.app.bar_switcher.is_focused:
-            return
-
-        if w := self.app.focused:
-            w.post_message(SwitchTab())
-
     def focus_projects(self):
         """Move focus to the projects pane"""
 
@@ -191,6 +227,12 @@ class DooitAPI:
 
         self.goto_fixed_project(BIN.key)
 
+    def goto_item(self):
+        """Jump to the highlighted task in the project it is filed under"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.goto_item()
+
     def move_down(self):
         """Move the cursor down in the focused list"""
 
@@ -222,6 +264,12 @@ class DooitAPI:
 
         if isinstance(self.focused, TodosTree):
             self.focused.unindent_node()
+
+    def move_todo(self):
+        """File the highlighted task under another project"""
+
+        if isinstance(self.focused, TodosTree):
+            self.focused.move_node()
 
     def go_to_top(self):
         """Move the cursor to the top of the list"""
@@ -309,12 +357,17 @@ class DooitAPI:
         # every other delete does, whether this is really meant
         label = "task" if tasks == 1 else "tasks"
         message = rf"Delete {tasks} {label} in the Bin for good? \[y/N]"
+        confirmed = f"Bin emptied — {tasks} {label} deleted"
+        cancelled = "Bin left as it was"
 
         if not self.vars.show_confirm:
             self._empty_bin()
+            self.notify(confirmed, "warning")
             return
 
-        self.app.screen.post_message(ShowConfirm(self._empty_bin, message))
+        self.app.screen.post_message(
+            ShowConfirm(self._empty_bin, message, confirmed, cancelled)
+        )
 
     def _empty_bin(self) -> None:
         """
@@ -330,6 +383,30 @@ class DooitAPI:
         for tree in self.app.screen.query(ModelTree):
             tree.forget_rows(gone)
             tree.force_refresh()
+
+    def undo(self):
+        """Take back the last change made in the panes"""
+
+        self._step_history(forward=False)
+
+    def redo(self):
+        """Put back the change that was last taken back"""
+
+        self._step_history(forward=True)
+
+    def _step_history(self, forward: bool) -> None:
+        """
+        Asks the screen to walk one step through the history
+
+        Nothing is written from here. A step can drop the project a pane was
+        built around, and the panes are the screen's — so the key says which
+        way, and the screen does it and then puts itself back together.
+        """
+
+        if self.app.bar_switcher.is_focused:
+            return
+
+        self.app.screen.post_message(HistoryStep(forward))
 
     def start_search(self):
         """Find a task anywhere in the tree and jump to it"""

@@ -13,12 +13,6 @@ from todooit.utils import CssManager, open_url
 from .api import DooitAPI
 from ..api import manager, drop_blank_models
 
-PRINTABLE = (
-    "0123456789"
-    + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    + "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ "
-)
-
 
 class Dooit(App):
     CSS_PATH = CssManager().css_file
@@ -42,6 +36,11 @@ class Dooit(App):
     async def base_setup(self):
         drop_blank_models()
         self.api = DooitAPI(self)
+
+        # After the blank rows have been swept up, so that a row left behind
+        # by a session that quit mid-edit is not the first thing ctrl+z offers
+        # to bring back
+        self.api.history.start()
         self.api.plugin_manager.scan()
         self.post_message(Startup())
         self.post_message(ModeChanged("NORMAL"))
@@ -81,6 +80,10 @@ class Dooit(App):
                 tree.force_refresh()
 
         if manager.has_changed():
+            # Rows that arrived from somewhere else are not a change made here
+            # to be taken back, so they become what the next key is measured
+            # against instead of being folded into whatever it does
+            self.api.history.resync()
             refresh_all_trees()
 
     @on(DooitEvent)

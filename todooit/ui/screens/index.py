@@ -1,3 +1,5 @@
+from datetime import date
+from functools import partial
 from typing import Optional, Type
 from rich.markup import escape
 from sqlalchemy.event import listen
@@ -5,7 +7,15 @@ from sqlalchemy.orm.attributes import get_history
 from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher
-from todooit.api import BIN, COMPLETED, TODAY, Todo, Project, fixed_project_from_key
+from todooit.api import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    Restored,
+    Todo,
+    Project,
+    fixed_project_from_key,
+)
 from todooit.api.model import DooitModel
 from todooit.ui.api.events import (
     DooitEvent,
@@ -28,21 +38,31 @@ from todooit.ui.api.events import (
     ProjectSelected,
     RevealTodo,
     GotoFixedProject,
-    SwitchTab,
+    HistoryStep,
     SpawnHelp,
+    SpawnMove,
     SpawnNote,
+    SpawnCalendar,
     SpawnQuickAdd,
     SpawnSearch,
     BarNotification,
 )
-from todooit.api.fixed_projects import owning_project
+from todooit.api.fixed_projects import owning_project, project_path
 from todooit.ui.api.events.events import ProjectType
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
 from todooit.ui.widgets import BarSwitcher, Dashboard, ModelTree
 from .base import BaseScreen
+from .calendar import CalendarScreen, calendar_title
+from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
 from .search import SearchScreen, task_root
+
+
+# How many rows one history step is willing to point out one at a time.
+# Past that the bar has already said how much moved, and panes lighting up
+# from top to bottom say less than the count does.
+FLASH_LIMIT = 5
 
 
 class DualSplit(Container):
@@ -61,14 +81,6 @@ class DualSplit(Container):
         }
     }
     """
-
-
-class DualSplitLeft(Container):
-    pass
-
-
-class DualSplitRight(Container):
-    pass
 
 
 class MainScreen(BaseScreen):
@@ -103,25 +115,125 @@ class MainScreen(BaseScreen):
         # that would otherwise turn up on top of the copy it just did
         event.stop()
 
-        key = self.resolve_key(event)
+        await self.route_key(self.resolve_key(event))
+        return True
+
+    async def route_key(self, key: str) -> None:
+        """
+        Hand a key to whatever is taking keys right now, and write down what
+        it left different
+
+        Split out from the event so that the app can send itself one: a date
+        picked off the calendar is settled by the very enter a hand would have
+        pressed, and it has to go the same way that enter would have gone --
+        the history step included, or a day picked off the month would be the
+        one change in the app that nothing could undo.
+        """
 
         # Resolved on the way in rather than per bar: a bar that is typed into
         # wants the character that was pressed, not the name of the key
         if self.app.bar_switcher.is_focused:
             await self.app.bar_switcher.handle_keypress(key)
-            return True
+        else:
+            await self.api.handle_key(key)
 
-        await self.api.handle_key(key)
-        return True
+        self.record_change()
+
+    @property
+    def mid_edit(self) -> bool:
+        """
+        Whether a row is being typed into right now, in any of the panes
+
+        Asked of the trees rather than of the focus: an edit on a column the
+        pane has no room for is drawn in the bar, and the bar is what holds
+        the focus while it runs, but the edit itself is still the tree's.
+        """
+
+        # Only the panes in front: one behind them is not being typed into,
+        # and a pane still owed a redraw can be holding a row whose model has
+        # gone, which asking it what it is editing would go looking for
+        return any(tree.is_editing for tree in self.query(ModelTree) if tree.display)
+
+    def record_change(self) -> None:
+        """
+        Hands the history whatever the key just pressed left different
+
+        Nothing is recorded in the middle of an edit. A new row is written to
+        the database the moment it is made — before it has been given a name
+        — so a change taken at every keystroke would leave `n`, the name, and
+        the enter that keeps it as separate things to undo, when what was done
+        was to add one task.
+        """
+
+        if not self.mid_edit:
+            self.api.history.record()
+
+    @on(events.ScreenResume)
+    def resumed(self, _: events.ScreenResume) -> None:
+        """
+        Records what a window that was open over the panes changed
+
+        The note, the one line entry and the move window all write to the
+        database and are gone by the time the panes are back, so their keys
+        never reached `handle_key` here. Coming back into view is the moment
+        there is something to record.
+        """
+
+        self.record_change()
+
+    @on(HistoryStep)
+    async def history_step(self, event: HistoryStep) -> None:
+        """
+        Walks one step back through the history, or one step forward
+        """
+
+        step = self.api.history.redo if event.forward else self.api.history.undo
+        restored = step()
+
+        if restored is None:
+            way = "redo" if event.forward else "undo"
+            self.api.notify(f"Nothing left to {way}", "warning")
+            return
+
+        await self.rebuild_after(restored)
+
+        done = "Redone" if event.forward else "Undone"
+        self.api.notify(f"{done} — {restored.summary()}")
+
+    async def rebuild_after(self, restored: Restored) -> None:
+        """
+        Puts the panes back together over the rows a history step left
+
+        The order is what matters. Nothing drawn from a row that has just left
+        the database can be kept — a renderer outliving its row is a row read
+        back out of a table it is no longer in — so the panes let go of those
+        first, the ones built around a project that is gone are dropped whole,
+        and only then is anything redrawn.
+        """
+
+        for tree in self.query(ModelTree):
+            tree.forget_rows(restored.gone)
+
+        for uuid in restored.gone:
+            await self.drop_project_pane(uuid)
+
+        for tree in self.query(ModelTree):
+            tree.force_refresh()
+
+        # A step can land in a pane that is not in front, or leave a row
+        # looking exactly as it did in the one that is; the rows it wrote are
+        # pointed out the same way a revived project is, while there are few
+        # enough of them for pointing to mean anything
+        touched = restored.touched
+
+        if len(touched) <= FLASH_LIMIT:
+            for tree in self.query(ModelTree):
+                for uuid in touched:
+                    tree.flash_row_if_shown(uuid)
 
     @on(BarNotification)
     def show_notification(self, event: BarNotification):
         self.app.bar_switcher.switch_to_notification(event)
-
-    @on(SwitchTab)
-    def switch_tab(self, event: SwitchTab) -> None:
-        event.stop()
-        self.app.action_focus_next()
 
     @on(SpawnHelp)
     async def spawn_help(self, _: SpawnHelp) -> None:
@@ -172,13 +284,18 @@ class MainScreen(BaseScreen):
         self.post_message(TodoChanged(todo))
         await self.reveal_todo(todo)
 
-        where = escape(project.description) if project else ""
         what = escape(todo.description)
-        into = "to new project" if result.project_created else "to"
 
-        self.post_message(
-            BarNotification(f"Added [b]{what}[/b] {into} [b]{where}[/b]", "info")
-        )
+        # Where it went is half of what the line is being told, so it is only
+        # left out when there is no project to name
+        if project is None:  # pragma: no cover
+            message = f"Added [b]{what}[/b]"
+        else:
+            where = escape(project.description)
+            into = "to new project" if result.project_created else "to"
+            message = f"Added [b]{what}[/b] {into} [b]{where}[/b]"
+
+        self.post_message(BarNotification(message, "info"))
 
     def reveal_project(self, project: Project) -> None:
         """
@@ -200,6 +317,70 @@ class MainScreen(BaseScreen):
 
         tree.force_refresh()
         tree.flash_row(project.uuid)
+
+    @on(SpawnCalendar)
+    def spawn_calendar(self, event: SpawnCalendar) -> None:
+        """
+        Opens the month over the date field that asked for it
+
+        The field stays mid-edit behind the window, so what comes back has
+        somewhere to land: which tree and which column that is rides along on
+        the event, since a window covering the panes cannot ask them.
+        """
+
+        self.app.push_screen(
+            CalendarScreen(calendar_title(event.column), event.initial),
+            partial(self.calendar_done, event.tree, event.column),
+        )
+
+    async def calendar_done(
+        self, tree: ModelTree, column: str, day: Optional[date]
+    ) -> None:
+        """
+        Keeps the day that was picked, exactly as a typed one is kept
+
+        The day goes into the buffer and the app then sends itself the enter
+        that settles it, so a date picked off the month runs through the same
+        column check, the same notification on a date a todo may not have, and
+        the same bar teardown as one typed by hand.
+        """
+
+        if day is None:
+            return
+
+        if tree.take_picked_day(column, day):
+            await self.route_key("enter")
+
+    @on(SpawnMove)
+    def spawn_move(self, event: SpawnMove) -> None:
+        self.app.push_screen(MoveScreen(event.todo), self.move_done)
+
+    async def move_done(self, result: Optional[Moved]) -> None:
+        """
+        Follows a task into the project it has just been filed under
+
+        The task is gone from the pane it was moved out of and is the last row
+        of one nobody is looking at, so the cursor is taken over to it the same
+        way it is taken to a task typed in from somewhere else: what was just
+        moved is what the next keypress is meant for. The bar still says where
+        it went, since the panes rearranging underneath is not on its own an
+        answer to which project took it.
+        """
+
+        if result is None:
+            return
+
+        todo, project = result
+
+        self.post_message(TodoChanged(todo))
+        await self.reveal_todo(todo)
+
+        what = escape(todo.description)
+        where = escape(project_path(project))
+
+        self.post_message(
+            BarNotification(f"Moved [b]{what}[/b] to [b]{where}[/b]", "info")
+        )
 
     @on(SpawnSearch)
     def spawn_search(self, _: SpawnSearch) -> None:
@@ -318,21 +499,28 @@ class MainScreen(BaseScreen):
 
     @on(ShowConfirm)
     def show_confirm(self, event: ShowConfirm):
-        self.app.bar_switcher.switch_to_confirm(event.callback, event.message)
+        self.app.bar_switcher.switch_to_confirm(event)
         self.post_message(ModeChanged("CONFIRM"))
 
     @on(ProjectRemoved)
     async def project_removed(self, event: ProjectRemoved):
+        await self.drop_project_pane(event.project.uuid)
+
+    async def drop_project_pane(self, uuid: str) -> None:
         """
         Drops the pane of a project that is gone
 
         Nothing highlights the pane back into place when the project it
         belongs to was the last one, so it is swapped for the dashboard rather
         than left showing (and collecting todos for) a deleted project.
+
+        Named by uuid rather than handed the project: a project taken away by
+        a history step is a row, not an object, by the time the pane it left
+        behind has to go.
         """
 
         switcher = self.query_one("#todo_switcher", expect_type=ContentSwitcher)
-        panes = switcher.query(f"#TodosTree_{event.project.uuid}")
+        panes = switcher.query(f"#TodosTree_{uuid}")
 
         if not panes:
             return
@@ -354,10 +542,19 @@ class MainScreen(BaseScreen):
         existing = switcher.query(f"#{tree.id}")
         if not existing:
             await switcher.add_content(tree, set_current=True)
+            # Mounted out of sight, so the pane's own first draw was put off
+            tree.refresh_if_dirty()
             return tree
 
         switcher.current = tree.id
-        return existing.first(TodosTree)
+
+        # Here rather than off the `Show` the switcher's flip sends: that
+        # arrives a tick later, and the caller puts the cursor on a row the
+        # moment this returns. Whatever changed while the pane was behind is
+        # drawn before anybody can look at it
+        shown = existing.first(TodosTree)
+        shown.refresh_if_dirty()
+        return shown
 
     @on(ProjectSelected)
     async def project_selected(self, event: ProjectSelected):

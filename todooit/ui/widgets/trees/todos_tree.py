@@ -2,6 +2,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
 
 from rich.console import RenderableType
+from rich.markup import escape
 from rich.styled import Styled
 from textual import on
 from textual.color import Color
@@ -19,10 +20,11 @@ from todooit.api import (
     restore_todo,
     sort_todos,
 )
-from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
+    SpawnMove,
     SpawnNote,
     TodoChanged,
     TodoRemoved,
@@ -30,7 +32,6 @@ from todooit.ui.api.events import (
 from todooit.ui.api.events.events import TodoSelected
 from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
-from ..renderers.todo_renderer import TodoRender
 from ._decorators import refresh_tree, require_highlighted_node
 from ._render_dict import TodoRenderDict
 
@@ -49,6 +50,7 @@ HEADING_FADE = 0.25
 
 class TodosTree(ModelTree[Model, TodoRenderDict]):
     BORDER_TITLE = "TASKS"
+    NODE_NOUN = "task"
     show_header = True
     CHILDREN_ATTR = "todos"
 
@@ -416,12 +418,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def render_layout(self):
         return self.api.layouts.todo_layout
 
-    def add_todo(self) -> str:
-        todo = self.model.add_todo()
-        render = TodoRender(todo, tree=self)
-        self.add_option(Option(render.prompt, id=render.id))
-        return todo.uuid
-
     def _add_first_item(self) -> Todo:
         return self.model.add_todo()
 
@@ -434,7 +430,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return super()._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Throws the highlighted task away, with everything filed under it
 
@@ -448,10 +444,21 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         if todo.is_binned:
             self._already_binned()
-            return
+            return False
 
         move_todo_to_bin(todo)
         self.post_message(TodoChanged(todo))
+        return True
+
+    def _binned_message(self, subject: str) -> str:
+        """
+        Where a binned task went, and the two keys that walk back to it
+
+        The cursor does not follow it in, so the key that fetches one back is
+        no use where it was pressed: the Bin has to be opened first.
+        """
+
+        return f"Binned {subject} — [b]gb[/b] then [b]u[/b] puts it back"
 
     def _already_binned(self) -> None:
         self.post_message(
@@ -512,8 +519,12 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for project in projects:
             tree.flash_row(project.uuid)
 
+        # Named after what was rebuilt, not after what came back: the task is
+        # already on screen with the cursor on it, and the row that appeared in
+        # the other pane is the part nothing else accounts for
+        home = escape(projects[-1].description)
         self.post_message(
-            BarNotification(f"Brought back [b]{projects[-1].description}[/b]", "info")
+            BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
         )
 
     def _row_above(self, todo: Todo) -> Optional[Todo]:
@@ -525,19 +536,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         a key talks about is the row that is there to be seen.
         """
 
-        parent = todo.parent
-
-        if parent is None:  # pragma: no cover
-            return None
-
-        siblings = self.visible_children(parent)
-
-        if todo not in siblings:  # pragma: no cover
-            return None
-
-        index = siblings.index(todo)
-
-        return siblings[index - 1] if index else None
+        return self.row_beside(todo, -1)
 
     @require_highlighted_node
     def indent_node(self) -> None:
@@ -619,6 +618,49 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         # Posted rather than pushed from here: the screen package imports the
         # trees, so reaching the other way would close the circle
         self.post_message(SpawnNote(self.current_model))
+
+    @require_highlighted_node
+    def move_node(self):
+        """
+        Asks which project the highlighted task is to be filed under
+
+        Which project that turns out to be is the move window's business, and
+        so is the move itself: the pane the task is leaving cannot say where it
+        is going, and after it has gone it is not this pane's row any more.
+        """
+
+        assert isinstance(self.current_model, Todo)
+
+        self.post_message(SpawnMove(self.current_model))
+
+    @require_highlighted_node
+    def goto_item(self):
+        """
+        Goes to the highlighted task where it is filed, and points it out
+
+        A pane draws work that lives elsewhere: the fixed projects gather it
+        out of the whole tree, and a project draws a block for every project
+        nested under it. The row is the same task either way, so the key walks
+        over to it -- its project opened, the tasks above it unfolded, the row
+        flashed -- which is the arrival the finder makes.
+
+        Pressed on a row that is already at home it says so rather than
+        flashing the row under the cursor: the pane it would go to is the one
+        it is in.
+        """
+
+        todo = self.current_model
+        assert isinstance(todo, Todo)
+
+        home = owning_project(todo)
+
+        if home is not None and home.uuid == self.model.uuid:
+            self.post_message(
+                BarNotification("This is the project it lives in", "info")
+            )
+            return
+
+        self.post_message(RevealTodo(todo))
 
     @require_highlighted_node
     def copy_note_to_clipboard(self):

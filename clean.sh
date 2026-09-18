@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Tear down finished feat-*/fix-* worktrees: the checkout, the branch, and the
-# worktree's own todooit instance (its dev database and its venv). Worktrees
-# with uncommitted changes are left alone. Run under WSL, from anywhere inside
-# the repo - dev, main, another worktree, or a subdirectory of one.
+# Tear down finished worktrees: the checkout, the branch, and the worktree's own
+# todooit instance (its dev database and its venv). Every worktree goes except
+# the ones on the keep list - main, dev and the other long-lived names below.
+# Worktrees with uncommitted changes are left alone. Run under WSL, from
+# anywhere inside the repo - dev, main, another worktree, or a subdirectory.
 #
-#   bash clean.sh          remove every clean feat-*/fix-* worktree (asks once)
+#   bash clean.sh          remove every clean, unprotected worktree (asks once)
 #   bash clean.sh -n       dry run: only show what would go
 #   bash clean.sh -y       skip the confirmation
 #
@@ -15,6 +16,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WT_HOMES="$HOME/.local/share/todooit-wt"   # one todooit instance per worktree
 HERE="$(pwd -P)"
+
+# Branches that stay put however old they get. Set KEEP_BRANCHES to replace the
+# list outright, or KEEP_BRANCHES_EXTRA to add a name or two for one run:
+#
+#   KEEP_BRANCHES_EXTRA="spike-ui" bash clean.sh
+#
+KEEP_BRANCHES="${KEEP_BRANCHES:-main master dev develop development trunk \
+release stable prod production staging}"
+KEEP_BRANCHES="$KEEP_BRANCHES ${KEEP_BRANCHES_EXTRA:-}"
 
 DRY=0 YES=0
 for arg in "$@"; do
@@ -42,20 +52,37 @@ fi
 # Does $1 sit at or below $2?
 inside() { case "$1/" in "$2"/*) return 0 ;; esac; return 1; }
 
-# Sort every feat-*/fix-* worktree into doomed ("<path>\t<branch>") or kept, and
-# build one table row per worktree as "<action>\t<name>\t<branch>\t<note>".
+# Is any of the names given on the keep list? Called with the branch and, for a
+# detached worktree that has no branch, the directory name.
+protected() {
+  local subject keep
+  for subject in "$@"; do
+    [ -n "$subject" ] || continue
+    for keep in $KEEP_BRANCHES; do
+      if [ "$subject" = "$keep" ]; then return 0; fi
+    done
+  done
+  return 1
+}
+
+# Sort every worktree into doomed ("<path>\t<branch>") or kept, and build one
+# table row per worktree as "<action>\t<name>\t<branch>\t<note>".
 rows=() doomed=() orphans=() blocked=''
-wt='' br=''
+wt='' br='' bare=0
 while IFS= read -r line; do
   case "$line" in
-    "worktree "*) wt="${line#worktree }"; br='' ;;
+    "worktree "*) wt="${line#worktree }"; br=''; bare=0 ;;
     "branch "*)   br="${line#branch refs/heads/}" ;;
+    "bare")       bare=1 ;;
     "")
       [ -n "$wt" ] || continue
       path="$wt"; wt=''
+      [ "$bare" -eq 0 ] || continue          # the bare repo itself
       name="$(basename "$path")"
-      case "$name" in feat*|fix*) ;; *) continue ;; esac
-      case "$br" in dev|main) continue ;; esac
+      if protected "$br" "$name"; then
+        rows+=("keep	$name	${br:--}	protected")
+        continue
+      fi
       real="$(cd "$path" 2>/dev/null && pwd -P || echo "$path")"
       if [ -n "$(git -C "$path" status --porcelain)" ]; then
         rows+=("keep	$name	${br:--}	uncommitted changes")
@@ -73,7 +100,7 @@ if [ -d "$WT_HOMES" ]; then
   for home in "$WT_HOMES"/*; do
     [ -d "$home" ] || continue
     name="$(basename "$home")"
-    case "$name" in feat*|fix*) ;; *) continue ;; esac
+    if protected "$name"; then continue; fi
     if [ ! -d "$REPO/$name" ]; then
       if inside "$HERE" "$(cd "$home" && pwd -P)"; then blocked="$name"; fi
       orphans+=("$name")
@@ -139,7 +166,8 @@ for d in ${doomed+"${doomed[@]}"}; do
   # --force only waives ignored leftovers (caches); the tracked tree was
   # already checked clean above.
   git -C "$REPO" worktree remove --force "$path"
-  git -C "$REPO" branch -D "$br" >/dev/null
+  # A detached worktree has no branch to delete.
+  if [ -n "$br" ]; then git -C "$REPO" branch -D "$br" >/dev/null; fi
   rm -rf "${WT_HOMES:?}/$name"
 done
 for o in ${orphans+"${orphans[@]}"}; do

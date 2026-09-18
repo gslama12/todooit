@@ -37,6 +37,27 @@ class CompletedTodosTree(FixedTodosTree):
     is the row that was actually unticked that is pointed at.
     """
 
+    # A finished task is finished. A step written into one would be work left
+    # in a row the log is only holding because there is none, and the task
+    # would go on saying it was done with it sitting there; unticking it,
+    # which sends it home, is what makes it something to add to again
+    takes_new_steps = False
+
+    def goto_item(self) -> None:
+        """
+        There is nowhere else to go: the log is where a finished task is
+
+        A task that is done has left the project it was filed under -- its
+        pane draws the work still to do -- so the row the key would walk to is
+        not drawn anywhere but here. Unticking it is what gives it a place
+        over there again, and that already takes the cursor with it.
+        """
+
+        self._not_here(
+            "Tasks can't be gone to",
+            "[b]c[/b] unticks one and goes with it",
+        )
+
     def toggle_complete(self):
         todo = self.current_model
         assert isinstance(todo, Todo)

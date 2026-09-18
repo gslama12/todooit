@@ -11,20 +11,19 @@ from todooit.extras.formatters import (
 )
 from todooit.extras.bar_widgets import (
     Clock,
+    Custom,
     CurrentProject,
     Powerline,
     Spacer,
-    StatusIcons,
-    ProjectProgress,
 )
-from todooit.ui.api import DooitAPI, extra_formatter, subscribe
+from todooit.ui.api import DooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.dooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
 from todooit.ui.screens import HelpScreen
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.ui.widgets.inputs.model_inputs import Recurrence
-from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend
+from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
 from rich.text import Text
 
 
@@ -556,6 +555,12 @@ def key_setup(api: DooitAPI, _):
     api.keys.set("gu", api.goto_upcoming, group=NAVIGATION)
     api.keys.set("gc", api.goto_completed, group=NAVIGATION)
     api.keys.set("gb", api.goto_bin, group=NAVIGATION)
+    # The way back from a pane that gathered its rows from elsewhere: the task
+    # under the cursor, in the project it actually lives in. Among the other
+    # "g" jumps because it is one -- those name the pane to go to, this one
+    # lets the highlighted row name it -- and scoped to the tasks, since a
+    # project row is already standing in its own pane
+    api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
@@ -598,6 +603,17 @@ def key_setup(api: DooitAPI, _):
     # shifted key, since the whole Bin is far too much to lose to a slip of
     # the finger — it has to be typed twice over, the way "yy" does
     api.keys.set("YY", api.empty_bin, group=EDITING)
+
+    # Taking back the last thing that happened, on the keys the rest of the
+    # desktop takes things back with — the same two the note window already
+    # answers to, so that ctrl+z means one thing wherever it is pressed. Not
+    # vim's "u": that is the key which fetches a task back out of the Bin, and
+    # it was here first.
+    #
+    # What they walk back is every edit either pane can make, one key at a
+    # time, however much of the tree that key moved.
+    api.keys.set("<ctrl+z>", api.undo, group=EDITING)
+    api.keys.set("<ctrl+y>", api.redo, group=EDITING)
 
     # A scale is one thing to learn, not four, so the whole run of digits is
     # listed as the single row it reads as. The keys are still set one at a
@@ -650,6 +666,11 @@ def key_setup(api: DooitAPI, _):
     # has levels to move between, so the projects pane leaves both alone
     api.keys.set("I", api.indent_todo, group=MOVING)
     api.keys.set("U", api.unindent_todo, group=MOVING)
+    # The move that crosses the whole tree rather than one step of it: the
+    # other three shift a task among the rows around it, and this one takes it
+    # out of the project altogether. Shifted "m", which is free over the tasks
+    # — plain "m" is the pinned note, and nothing else starts with either
+    api.keys.set("M", api.move_todo, group=MOVING, scope="todos")
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)
@@ -846,60 +867,37 @@ def mode_label(api: DooitAPI, mode: str) -> Text:
     )
 
 
-# Completion of the current project, as a meter that can be read without
-# parsing the number beside it
-PROGRESS_CELLS = 5
-PROGRESS_FILLED = "▰"
-PROGRESS_EMPTY = "▱"
-
-# How far the unfilled cells are pulled towards the background: present enough
-# to show how much meter is left, faint enough not to read as progress
-PROGRESS_EMPTY_FADE = 0.6
+# Today, written the way every other date in the app is written. Read off the
+# clock rather than out of an event: nothing happens in the app when midnight
+# passes, so the widget is what has to notice the day has turned.
+DATE_TICK = 60
 
 
-class ProjectProgressMeter(ProjectProgress):
-    def __init__(self, api: DooitAPI, fg: str = "", bg: str = "") -> None:
-        # The base widget pipes its percentage through `fmt`; the meter is built
-        # from that number rather than around it, so nothing is added there.
-        super().__init__(api, fmt="{}", fg=fg, bg=bg)
+def date_widget(api: DooitAPI, fg: str, bg: str) -> StatusBarWidget:
+    @timer(DATE_TICK)
+    def today(*_) -> str:
+        return day_label(date.today())
 
-    @property
-    def value(self) -> str:
-        percent = super().value
-        # Empty until a project has been selected: show an empty meter rather
-        # than nothing, so the segment keeps its shape and its caps
-        percent = int(percent) if percent.isdigit() else 0
-
-        theme = self.theme
-        filled = round(percent * PROGRESS_CELLS / 100)
-        # A finished project goes green; short of that the meter stays accent
-        color = theme.green if percent == 100 else theme.primary
-        empty = blend(theme.foreground1, theme.background1, PROGRESS_EMPTY_FADE)
-
-        return (
-            f" [{color}]{PROGRESS_FILLED * filled}[/]"
-            f"[{empty}]{PROGRESS_EMPTY * (PROGRESS_CELLS - filled)}[/]"
-            f" {percent:>3}% "
-        )
+    return Custom(api, today, fmt="[bold] 󰃭 {} [/]", fg=fg, bg=bg)
 
 
 @subscribe(Startup)
 def bar_setup(api: DooitAPI, _):
     theme = api.vars.theme
 
-    # The mode sits alone on the left as a pill, and everything about the
-    # current project is chained to the right edge: how far along it is, what
-    # it is called, how its todos stand, and the time. The chain alternates
-    # between a recessed and a raised background so each segment stays its own
-    # block, and ends on the accent, where the eye lands last.
+    # The mode sits alone on the left as a pill, and the three things that say
+    # where and when you are chained to the right edge: the project in front of
+    # you, the time, and the day. Nothing here counts or measures the work --
+    # that is what the panes are for -- so the chain stays the same width
+    # whatever the todos do. It alternates between a recessed and a raised
+    # background so each segment stays its own block, and ends on the accent,
+    # where the eye lands last.
     bar_widgets = [
         mode_cap(ROUND_OPEN),
         mode_widget(mode_label),
         mode_cap(ROUND_CLOSE),
         Spacer(api, width=0, bg=bar_background(api)),
-        Powerline.left_rounded(api, fg=theme.background1),
-        ProjectProgressMeter(api, fg=theme.foreground2, bg=theme.background1),
-        Powerline.left_rounded(api, fg=theme.background3, bg=theme.background1),
+        Powerline.left_rounded(api, fg=theme.background3),
         CurrentProject(
             api,
             fmt=" 󰉋 {} ",
@@ -907,23 +905,15 @@ def bar_setup(api: DooitAPI, _):
             bg=theme.background3,
         ),
         Powerline.left_rounded(api, fg=theme.background1, bg=theme.background3),
-        # The tally borrows the tree's own checkboxes, so a count in the bar
-        # and a row in the pane are recognisably the same thing
-        StatusIcons(
+        Clock(
             api,
-            completed_icon=f"{CHECKBOX_TICKED} ",
-            pending_icon=f"{CHECKBOX_EMPTY} ",
-            overdue_icon="󰅗 ",
+            format="%H:%M",
+            fmt=" 󰥔 {} ",
+            fg=theme.foreground2,
             bg=theme.background1,
         ),
         Powerline.left_rounded(api, fg=theme.primary, bg=theme.background1),
-        Clock(
-            api,
-            format="%H:%M:%S",
-            fmt="[bold] 󰥔 {} [/]",
-            fg=theme.background1,
-            bg=theme.primary,
-        ),
+        date_widget(api, fg=theme.background1, bg=theme.primary),
     ]
     api.bar.set(bar_widgets)
 

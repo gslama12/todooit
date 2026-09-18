@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Optional, Tuple
 
 from rich.style import Style
@@ -9,6 +9,13 @@ from .simple_input import SimpleInput
 from todooit.api import Todo, Project
 from todooit.api.theme import DooitThemeBase
 from todooit.utils import parse
+
+# Typed into a date field, this asks for the month rather than being a date.
+# A word rather than a key of its own: every letter mid-edit is a letter, so
+# the field is where the question has to be asked, and modified keys are not
+# to be relied on to survive the terminal in one piece anyway. No date
+# expression starts with these three, so nothing meant as one is swallowed.
+CALENDAR_WORD = "cal"
 
 
 class TodoDescription(SimpleInput[Todo, str]):
@@ -68,6 +75,62 @@ class DateInput(SimpleInput[Todo, datetime]):
     # Day first, to match both the column's German rendering and the way the
     # parser reads an ambiguous `5.9`, so what is shown can be typed back in
     EDIT_FORMAT = "%d.%m.%Y"
+
+    def asks_for_calendar(self) -> bool:
+        return self.value.strip().lower() == CALENDAR_WORD
+
+    def take_back_word(self) -> None:
+        """
+        Put the field back the way it was before the word was typed into it
+
+        The word is a question, not a value: once it has been asked there is
+        nothing left to keep, and what the field held before it is what the
+        month is about to be opened on. Leaving it in would mean an escaped
+        calendar handing the field back holding three letters that are no date.
+        """
+
+        self.start_edit()
+
+    def _parsed(self) -> Optional[datetime]:
+        """What is in the buffer right now, as a date, or None if it is not one"""
+
+        typed = self.value.strip()
+
+        if not typed:
+            return None
+
+        parsed, ok = parse(typed)
+
+        return parsed if ok else None
+
+    def calendar_day(self) -> Optional[date]:
+        """
+        The day the calendar opens on, or None for today
+
+        Whatever is half-typed wins over what the model holds: the buffer is
+        what the field is saying, and a month opened out of it opens where
+        that says rather than where the todo has got to so far.
+        """
+
+        parsed = self._parsed()
+
+        return parsed.date() if parsed else None
+
+    def set_day(self, day: date) -> None:
+        """
+        Write a day picked off the calendar into the buffer
+
+        A time already typed is kept: a day is all the calendar has to say,
+        and dropping the hour along with it would lose something nothing asked
+        to have changed.
+        """
+
+        parsed = self._parsed()
+        clock = parsed.time() if parsed else time()
+
+        self._value = self._format(datetime.combine(day, clock))
+        self._selection_anchor = None
+        self.move_cursor_to_end()
 
     @classmethod
     def _format(cls, value: datetime) -> str:

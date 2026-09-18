@@ -32,6 +32,8 @@ dev = [
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
+    "pytest-timeout>=2.3.1",
+    "pytest-xdist>=3.6.1",
     "ruff>=0.13.1",
     "textual-dev>=1.7.0",
 ]
@@ -47,6 +49,39 @@ packages = ["todooit"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "function"
+addopts = "--strict-markers"
+# Applied by filename in the root conftest, not by hand -- see FEATURE_BY_MODULE.
+# `pytest -m <feature>` is the mechanical form of CLAUDE.md's "only run tests
+# relevant to the change"; --strict-markers turns a typo into an error rather
+# than a run that quietly selects nothing.
+markers = [
+  "core: pure-logic tests, no Textual app",
+  "ui: drives a real Dooit app through a pilot",
+  "smoke: the always-run sanity subset",
+  "model: the base model",
+  "todos: todos and the tasks pane",
+  "projects: projects and the projects pane",
+  "colors: project colors",
+  "fixed: Today/Upcoming/Completed/Bin",
+  "recycle: the recycle bin",
+  "undo: undo and redo",
+  "hooks: model hooks and validation",
+  "quickadd: quick add",
+  "links: links and the clipboard",
+  "dates: date parsing, recurrence, the calendar",
+  "notes: todo notes and the pinned note",
+  "theming: themes and CSS",
+  "persistence: paths, the database, sync polling",
+  "shell: app shell, navigation, cross-feature workflows",
+  "help: the help screen",
+  "bar: the status bar and its widgets",
+  "formatters: the render pipeline",
+  "move: moving and refiling",
+  "sort: sorting",
+  "search: search and goto",
+  "editing: inline editing and the cursor",
+  "config: the config API, loader and keys",
+]
 
 [tool.ruff.lint]
 ignore = ["E712"]

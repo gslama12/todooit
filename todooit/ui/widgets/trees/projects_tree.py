@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     BORDER_TITLE = "PROJECTS"
+    NODE_NOUN = "project"
     show_header = True
     CHILDREN_ATTR = "projects"
 
@@ -114,6 +115,34 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def _force_refresh(self) -> None:
         super()._force_refresh()
         self._sync_bottom_gap()
+
+    def _remeasure_bottom_gap(self) -> None:
+        """
+        Sizes the gap again, a frame after whatever moved the floor
+
+        The gap is only as good as the pane it was measured against, and the
+        events that change that pane all arrive before the layout that follows
+        them. So the measurement waits for the frame to be drawn rather than
+        reading a size that is already on its way out.
+        """
+
+        self.call_after_refresh(self._sync_bottom_gap)
+
+    def notify_style_update(self) -> None:
+        # The app's stylesheet can land *after* the pane has been handed its
+        # first size -- on the first window opened in a process it usually
+        # does, since the CSS is still being compiled when the layout runs.
+        # Until it arrives the pane is wearing OptionList's own padding, which
+        # is a column either side rather than a line above and below, so it
+        # reports two more rows of floor than it will actually have. A gap
+        # measured against that is two lines too long, which is exactly enough
+        # to push the pinned block off the bottom and raise a scrollbar over a
+        # pane that fits. Nothing resizes when the styles land -- the border
+        # keeps the widget the same shape from the outside, so no resize event
+        # is coming -- which makes this the only word the pane gets that its
+        # own floor has moved.
+        super().notify_style_update()
+        self._remeasure_bottom_gap()
 
     def on_resize(self, _) -> None:
         # A pane that got taller or shorter has a different amount of floor to
@@ -214,7 +243,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         self.post_message(ProjectRemoved(self.current_model))
         return super()._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Throws the highlighted project away, keeping what was filed in it
 
@@ -232,6 +261,21 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         self.expanded_nodes.pop(project.uuid, None)
 
         move_project_to_bin(project)
+        return True
+
+    def _binned_message(self, subject: str) -> str:
+        """
+        Where a dropped project went, which is not one place
+
+        The project row itself is simply gone; what it was holding is in the
+        Bin, and fetching one of those back is what builds the project again.
+        So the tasks are what the bar points at — when there were any.
+        """
+
+        if self._current_has_children:
+            return f"Dropped {subject} — its tasks are in the Bin"
+
+        return f"Dropped {subject}"
 
     # ---------------------------------------------------------------
     # Nothing about a fixed project is stored, so every edit that would

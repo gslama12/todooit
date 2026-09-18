@@ -1,15 +1,14 @@
 from textual import events
-from tests.test_ui.ui_base import run_pilot
-from todooit.ui.tui import Dooit
+from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.screens import MainScreen
 
 
 async def test_base_screen_keys():
     async with run_pilot() as pilot:
-        app = pilot.app
-        assert isinstance(app, Dooit)
-
-        await pilot.pause()
+        # `pause` alone is not enough: the main screen is pushed from
+        # `on_mount`, so a test that looks at `app.screen` before the app has
+        # settled can find nothing on the stack at all
+        app = await boot(pilot)
         screen = app.screen
 
         assert isinstance(screen, MainScreen)

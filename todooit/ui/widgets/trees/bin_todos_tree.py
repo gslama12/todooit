@@ -18,5 +18,25 @@ class BinTodosTree(FixedTodosTree):
 
     shows_binned = True
 
+    # Nothing in here is being got on with, so there is nothing in here to
+    # break into steps either: a task in the Bin is waiting to be put back or
+    # be rid of, and a step written into one would be work nobody can reach
+    # without restoring it first
+    takes_new_steps = False
+
+    def goto_item(self) -> None:
+        """
+        There is nowhere else to go: the Bin is where a thrown away task is
+
+        The project it came out of no longer draws it, and may not even be
+        there any more. Restoring it is what puts it back in one, and that
+        already takes the cursor with it.
+        """
+
+        self._not_here(
+            "Tasks can't be gone to",
+            "[b]u[/b] restores one and goes with it",
+        )
+
     def toggle_complete(self):
         self._not_here("Tasks can't be ticked off")

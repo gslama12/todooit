@@ -1,0 +1,9 @@
+
+> todooit-docs@1.0.0 docs:dev
+> vitepress dev docs
+
+
+  vitepress v1.6.4
+
+  ➜  Local:   http://localhost:5173/todooit/
+  ➜  Network: use --host to expose

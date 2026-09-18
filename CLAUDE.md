@@ -53,7 +53,7 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
 
 ### Helper scripts
 
-All three are tracked in the repo, so every worktree carries its own copy.
+All four are tracked in the repo, so every worktree carries its own copy.
 They are the user's tools, not yours — you never call them — but what they do
 decides where you put things:
 
@@ -61,6 +61,12 @@ decides where you put things:
   the app from that worktree against that worktree's instance and leaves the
   user standing there. This is how the user tries out your change, and it
   opens **the same database you seeded**.
+- `bash run_tests.sh`, run **from inside a worktree** with no arguments, asks
+  what to run — smoke, the whole suite, one feature marker, one layer, one
+  file, the last failures, a `-m` expression of the user's own, the CI command,
+  or coverage — and runs it in that worktree's environment, printing the pytest
+  command first. It is the menu form of [Which tests to run](#which-tests-to-run);
+  you still run pytest yourself rather than calling this.
 - `bash clean.sh`, run from anywhere inside the repo, deletes every
   `feat-*`/`fix-*` worktree that has no uncommitted changes, force-deletes its
   branch, and removes its instance directory; it prints the plan as a table
@@ -68,9 +74,13 @@ decides where you put things:
   Uncommitted work is always kept, so leaving your change uncommitted (as
   required above) also keeps it safe from cleanup.
 - `bash push.sh`, run **from inside a worktree**, stages and commits
-  everything there, merges the current `origin/dev` into the branch, and
-  pushes after asking; on conflicts it stops and lists them. This is how the
-  user ships your change — you still never commit yourself.
+  everything there, merges the current `dev` into the branch, shows the
+  commits and a `git diff --stat` of what would land, then asks and —
+  on yes — fast-forwards `dev` onto the branch and pushes `dev`. Feature
+  branches are never pushed and there is no pull request: work lands on `dev`
+  from the user's machine. On conflicts it stops and lists them, in the feature
+  branch. This is how the user ships your change — you still never commit
+  yourself.
 
 
 ## Data locations
@@ -147,20 +157,59 @@ which you should not run.
 Exercise every change in that running instance — type-checking alone doesn't
 count as done.
 
-`textual-dev` (dev dep group) needs a C compiler WSL lacks, so run tests from
-a throwaway venv instead:
+Tests run from the worktree's own environment, the same one `uv run todooit`
+uses — no separate venv:
 
 ```bash
-uv venv /tmp/ttest --python 3.14
-VIRTUAL_ENV=/tmp/ttest uv pip install -e . pytest pytest-asyncio faker
-/tmp/ttest/bin/python -m pytest tests -q
+export PYTHONPYCACHEPREFIX=/tmp/ttpyc   # optional: ~20% off start-up, and
+                                        # keeps __pycache__ out of the worktree
+uv run pytest -q
 ```
 
-`/tmp` is inside WSL, so that venv sits on ext4 as well — keep it there rather
-than in the worktree, for the same reason.
+> `textual-dev` used to need a C compiler WSL lacks, which is why this used to
+> say to build a throwaway venv under `/tmp`. `aiohttp` ships a wheel now
+> (3.14.3), so `uv sync` resolves the dev group cleanly and the workaround is
+> gone. If it ever comes back, the fix is a venv on ext4 with `-e .` plus
+> `pytest pytest-asyncio pytest-xdist pytest-timeout faker`, run as
+> `python -m pytest` so the cwd wins over its editable install.
+
+**The environment is per worktree**, since `UV_PROJECT_ENVIRONMENT` points
+into that worktree's instance dir. The root `conftest.py` fails the run
+outright if the `todooit` being imported ever belongs to a different worktree
+than the tests, so a stale environment is an error rather than a mystery.
+
+Tests never touch your instance database, whatever `TODOOIT_HOME` is set to:
+the root `conftest.py` overwrites it with a per-process directory under
+`/tmp/todooit-tests/` before `todooit` is imported, which is also what keeps
+parallel workers from writing over each other's CSS cache.
+
+### Which tests to run
 
 **Only run tests relevant to the change** — not the whole suite — for small
-changes.
+changes. Every test carries a marker for its feature, derived from its
+filename (the table is [tests/features.py](tests/features.py)), so that rule
+has a mechanical form:
+
+```bash
+uv run pytest -m smoke -n 4        # ~8s: all of test_core + one test per UI module
+uv run pytest -m notes             # one feature, core and UI halves both
+uv run pytest -m "notes and ui"    # just the UI half
+uv run pytest -m "move or sort"    # a change that touches two
+uv run pytest -n auto              # the whole thing, ~95s
+uv run pytest tests/test_ui/test_bar.py  # a single file: no -n, xdist start-up dominates
+```
+
+`uv run pytest -m smoke -n 4` is the cheap "did I break the world" check; a typo in
+`-m` is an error rather than a run that quietly selects nothing. A new test
+file must be added to `tests/features.py` or `tests/test_meta.py` fails.
+
+Two things the suite now relies on, worth keeping true:
+
+- **Tests must stay independent of each other.** `-n auto` hands them out
+  across processes in no particular order.
+- **Never wait on the clock.** The app's own timers are stretched out of the
+  way during tests, and a test that sleeps or counts on a debounce firing will
+  fail under load. Wait for a state instead — `boot()`, or a helper like it.
 
 ## Every change ships a demo
 

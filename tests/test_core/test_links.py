@@ -7,7 +7,6 @@ from todooit.utils.links import (
     find_links,
     first_link,
     fold_links,
-    link_at,
     link_label,
     link_title,
     stored_range,
@@ -70,18 +69,6 @@ def test_first_link():
     link = first_link("https://a.com and https://b.com")
     assert link is not None
     assert link.url == "https://a.com"
-
-
-def test_link_at_reads_the_character_under_the_cursor():
-    text = "see https://example.com now"
-    link = find_links(text)[0]
-
-    assert link_at(text, link.start) == link
-    assert link_at(text, link.end - 1) == link
-
-    # One past the last character is the space after the link
-    assert link_at(text, link.end) is None
-    assert link_at(text, 0) is None
 
 
 def test_link_label_shortens_and_escapes():

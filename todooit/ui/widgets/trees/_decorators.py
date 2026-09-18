@@ -79,12 +79,24 @@ def reject_fixed_node(message: str) -> Callable:
 
 
 def require_confirmation(func: Callable) -> Callable:
+    """
+    Puts the y/N question in front of an edit that nothing can be undone from
+
+    The question is built before the edit runs, never after: what it names is
+    the row under the cursor, and once the edit has been answered for that row
+    is gone and the name with it. Turned off, the edit still says what it did
+    — the confirmation was the only place it was ever going to be mentioned.
+    """
+
     def wrapper(self: "ModelTree", *args, **kwargs) -> Any:
+        question, confirmed, cancelled = self.delete_confirmation()
         function = partial(func, self, *args, **kwargs)
 
         if not self.api.vars.show_confirm:
-            return function()
+            result = function()
+            self.post_message(BarNotification(confirmed, "warning"))
+            return result
 
-        self.post_message(ShowConfirm(function))
+        self.post_message(ShowConfirm(function, question, confirmed, cancelled))
 
     return wrapper

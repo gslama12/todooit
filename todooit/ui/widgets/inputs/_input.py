@@ -38,7 +38,6 @@ class Input:
     A simple single line Text Input
     """
 
-    highlight_pattern = ""
     is_editing = False
 
     # Where a selection was started from; the cursor is its other end, so the
@@ -48,6 +47,16 @@ class Input:
 
     # Inputs that only show a derived value refuse to be edited
     editable: bool = True
+
+    def asks_for_calendar(self) -> bool:
+        """
+        Whether what has been typed is a request for the calendar
+
+        Only a field holding a date has a month behind it to open, so every
+        other field reads the word as the word it is and puts it in the buffer.
+        """
+
+        return False
 
     def __init__(self, value="") -> None:
         self._value = value
@@ -262,13 +271,10 @@ class Input:
         if text:
             self._insert_text(text)
 
-    def _insert_text(self, text: Optional[str] = None) -> None:
+    def _insert_text(self, text: str) -> None:
         """
         Inserts text where the cursor is
         """
-
-        if text is None:
-            text = paste_text(running_app())
 
         self._value = (
             self._value[: self._cursor_position]

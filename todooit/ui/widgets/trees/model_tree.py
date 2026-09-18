@@ -1,4 +1,4 @@
-from collections import defaultdict
+from datetime import date
 from functools import cache
 from typing import (
     TYPE_CHECKING,
@@ -9,11 +9,14 @@ from typing import (
     Iterable,
     List,
     Optional,
+    Tuple,
     TypeVar,
     Union,
 )
+from textual import events, on
 from textual.app import ComposeResult
 from rich.cells import cell_len
+from rich.markup import escape
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
 from rich.measure import Measurement
 from rich.segment import Segment
@@ -28,6 +31,7 @@ from textual.widgets.option_list import Option, OptionDoesNotExist
 from todooit.api import Todo, Project
 from todooit.ui.api.events import (
     ModeChanged,
+    SpawnCalendar,
     StartSort,
     BarNotification,
 )
@@ -129,6 +133,12 @@ class GroupHeading:
         return Measurement(0, 0)
 
 
+# How much of a description the bar will quote before it is cut short: enough
+# to tell one row from another, short of filling the line it has to share with
+# the question around it
+QUOTED_NAME_MAX = 40
+
+
 ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 RenderDictType = TypeVar("RenderDictType", bound=RenderDict)
 
@@ -152,6 +162,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     # The attribute a node's children hang off, walked into when the node is
     # expanded: "projects" for the projects pane, "todos" for the tasks pane
     CHILDREN_ATTR: str = ""
+
+    # What a row of this pane is called where the bar has to talk about one
+    # that cannot be quoted by name
+    NODE_NOUN: str = "item"
 
     # Whether a nested row is drawn hanging off the row above it. A pane that
     # gathers its rows from all over the tree shows them as the flat list they
@@ -177,13 +191,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         tree = self.__class__.__name__
         super().__init__(id=f"{tree}_{model.uuid}")
         self._model = model
-        self.expaned = defaultdict(bool)
         self._renderers: RenderDictType = render_dict
         self._static_rows: Dict[str, Callable[[], RenderableType]] = {}
 
         # Rows still fading, each with the steps it has left to go
         self._flashing: Dict[str, int] = {}
         self._flash_timer: Optional[Timer] = None
+
+        # Whether a redraw was asked for while the pane was out of sight, and
+        # so is still owed. Per pane, not per class: which panes are behind
+        # the one in front is the whole question
+        self._needs_refresh = False
 
     def flash_row(self, _id: str) -> None:
         """Start the row at full brightness, and keep the fade running"""
@@ -194,6 +212,24 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             self._flash_timer = self.set_interval(self.FLASH_INTERVAL, self._fade_rows)
 
         self.refresh()
+
+    def flash_row_if_shown(self, _id: str) -> bool:
+        """
+        Lights a row up, if this pane happens to have one for it
+
+        What is being pointed at can come from outside the pane — a history
+        step writes rows wherever the key that made them was pressed — and a
+        pane with no row for one of them has nothing to light up rather than
+        a fade to run over a row that is not there.
+        """
+
+        try:
+            self.get_option_index(_id)
+        except OptionDoesNotExist:
+            return False
+
+        self.flash_row(_id)
+        return True
 
     def _fade_rows(self) -> None:
         """
@@ -410,10 +446,46 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         return self.query_one("#empty_message", expect_type=Label)
 
     def force_refresh(self) -> None:
+        """
+        Redraws the pane, or takes down that it has to be redrawn
+
+        A pane behind the one in front is drawn for nobody, and the panes are
+        never thrown away: one per project visited stays mounted for the rest
+        of the session, so a change to a single todo would redraw every
+        project ever opened. The work is left until the pane is next brought
+        forward, which is both the moment it is worth doing and the moment a
+        fixed project would go back to the database anyway.
+        """
+
+        if not self.display:
+            self._needs_refresh = True
+            return
+
+        self._refresh_now()
+
+    def _refresh_now(self) -> None:
+        self._needs_refresh = False
         self._refresh_and_restore_highlight()
 
         if self.has_focus:
             self.highlight_first_node()
+
+    def refresh_if_dirty(self) -> None:
+        """
+        Draws whatever was left undone while the pane was out of sight
+        """
+
+        if self._needs_refresh:
+            self._refresh_now()
+
+    @on(events.Show)
+    def _refresh_when_shown(self, _: events.Show) -> None:
+        # A backstop, not the way it normally happens: the pane being switched
+        # to is drawn by whoever switched to it, synchronously, because the
+        # cursor is put on a row the moment after. This catches a pane that
+        # comes back into view some other way, and is a no-op when it is
+        # already drawn
+        self.refresh_if_dirty()
 
     @fix_highlight
     def _refresh_and_restore_highlight(self) -> None:
@@ -645,6 +717,56 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self.update_current_prompt()
 
+    def offer_calendar(self) -> None:
+        """
+        Open the month over a field that has just asked for one
+
+        The ask is a word typed into the field rather than a key of its own,
+        so it is looked for after every keystroke; only a date field ever says
+        yes, and every other field takes the same three letters as text. The
+        word is taken back out before the window goes up, so the field is
+        holding what it held all along by the time anything can be escaped
+        back to it.
+
+        The window is posted at the screen rather than pushed from here, the
+        same way the note and move windows are: the screen package imports the
+        trees, so reaching the other way would close the circle.
+        """
+
+        column = self.current.editing
+        component = self.current._get_component(column)
+
+        if not component.asks_for_calendar():
+            return
+
+        component.take_back_word()
+        self.update_current_prompt()
+
+        self.post_message(SpawnCalendar(self, column, component.calendar_day()))
+
+    def take_picked_day(self, column: str, day: date) -> bool:
+        """
+        Put the day the calendar handed back into the field it came out of
+
+        Only written into the buffer here; settling the edit is left to the
+        enter the screen sends straight after, so that a date picked off the
+        month is kept by exactly the same path as one typed by hand. Whether
+        there was still an edit to write into is what comes back, so the
+        screen knows whether that enter has anything left to settle.
+
+        The edit can be gone by the time the window closes -- the row dropped
+        out from under it by the poller, say -- and then the day has nowhere
+        to land and is let go.
+        """
+
+        if not self.is_editing or self.current.editing != column:
+            return False  # pragma: no cover
+
+        self.current._get_component(column).set_day(day)
+        self.update_current_prompt()
+
+        return True
+
     async def handle_keypress(self, key: str) -> bool:
         if self.is_editing:
             if key in ["escape", "enter"]:
@@ -653,6 +775,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
                 self.stop_edit(cancel=key == "escape")
             else:
                 self.current.handle_keypress(key)
+                self.offer_calendar()
 
             self.update_current_prompt()
             return True
@@ -663,6 +786,12 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         return True
 
     def refresh_options(self) -> None:
+        # A pane owed a redraw is holding rows that may no longer have a model
+        # behind them, and drawing one would go looking for it. The rebuild it
+        # is waiting for owns those rows
+        if self._needs_refresh:
+            return
+
         for i in self._options:
             assert i.id is not None
 
@@ -673,7 +802,15 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @require_highlighted_node
     def copy_description_to_clipboard(self):
+        """
+        Puts the highlighted row's description on the system clipboard
+
+        A copy leaves nothing on screen to look at, so the bar is what says the
+        key landed — the same way it does for the note beside it.
+        """
+
         copy_text(self.app, self.current_model.description)
+        self.post_message(BarNotification("Description copied to clipboard", "info"))
 
     @refresh_tree
     def _expand_node(self, _id: str) -> None:
@@ -804,7 +941,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         description = " ".join(paste_text(self.app).split())
 
         if not description:
-            self.post_message(BarNotification("Clipboard is empty", "warning"))
+            self.post_message(
+                BarNotification("Clipboard is empty — nothing to paste", "warning")
+            )
             return
 
         node = self._new_sibling()
@@ -843,6 +982,63 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             self._renderers.pop(_id, None)
             self.expanded_nodes.pop(_id, None)
 
+            # The row goes with the renderer. A pane redrawing right now would
+            # drop it anyway, but one waiting its turn out of sight would be
+            # left holding a row it can no longer draw -- and the renderer it
+            # would reach for is built by looking the model up, which is the
+            # one thing that is gone
+            try:
+                self.remove_option(_id)
+            except OptionDoesNotExist:
+                pass
+
+    def quoted_name(self) -> str:
+        """
+        The highlighted row, named the way the bar will quote it
+
+        Cut short where a description would fill the line: the bar has one of
+        them, and the front of a description is what tells one row from
+        another. Blank comes back blank — a row can be deleted straight out of
+        an edit that never gave it a name, and there the pane it is in is all
+        there is left to call it.
+        """
+
+        description = " ".join(self.current_model.description.split())
+
+        if len(description) > QUOTED_NAME_MAX:
+            description = description[: QUOTED_NAME_MAX - 1].rstrip() + "…"
+
+        return escape(description)
+
+    def quoted_subject(self) -> str:
+        """
+        The highlighted row as the bar will refer to it
+
+        Its name where it has one, and what the pane calls a row where it has
+        not: a row can be acted on straight out of an edit that never named it.
+        """
+
+        name = self.quoted_name()
+        return f"[b]{name}[/b]" if name else f"this {self.NODE_NOUN}"
+
+    def delete_confirmation(self) -> Tuple[str, str, str]:
+        """
+        The question a delete for good asks, and what it says either way
+
+        What goes with the row is named as well: the rows filed under it leave
+        with it, and unlike a trip to the Bin there is nothing left afterwards
+        to fetch any of them back with.
+        """
+
+        subject = self.quoted_subject()
+        held = " and everything under it" if self._current_has_children else ""
+
+        return (
+            rf"Delete {subject}{held} for good? \[y/N]",
+            f"Deleted {subject}{held}",
+            f"Kept {subject}",
+        )
+
     @require_confirmation
     @refresh_tree
     def _remove_node(self):
@@ -854,10 +1050,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self._delete_current_model()
 
-    def _bin_node(self) -> None:
+    def _bin_node(self) -> bool:
         """
         Move the highlighted node to the Bin, keeping everything it holds
+
+        False when nothing moved, which is a pane having said why itself.
         """
+
+        raise NotImplementedError  # pragma: no cover
+
+    def _binned_message(self, subject: str) -> str:
+        """What the bar says once the highlighted row has gone to the Bin"""
 
         raise NotImplementedError  # pragma: no cover
 
@@ -879,17 +1082,30 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         Nothing goes for good here: what is dropped lands in the Bin, whole,
         and stays there until it is either restored or deleted on purpose.
         Which is what lets the key act on the spot instead of asking first.
+
+        The row leaving the pane is the only thing on screen that says the key
+        landed, and it looks exactly like the row being deleted outright — so
+        the bar is where the difference between the two is said, along with the
+        way back. Both are read off the row before it goes.
         """
 
-        self._bin_node()
+        subject = self.quoted_subject()
+        message = self._binned_message(subject)
+
+        if not self._bin_node():
+            return
+
+        self.post_message(BarNotification(message, "info"))
 
     @require_highlighted_node
     def delete_node(self):
         """
         Deletes the highlighted item outright, with everything under it
 
-        The one way something leaves the database, and the only edit that
-        cannot be taken back — so it is the one that asks.
+        The one way something leaves the database, rather than going to the
+        Bin to be thought about later — so it is the one that asks. Ctrl+z
+        still reaches it while the app is open; quitting is what makes it
+        final.
         """
 
         self._remove_node()
@@ -903,13 +1119,58 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self._restore_node()
 
+    def row_beside(self, model: Any, offset: int) -> Optional[Any]:
+        """
+        The row this pane draws directly above or below one, or None
+
+        Read off the pane rather than off the filing. A pane draws the run in
+        an order of its own and leaves part of it out — a task ticked off is
+        drawn in Completed and one thrown away in the Bin, and both are still
+        filed here — so the row beside the cursor and the row beside it in
+        the filing are often not the same one.
+        """
+
+        parent = model.parent
+
+        if parent is None:
+            return None
+
+        drawn = self.visible_children(parent)
+
+        if model not in drawn:  # pragma: no cover
+            return None
+
+        index = drawn.index(model) + offset
+
+        if not 0 <= index < len(drawn):
+            return None
+
+        return drawn[index]
+
+    def _shift(self, offset: int) -> bool:
+        """
+        Swap the highlighted row with the one drawn beside it
+
+        By the row rather than by a step through the filing: stepping through
+        the filing spends a press on every row the pane is not drawing, which
+        looks from the pane like the key having missed.
+        """
+
+        model = self.current_model
+        neighbour = self.row_beside(model, offset)
+
+        if neighbour is None:
+            return False
+
+        return model.swap_with(neighbour)
+
     @refresh_tree
     def shift_up(self) -> None:
-        self.current_model.shift_up()
+        self._shift(-1)
 
     @refresh_tree
     def shift_down(self):
-        self.current_model.shift_down()
+        self._shift(1)
 
     @refresh_tree
     def sort(self, attr: str):

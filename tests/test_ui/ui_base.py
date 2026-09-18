@@ -157,6 +157,32 @@ async def create_and_move_to_todo(pilot: Pilot) -> TodosTree:
     return tree
 
 
+def descriptions(tree: ModelTree) -> List[str]:
+    """What the pane's stored rows say, top to bottom"""
+
+    return [tree._renderers[o.id].model.description for o in tree_options(tree)]
+
+
+async def reveal_project(pilot: Pilot, project) -> TodosTree:
+    """
+    Brings a project's own tasks pane back to the front, and hands it over
+
+    What moving the projects cursor onto the project does, which is the only
+    way a pane behind the one in front is ever looked at. A pane out of sight
+    is not redrawn while it is out of sight -- the redraw it is owed is done
+    at the moment it comes forward -- so a test reading one asks for it the
+    way the user would rather than reaching past the switcher for the widget.
+    """
+
+    app = pilot.app
+    assert isinstance(app, Dooit)
+
+    app.api.vars.projects_tree.highlight_id(project.uuid)
+    await pilot.pause()
+
+    return visible_todos(app)
+
+
 def tree_options(tree: ModelTree) -> List[Option]:
     """
     Options of a tree that stand for a stored model

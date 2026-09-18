@@ -74,6 +74,3 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
             self._value = self._get_default_value()
             super().stop_edit()
             self.move_cursor_to_end()
-
-    def keypress(self, key: str) -> None:
-        super().keypress(key)

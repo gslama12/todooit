@@ -7,7 +7,16 @@ straight back down to where the sort wanted it. Moving a row now writes the
 order the pane is in into the filing and drops the sort, so the pane looks
 exactly as it did and the row goes where it is put — until an order is asked
 for again with one of the sort chords.
+
+The other half of the same idea is at the bottom of this file: a move goes by
+the row drawn beside the cursor, not by the row filed beside it. The pane
+leaves part of the run out — a task ticked off is drawn in Completed and one
+thrown away in the Bin, and both are still filed here — and a move that
+stepped through the filing spent a press on each of those without anything on
+screen moving.
 """
+
+from datetime import datetime
 
 from todooit.api import Todo
 from tests.test_ui.ui_base import (
@@ -221,3 +230,158 @@ async def test_sorting_again_rearranges_the_steps():
             "third",
             "first",
         ]
+
+
+# ------------------------------------------------------------------
+# Moving by the row on screen, not by the row in the filing
+# ------------------------------------------------------------------
+
+
+async def seed_with_a_hidden_row(pilot, tree, hide: str):
+    """
+    Four tasks filed a-b-c-d with "b" drawn somewhere else entirely
+
+    `hide` says how it leaves: ticked off, so it is drawn in Completed, or
+    thrown away, so it is drawn in the Bin. Either way it keeps its place in
+    the filing, sitting between the rows this pane does draw.
+    """
+
+    for name in ("a", "b", "c", "d"):
+        await pilot.press("n")
+        await commit_line(pilot, name)
+
+    a, b, c, d = Todo.all()
+
+    if hide == "completed":
+        b.toggle_complete()
+    else:
+        b.binned_at = datetime.now()
+
+    b.save()
+
+    await pilot.pause()
+    tree.force_refresh()
+    await pilot.pause()
+
+    assert visible_descriptions(tree) == ["a", "c", "d"]
+
+    return a, b, c, d
+
+
+async def test_moving_down_over_a_completed_row_takes_one_press():
+    """
+    The row below "a" on screen is "c", so one L is what it takes to pass it
+
+    Stepping through the filing put "a" past the completed "b" instead, which
+    moved nothing on screen and made the key look like it had missed.
+    """
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        await seed_with_a_hidden_row(pilot, tree, "completed")
+
+        await move_to_row(pilot, tree, "a")
+        await pilot.press("L")
+        await pilot.pause()
+
+        assert visible_descriptions(tree) == ["c", "a", "d"]
+
+
+async def test_moving_up_over_a_completed_row_takes_one_press():
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        await seed_with_a_hidden_row(pilot, tree, "completed")
+
+        await move_to_row(pilot, tree, "c")
+        await pilot.press("K")
+        await pilot.pause()
+
+        assert visible_descriptions(tree) == ["c", "a", "d"]
+
+
+async def test_moving_over_a_binned_row_takes_one_press():
+    """A row in the Bin is out of the pane the same way a completed one is"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        await seed_with_a_hidden_row(pilot, tree, "binned")
+
+        await move_to_row(pilot, tree, "a")
+        await pilot.press("L")
+        await pilot.pause()
+
+        assert visible_descriptions(tree) == ["c", "a", "d"]
+
+
+async def test_the_hidden_row_is_left_where_it_was_filed():
+    """Passing a row the pane never drew does not drag it along"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        _, b, _, _ = await seed_with_a_hidden_row(pilot, tree, "completed")
+
+        await move_to_row(pilot, tree, "a")
+        await pilot.press("L")
+        await pilot.pause()
+
+        filed = sorted(Todo.all(), key=lambda todo: todo.order_index)
+        assert [todo.description for todo in filed] == ["c", "b", "a", "d"]
+
+
+async def test_a_row_walks_the_whole_pane_a_press_at_a_time():
+    """
+    Every press moves it one row, and the last one is turned down
+
+    The end of the run is the end of what the pane draws, so the walk is three
+    presses long and the fourth has nowhere to go — rather than the row
+    burying itself among the ones that are filed here but drawn elsewhere.
+    """
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        await seed_with_a_hidden_row(pilot, tree, "completed")
+
+        await move_to_row(pilot, tree, "a")
+
+        for expected in (["c", "a", "d"], ["c", "d", "a"], ["c", "d", "a"]):
+            await pilot.press("L")
+            await pilot.pause()
+            assert visible_descriptions(tree) == expected
+
+
+async def test_a_step_moves_past_a_completed_step_in_one_press():
+    """The steps of a task hide the same rows, and are moved the same way"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+
+        await pilot.press("n")
+        await commit_line(pilot, "one")
+        await pilot.press("I")
+        await pilot.pause()
+
+        for name in ("two", "three"):
+            await pilot.press("n")
+            await commit_line(pilot, name)
+
+        one, two, three = (t for t in Todo.all() if t.description != "task")
+
+        # A step ticked off stays under its task, so it has to be the Bin that
+        # takes it out of the run rather than completion
+        two.binned_at = datetime.now()
+        two.save()
+
+        await pilot.pause()
+        tree.force_refresh()
+        await pilot.pause()
+
+        assert visible_descriptions(tree) == ["task", "one", "three"]
+
+        await move_to_row(pilot, tree, "one")
+        await pilot.press("L")
+        await pilot.pause()
+
+        assert visible_descriptions(tree) == ["task", "three", "one"]

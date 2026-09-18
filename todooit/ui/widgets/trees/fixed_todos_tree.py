@@ -325,17 +325,63 @@ class FixedTodosTree(TodosTree):
     # project they really belong to
     # ---------------------------------------------------------------
 
-    def _not_here(self, what: str) -> None:
-        self.post_message(
-            BarNotification(f"{what} in [b]{self.model.title}[/b]", "warning")
-        )
+    # Whether a row here can be given a step of its own. A pane of work still
+    # to be done can take one: the step goes under the task the cursor is on,
+    # in that task's own project, and the pane draws it because the row above
+    # it is already there — nothing about where it lives was this pane's to
+    # decide. A pane that is a log of what has left the tree cannot: there is
+    # no work going on in it to be broken down any further.
+    takes_new_steps = True
+
+    def _not_here(self, what: str, instead: str = "") -> None:
+        """
+        Says what this pane will not do, and what there is to do instead
+
+        The project is named every time: the same key works a row away, in the
+        pane the row was gathered out of, so the pane it was pressed in is the
+        whole of why it did nothing.
+        """
+
+        message = f"{what} in [b]{self.model.title}[/b]"
+
+        if instead:
+            message = f"{message} — {instead}"
+
+        self.post_message(BarNotification(message, "warning"))
 
     def _new_sibling(self) -> None:
-        self._not_here("Tasks can't be added")
+        """
+        A task of its own still has nowhere to go here
+
+        Beside a row is not a place in a pane that gathered its rows out of the
+        whole tree: the project a new task landed in would be whichever one the
+        row above it happened to come from. A step is a different question — it
+        belongs to the row it is put under, wherever that lives — which is why
+        the key that adds one works here and this one does not.
+        """
+
+        instead = "[b]N[/b] adds a step to one" if self.takes_new_steps else ""
+
+        self._not_here("Tasks can't be added", instead)
         return None
 
     def add_child_node(self):
-        self._not_here("Tasks can't be added")
+        """
+        Puts a new step under the highlighted row, and starts naming it
+
+        The step is filed under the task the cursor is on, in the project that
+        task lives in, exactly as it would have been from over there; this pane
+        only happens to be where it was typed. It joins the day that task is
+        planned for on the way in, the way a step written into a planned task
+        does anywhere else — so a step added to today's work is today's work,
+        and the pane it was added from had no say in any of it.
+        """
+
+        if not self.takes_new_steps:
+            self._not_here("Steps can't be added")
+            return
+
+        return super().add_child_node()
 
     def indent_node(self) -> None:
         self._not_here("Tasks can't be reordered")

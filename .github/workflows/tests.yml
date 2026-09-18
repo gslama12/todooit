@@ -1,18 +1,38 @@
 name: Tests
+
 on:
   push:
     branches: [main, dev]
+
+permissions:
+  contents: read
+
+# Work lands on dev by fast-forward from a worktree, often several pushes in a
+# row; only the newest one's verdict is worth waiting for
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-      - name: Set up Python
-        run: uv python install 3.12
-      - name: Install dependencies
-        run: uv sync
-      - name: Run tests
-        run: uv run pytest
+
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - run: uv python install 3.12
+
+      # --frozen: a lockfile that has drifted from pyproject.toml is a failure
+      # to fix, not something to silently re-resolve around
+      - run: uv sync --frozen
+
+      # -n 4 rather than `auto`: the runner is 4 vCPU public / 2 private, and
+      # this suite is sleep-bound rather than CPU-bound, so four workers pay
+      # for themselves on either size. The timeout is there because a pilot
+      # that hangs inside a worker otherwise takes the job to GitHub's 6h
+      # limit rather than failing.
+      - run: uv run pytest -n 4 --dist load --timeout=120 --timeout-method=thread

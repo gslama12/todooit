@@ -2,78 +2,6 @@ from sqlalchemy import Engine, MetaData, inspect, text
 from sqlalchemy.orm import Session
 
 
-# Todos used to carry an "urgency" from 1 (lowest, and the default) up to 4
-# (highest). Priority runs the other way around: 1 is the highest and 3 the
-# lowest, with 0 meaning "no priority set".
-URGENCY_TO_PRIORITY = {1: 0, 2: 3, 3: 2, 4: 1}
-
-
-def migrate_urgency_to_priority(engine: Engine):
-    """
-    Rename a legacy `urgency` column to `priority` and flip its values over to
-    the new scale. Does nothing once the database has been migrated.
-    """
-
-    inspector = inspect(engine)
-    if "todo" not in inspector.get_table_names():
-        return
-
-    columns = {column["name"] for column in inspector.get_columns("todo")}
-    if "urgency" not in columns or "priority" in columns:
-        return
-
-    # a single statement, so that remapped values can't collide with the
-    # not-yet-remapped ones
-    cases = " ".join(
-        f"WHEN {urgency} THEN {priority}"
-        for urgency, priority in URGENCY_TO_PRIORITY.items()
-    )
-
-    with engine.begin() as connection:
-        connection.execute(text("ALTER TABLE todo RENAME COLUMN urgency TO priority"))
-        connection.execute(
-            text(f"UPDATE todo SET priority = CASE priority {cases} ELSE 0 END")
-        )
-
-
-def rename_workspace_to_project(engine: Engine):
-    """
-    Rename a legacy `workspace` table to `project`, along with the
-    `parent_workspace_id` columns that point at it.
-
-    Without this `create_all` would find no `project` table, happily create an
-    empty one next to the old one, and leave every existing project and its
-    todos stranded in a table nothing reads any more.
-    """
-
-    inspector = inspect(engine)
-    tables = set(inspector.get_table_names())
-
-    if "workspace" not in tables or "project" in tables:
-        return
-
-    def has_column(table: str, column: str) -> bool:
-        return any(col["name"] == column for col in inspector.get_columns(table))
-
-    statements = ["ALTER TABLE workspace RENAME TO project"]
-
-    # Renaming the table is enough for sqlite to repoint the foreign keys that
-    # referenced it; the columns holding them still have to be renamed by hand.
-    if has_column("workspace", "parent_workspace_id"):
-        statements.append(
-            "ALTER TABLE project RENAME COLUMN parent_workspace_id TO parent_project_id"
-        )
-
-    if "todo" in tables and has_column("todo", "parent_workspace_id"):
-        statements.append(
-            "ALTER TABLE todo RENAME COLUMN parent_workspace_id TO parent_project_id"
-        )
-
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
-
-
 def add_scheduled_column(engine: Engine):
     """
     Add the `scheduled` column to a todo table written before it existed.
@@ -171,19 +99,13 @@ def add_bin_columns(engine: Engine):
             connection.execute(text(statement))
 
 
-def migrate_effort_to_agent(engine: Engine):
+def add_agent_column(engine: Engine):
     """
-    Trade a todo table's legacy `effort` column for the `agent` flag.
+    Add the `agent` flag to a todo table written before it existed.
 
-    Effort was an estimate of how big a job is, on a 1-3 scale; the column that
-    took its place says something else entirely -- that the task has been
-    handed to an AI which is off working on it -- so nothing is carried over
-    and every existing row starts out unflagged.
-
-    The old column has to go rather than being left lying there: it was written
-    `NOT NULL` with no default of its own, and the model no longer has anything
-    to say about it, so a single row added after the upgrade would be rejected
-    by a column nothing is filling in any more.
+    Same story as `add_scheduled_column`. The flag says the task has been
+    handed to an AI which is off working on it, so every row that was already
+    in the database starts out unflagged.
     """
 
     inspector = inspect(engine)
@@ -191,23 +113,13 @@ def migrate_effort_to_agent(engine: Engine):
         return
 
     columns = {column["name"] for column in inspector.get_columns("todo")}
-
-    statements = []
-
-    if "agent" not in columns:
-        statements.append(
-            "ALTER TABLE todo ADD COLUMN agent BOOLEAN NOT NULL DEFAULT 0"
-        )
-
-    if "effort" in columns:
-        statements.append("ALTER TABLE todo DROP COLUMN effort")
-
-    if not statements:
+    if "agent" in columns:
         return
 
     with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+        connection.execute(
+            text("ALTER TABLE todo ADD COLUMN agent BOOLEAN NOT NULL DEFAULT 0")
+        )
 
 
 def add_project_color_column(engine: Engine):
@@ -287,3 +199,53 @@ def delete_all_data(session: Session):
     for table in reversed(meta.sorted_tables):
         session.execute(table.delete())
     session.commit()
+
+
+# The columns the panes are looked up by. Everything here is either a foreign
+# key a relationship is walked through, or a column one of the fixed projects
+# filters on -- the two shapes that turn a pane into a run of full table scans
+# once the database has some history in it.
+#
+# The two date columns the logs are read by are deliberately absent.
+# `completed_at` and `binned_at` are sorted in Python, not in SQL, so an index
+# on either buys nothing on its own; the Bin gets a partial one only because
+# `binned_tasks` asks for `IS NOT NULL`, which is the whole of that index.
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_todo_parent_todo_id ON todo (parent_todo_id)",
+    "CREATE INDEX IF NOT EXISTS ix_todo_parent_project_id ON todo (parent_project_id)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_project_parent_project_id "
+        "ON project (parent_project_id)"
+    ),
+    "CREATE INDEX IF NOT EXISTS ix_todo_pending_scheduled ON todo (pending, scheduled)",
+    (
+        "CREATE INDEX IF NOT EXISTS ix_todo_binned_at ON todo (binned_at) "
+        "WHERE binned_at IS NOT NULL"
+    ),
+)
+
+
+def add_indexes(engine: Engine):
+    """
+    Index the columns the panes are looked up by
+
+    Unlike every migration above it, this one runs *after* `create_all` rather
+    than before it. `create_all` skips a table it already found -- indexes and
+    all -- so a database written before these existed never gets the ones
+    declared on the models, and a database written from scratch has no tables
+    to index until `create_all` has made them. Running here is the one moment
+    both are true.
+
+    The names match what the models declare, so the two ways in converge on
+    one set of indexes rather than each laying down its own.
+    """
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+
+    if not {"todo", "project"} <= tables:  # pragma: no cover
+        return
+
+    with engine.begin() as connection:
+        for statement in INDEXES:
+            connection.execute(text(statement))

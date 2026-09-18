@@ -4,7 +4,6 @@ from textual.widgets import ContentSwitcher
 
 from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import DooitThemeBase
-from todooit.api.todo import Todo
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from ._base import ApiComponent
 
@@ -110,17 +109,3 @@ class VarManager(ApiComponent):
             todo_switcher.visible_content, TodosTree
         ):
             return todo_switcher.visible_content
-
-    @property
-    def current_todo(self) -> Optional[Todo]:
-        tree = self.todos_tree
-        if tree is None:
-            return
-
-        if tree.highlighted is None:
-            return
-
-        todo = tree.current_model
-        assert isinstance(todo, Todo)
-
-        return todo
