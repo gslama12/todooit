@@ -8,6 +8,12 @@ A task carries two dates:
 
 Both are typed as words and read the same way.
 
+::: tip A scheduled day belongs to the whole task
+Planning a task plans every step under it, and planning a single step makes
+the task give up its own day. Due dates cascade nowhere — see
+[Steps](/guide/tasks#one-day-for-the-whole-task).
+:::
+
 ## What you can type
 
 | Typed | Means |

@@ -29,6 +29,36 @@ finished; the Bin swaps them for the day it was thrown away.
 
 A brand new task thrown away without a name is dropped entirely.
 
+## Steps
+
+`N` files a task under the one the cursor is on, and steps nest as deep as you
+want them to. `h` folds a task shut again, so a pane can show the work without
+showing the detail of all of it at once.
+
+| Key | What it does |
+| --- | --- |
+| `N` | Add a step to this task |
+| `h` | Fold the task shut, or open it back up |
+| `I` | Make this task a step of the one above it |
+| `U` | Pull it back out one level |
+
+### One day for the whole task
+
+A scheduled date belongs to the task, not to the row it was typed on, and the
+app keeps the two ends in step for you:
+
+| What you do | What happens |
+| --- | --- |
+| Add a step to a task that is planned for a day | The step is planned for that day too |
+| Plan a task | Every step of it, at any depth, moves to that day |
+| Plan a single step | The step takes the day, and every task it sits inside gives its own day up |
+
+The last one is the useful one: a task whose steps have stopped agreeing on a
+day is no longer work that happens all at once, so it stops claiming a day of
+its own. Planning the task again puts the whole of it back on one day.
+
+Due dates are yours alone — nothing cascades them.
+
 ## Marking
 
 | Key | What it does |
@@ -41,8 +71,13 @@ The status checkbox carries the priority color, so urgency reads from the
 first column. A ticked task is struck through and grayed out, and moves to the
 [Completed](/guide/projects#completed) pane.
 
-A task with steps under it is ticked off by hand — the last step being done
-does not tick it.
+Ticking runs down the tree and un-ticking runs up it: ticking a task ticks
+every step under it at every depth, and un-ticking a step hands back every
+task it sits inside, since something with work left in it is not finished
+however deep that work sits.
+
+What does *not* happen is the other direction — a task with steps is ticked
+off by hand, and its last step being done does not tick it for you.
 
 ::: info The agent flag
 An hourglass in a column of its own, for the tasks handed to an AI that is off

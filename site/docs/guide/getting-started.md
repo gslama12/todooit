@@ -1,5 +1,7 @@
 # Getting started
 
+Not installed yet? [Installation](/guide/installation) is a one-liner.
+
 Run `todooit`. It opens on the **Today** pane.
 
 ![The Today pane](/screenshots/today.svg)
@@ -35,6 +37,19 @@ c        tick it off
 ## Then
 
 - `C` adds a whole task in one line — see [Quick add](/guide/quick-add).
-- `s` and `d` set the scheduled and due dates — see [Dates](/guide/dates).
-- `space` opens the task's note — see [Notes](/guide/notes).
+- `s` and `d` set the scheduled and due dates, typed as words; `r` repeats a
+  task — see [Dates & recurrence](/guide/dates).
+- `N` files a step under a task and `h` folds it shut — see
+  [Steps](/guide/tasks#steps).
+- `space` opens the task's note, `m` a note pinned to nothing at all — see
+  [Notes](/guide/notes).
+- `gt` `gu` `gc` `gb` jump to Today, Upcoming, Completed and the Bin — see
+  [Projects & panes](/guide/projects#the-four-fixed-projects).
+- `/` finds any task in the database and `M` files one under another project
+  — see [Search, move & clipboard](/guide/search-move).
+- `xx` throws a task away and `ctrl+z` takes back the last change — see
+  [Undo & the Bin](/guide/undo-bin).
 - `ctrl+q` quits. `ctrl+c` is a copy here, as it is everywhere else.
+
+The whole list of keys is on [Keybindings](/guide/keybindings), and `?` shows
+the same list in the app.
