@@ -536,19 +536,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         a key talks about is the row that is there to be seen.
         """
 
-        parent = todo.parent
-
-        if parent is None:  # pragma: no cover
-            return None
-
-        siblings = self.visible_children(parent)
-
-        if todo not in siblings:  # pragma: no cover
-            return None
-
-        index = siblings.index(todo)
-
-        return siblings[index - 1] if index else None
+        return self.row_beside(todo, -1)
 
     @require_highlighted_node
     def indent_node(self) -> None:

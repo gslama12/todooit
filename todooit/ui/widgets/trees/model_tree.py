@@ -1119,13 +1119,58 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self._restore_node()
 
+    def row_beside(self, model: Any, offset: int) -> Optional[Any]:
+        """
+        The row this pane draws directly above or below one, or None
+
+        Read off the pane rather than off the filing. A pane draws the run in
+        an order of its own and leaves part of it out — a task ticked off is
+        drawn in Completed and one thrown away in the Bin, and both are still
+        filed here — so the row beside the cursor and the row beside it in
+        the filing are often not the same one.
+        """
+
+        parent = model.parent
+
+        if parent is None:
+            return None
+
+        drawn = self.visible_children(parent)
+
+        if model not in drawn:  # pragma: no cover
+            return None
+
+        index = drawn.index(model) + offset
+
+        if not 0 <= index < len(drawn):
+            return None
+
+        return drawn[index]
+
+    def _shift(self, offset: int) -> bool:
+        """
+        Swap the highlighted row with the one drawn beside it
+
+        By the row rather than by a step through the filing: stepping through
+        the filing spends a press on every row the pane is not drawing, which
+        looks from the pane like the key having missed.
+        """
+
+        model = self.current_model
+        neighbour = self.row_beside(model, offset)
+
+        if neighbour is None:
+            return False
+
+        return model.swap_with(neighbour)
+
     @refresh_tree
     def shift_up(self) -> None:
-        self.current_model.shift_up()
+        self._shift(-1)
 
     @refresh_tree
     def shift_down(self):
-        self.current_model.shift_down()
+        self._shift(1)
 
     @refresh_tree
     def sort(self, attr: str):
