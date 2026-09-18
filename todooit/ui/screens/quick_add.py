@@ -36,6 +36,7 @@ from todooit.utils.quick_add import (
     DUE_MARKER,
     PATH_SEPARATOR,
     PROJECT_MARKER,
+    SCALES,
     QuickAddError,
     QuickAddSpec,
     parse_quick_add,
@@ -73,13 +74,21 @@ CHIP_GAP = "  "
 CREATE_PROMPT = "No project {} — create it? [y/N]"
 
 # The legend, in the order the markers are worth learning in. Tighter gaps
-# than the preview above it, so the whole of it fits on the one line
+# than the preview above it, so the whole of it fits on the one line.
+#
+# The scales are read off `SCALES` rather than spelled out, because a legend
+# written by hand goes stale the moment one is added or dropped -- which is
+# exactly what happened to the `e1-e3` that outlived the effort scale it named.
+# `p0` is left out on purpose: it is the step that *clears* a priority, and
+# there is nothing to clear on a task that is still being typed.
 HINT_GAP = "  "
+SCALE_HINTS = tuple(
+    f"{letter}1-{letter}{highest}" for letter, (_, highest) in SCALES.items()
+)
 HINT = HINT_GAP.join(
     (
         f"{PROJECT_MARKER}project",
-        "p1-p3",
-        "e1-e3",
+        *SCALE_HINTS,
         "date",
         f"{DUE_MARKER}date",
         "   esc cancel",

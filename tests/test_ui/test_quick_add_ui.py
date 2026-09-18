@@ -5,7 +5,8 @@ The quick add overlay: a whole task typed in one line over the app
 from datetime import date, timedelta
 
 from todooit.api import Project, Todo
-from todooit.ui.screens.quick_add import QuickAddScreen
+from todooit.ui.screens.quick_add import HINT, SCALE_HINTS, QuickAddScreen
+from todooit.utils.quick_add import SCALES
 from tests.test_ui.ui_base import (
     boot,
     new_project,
@@ -240,3 +241,23 @@ async def test_quick_add_into_a_new_project_points_at_the_task():
         assert tree.model.uuid == diy.uuid
         assert tree.current_model.description == "buy nails"
         assert app.focused is tree
+
+
+async def test_quick_add_legend_names_every_scale_and_nothing_else():
+    """
+    The legend advertises the scales the line can actually be read with
+
+    It used to be written out by hand, and went on naming an `e1-e3` for a
+    while after the effort scale behind it was gone -- so a marker the parser
+    would have filed in the description was being offered as a field.
+    """
+
+    for letter, (_, highest) in SCALES.items():
+        assert f"{letter}1-{letter}{highest}" in HINT
+
+    # Nothing but the scales that exist: `p` is the only letter a marker is
+    # read under, so no other one may be offered as though it were
+    offered = {chunk[0] for chunk in SCALE_HINTS}
+    assert offered == set(SCALES)
+
+    assert "\n" not in HINT

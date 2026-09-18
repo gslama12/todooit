@@ -34,7 +34,16 @@ A beautiful, versatile todo app in your terminal for a keyboard based workflow. 
 
 ## Install & run
 
-> NOTE: Todooit was only tested on WezTerm. Other terminals may not show some of the  cons correctly.
+> **Requires a [Nerd Font](https://www.nerdfonts.com/font-downloads).** Checkboxes, folders, calendars and the status bar are all Nerd Font glyphs, so without a patched font they come out as blank boxes. The screenshots here are JetBrainsMono Nerd Font.
+>
+> NOTE: Todooit was only tested on WezTerm. Other terminals may not show some of the icons correctly.
+
+```lua
+-- ~/.config/wezterm/wezterm.lua
+config.font = wezterm.font('JetBrainsMono Nerd Font')
+config.font_size = 10.5
+config.color_scheme = 'Tokyo Night'
+```
 
 Pick whichever environment manager you already use; each installs the app editable, so editing the source is editing the running app.
 
