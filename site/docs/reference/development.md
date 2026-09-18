@@ -87,3 +87,24 @@ A note's markup is drawn as it is *typed*, so a note written straight into the
 database renders as raw characters. `NOTE_KEYS` and `PINNED_KEYS` are typed
 through the pilot for that reason.
 :::
+
+### The demo GIF
+
+`site/docs/public/demo.gif` — the animation the README opens with — is
+generated the same way, except that a frame is taken after every keypress
+rather than once at the end:
+
+```bash
+uv run --with pillow python site/scripts/demo.py
+```
+
+The workflow it plays is the `SCRIPT` and `SCRIPT_FROM_HOME` lists in
+`site/scripts/demo.py`, each entry a key and the milliseconds the frame it
+produces is held; `hold()`, `press()` and `type_()` build them. A key that
+draws nothing new holds the frame already up rather than costing one of its
+own.
+
+The frames are drawn with Pillow, one cell at a time, straight out of the Nerd
+Font file: no SVG rasterizer available offline honours a font embedded with
+`@font-face`, so going through Rich's SVG export would put a blank box where
+every icon is.
