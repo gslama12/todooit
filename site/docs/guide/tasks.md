@@ -3,6 +3,8 @@
 The right pane. A row is one task; tasks nest under tasks the same way
 projects nest under projects.
 
+![Tasks nested under tasks, with sub-project blocks below](/screenshots/child-tasks.svg)
+
 ## Columns
 
 `Status`, `Description`, `Scheduled`, `Due`, `Agent`, `Recurrence`, `Note`.

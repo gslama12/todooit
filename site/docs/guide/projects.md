@@ -3,7 +3,7 @@
 The left pane holds two kinds of row: the projects you make, and four fixed
 ones the app builds from them.
 
-![A project's tasks](/screenshots/project.svg)
+![The projects pane](/screenshots/nested-projects.svg)
 
 ## Your projects
 
@@ -66,13 +66,15 @@ while it was done with.
 
 See [Undo & the Bin](/guide/undo-bin).
 
-## View
+## Sorting & view
 
 | Key | What it does |
 | --- | --- |
-| `q` | Toggle alternating row shading |
 | `SP` / `SD` / `SS` | Sort the tasks by priority / due date / scheduled date |
+| `q` | Toggle alternating row shading |
 
 Tasks are read by priority to begin with. Moving a row by hand drops the pane
 out of any sort, so the row stays where you put it. Fixed projects order their
 own rows and ignore this.
+
+![Tasks sorted by due date](/screenshots/sort.svg)

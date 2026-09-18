@@ -66,8 +66,24 @@ by hand. The script drives the real app through Textual's pilot, headlessly,
 against a throwaway database:
 
 ```bash
-uv run python site/scripts/screenshots.py
+uv run --with "fonttools[woff]" python site/scripts/screenshots.py
 ```
 
-Add a shot by adding a name and the keys that get to it to `SCENES` in that
-script.
+It needs **JetBrainsMono Nerd Font Mono** installed. The font is subsetted to
+the glyphs the frames actually draw and base64'd into each SVG, because Rich's
+own template points at Fira Code on a CDN — which an `<img>` may not fetch, and
+which has no Nerd Font glyphs anyway. Pass `--font-dir <path>` if the script
+cannot find it.
+
+Add a shot by adding a name, the project to stand in and the keys that get
+there to `SCENES`. Write a chord one key at a time — `("g", "u")`, never
+`("gu")` — since the pilot presses a key and there is no key called `gu`.
+
+`COLUMNS` and `ROWS` set the frame. They are sized so the image comes out
+square; changing one means changing the other to keep it that way.
+
+::: warning Notes have to be typed
+A note's markup is drawn as it is *typed*, so a note written straight into the
+database renders as raw characters. `NOTE_KEYS` and `PINNED_KEYS` are typed
+through the pilot for that reason.
+:::

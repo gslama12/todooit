@@ -31,4 +31,4 @@ features:
     link: /guide/notes
 ---
 
-![The Today pane](/screenshots/today.svg)
+![A populated workspace](/screenshots/workspace.svg)

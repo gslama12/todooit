@@ -13,6 +13,8 @@
 
 ![The Bin](/screenshots/bin.svg)
 
+![Deleting for good asks first](/screenshots/confirm.svg)
+
 A task arrives whole, with its steps under it, and goes back out whole. It
 stays in the Bin until it is restored or deleted for good — nothing expires on
 its own.
