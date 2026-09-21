@@ -1,7 +1,12 @@
 import re
-from typing import Iterator, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 
+from pathlib import Path
+
+from rich.cells import cell_len
+from rich.markup import escape
 from rich.style import Style
+from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -9,19 +14,28 @@ from textual.timer import Timer
 from textual.document._document import Document, EditResult
 from textual.document._document_navigator import DocumentNavigator
 from textual.document._wrapped_document import WrappedDocument
+from textual.containers import Vertical
 from textual.widgets import Static, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from todooit.api import Todo
 from todooit.api.theme import DooitThemeBase
 from todooit.utils import (
+    Opened,
     blend,
     copy_text,
+    file_icon,
     find_links,
     fold_links,
     link_label,
+    looks_like_path,
+    open_path,
     open_url,
+    paste_files,
     paste_text,
+    read_attachments,
+    resolve_path,
+    write_attachments,
 )
 from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
 from todooit.utils.links import drawn_column, folded_link_at, stored_range
@@ -410,6 +424,25 @@ def scan_note(lines) -> Iterator[list]:
 _NO_BRACKETS = str.maketrans("", "", "[]")
 
 
+def pasted_paths(text: str) -> list:
+    """
+    The paths a paste is, when the whole of it is nothing else; [] otherwise
+
+    One per line, which is how a file manager writes a copied path out and how
+    several of them arrive at once. A single line that is not a path is text
+    and goes in as text, and so is a paragraph with a path inside it: the
+    whole of what was pasted has to be paths for the paste to mean files.
+    """
+
+    lines = [line.strip().strip("\"'").strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+
+    if not lines or not all(looks_like_path(line) for line in lines):
+        return []
+
+    return lines
+
+
 def _pasted_link(text: str):
     """
     The address a paste is, when the whole of the paste is one and it is long
@@ -635,6 +668,12 @@ class NoteEditor(TextArea):
     working inside one: a list written in a quote is a list, nested by the same
     `tab`, and drawn in the quote's own green rather than the list palette,
     because in there the color is already saying something.
+
+    Files are the one thing here that is never typed. A file copied in a file
+    manager - or a path copied as text - is attached by `ctrl+v` and lands in
+    the strip along the foot of the window rather than at the cursor, and `f`
+    hands the keyboard down to it. Nothing about them is in the text: what is
+    written here is what the task says, and what is down there is what it has.
     """
 
     BINDINGS = [
@@ -948,6 +987,18 @@ class NoteEditor(TextArea):
 
         text = paste_text(self.app)
 
+        # A file copied in a file manager puts nothing on the text clipboard
+        # at all, so an empty one is not an empty clipboard - it is the one
+        # case worth asking the desktop a second question about
+        paths = pasted_paths(text) if text else paste_files()
+
+        if paths:
+            # Not into the text: a file is attached to the note rather than
+            # written into it, so the strip is where a pasted one lands and
+            # the note goes on saying exactly what it said
+            self.note_screen.attach(paths)
+            return
+
         if not text:
             return
 
@@ -1057,6 +1108,10 @@ class NoteEditor(TextArea):
             self.enter_insert()
             return True
 
+        if key == "f":
+            self.note_screen.pick_files()
+            return True
+
         if key == "o":
             self._open_link_under_cursor()
             return True
@@ -1113,13 +1168,13 @@ class NoteEditor(TextArea):
         line carries over from the one above it
         """
 
-        if self.note_screen.awaiting_clear:
+        if self.note_screen.awaiting_answer:
             # The editor keeps the keyboard while the question stands, so the
             # answer arrives here rather than at a binding on the screen - and
             # is swallowed either way, so a `y` is an answer and not a letter
             event.stop()
             event.prevent_default()
-            self.note_screen.answer_clear(event.key)
+            self.note_screen.answer(event.key)
             return
 
         # The character rather than the key name, so that a keyboard where the
@@ -1308,6 +1363,283 @@ class NoteEditor(TextArea):
         await super()._on_key(event)
 
 
+# What stands between two files in the strip. One column, because each file is
+# already drawn with a space either side of it - the room its background needs
+# to read as a thing picked up rather than as words that have gone dark
+FILE_GAP = " "
+
+# Nothing about the strip counts, hides or shortens: every file attached to a
+# note is drawn on it, and when they stop fitting on a line the strip grows
+# another one and goes on. A file nobody can see is a file nobody remembers is
+# there, which is the whole of what an attachment is for
+
+
+class AttachmentStrip(Static):
+    """
+    The files a note carries, along the foot of the window inside its frame
+
+    Not part of the note. Nothing here is text that can be typed over,
+    indented or deleted by accident: the note is what the task *says* and this
+    is what it *has*, and the two are kept apart on the page because they are
+    kept apart in the database.
+
+    It takes the keyboard while files are being picked through, which is what
+    makes the cursor in the text go quiet - two cursors on one window, one of
+    them live and one of them left behind, is the thing this avoids - and
+    hands it straight back on `escape`.
+    """
+
+    DEFAULT_CSS = """
+    AttachmentStrip {
+        height: auto;
+        display: none;
+    }
+    """
+
+    can_focus = True
+
+    def __init__(self) -> None:
+        super().__init__(id="note-files")
+
+        self.paths: List[Path] = []
+        self.picked = 0
+
+        # Which files are drawn on which row, worked out from how wide the
+        # window is; one empty row until there is something to put on it
+        self.rows: List[List[int]] = [[]]
+
+    @property
+    def has_the_keyboard(self) -> bool:
+        """
+        Whether the keys are landing here rather than up in the text
+
+        Read off the screen rather than off `has_focus`, which is a reactive
+        and is still catching up while the `Focus` event that sets it is being
+        handled - which is exactly when this is asked
+        """
+
+        screen = self.note_screen
+
+        return screen is not None and screen.focused is self
+
+    @property
+    def current(self) -> Optional[Path]:
+        """
+        The file the strip is standing on, if it is standing on one
+        """
+
+        if not self.paths or not 0 <= self.picked < len(self.paths):
+            return None
+
+        return self.paths[self.picked]
+
+    def show(self, paths, theme: DooitThemeBase) -> None:
+        """
+        Draw the strip, and take it off the page when there is nothing on it
+        """
+
+        self.paths = list(paths)
+        self.picked = max(0, min(self.picked, len(self.paths) - 1))
+        self.display = bool(self.paths)
+
+        if self.paths:
+            self.rows = self._rows()
+            self.update(self._drawn(theme))
+
+    def _label(self, path: Path) -> str:
+        """
+        One file as it is written on the page: what it is, and what it is
+        called, with a space either side for the background to sit in
+        """
+
+        return f" {file_icon(path.name)} {path.name} "
+
+    def _rows(self) -> List[List[int]]:
+        """
+        The files dealt out into the rows they are drawn on
+
+        As many as fit on a line, then the next line, for as many lines as it
+        takes. Nothing is ever left off: the strip grows up into the note
+        instead. The one thing that is ever shortened is a name too long for a
+        line of its own, and only as far as the line - the file is still
+        listed, and it is still the one the keys open.
+        """
+
+        room = self.size.width or 0
+        rows: List[List[int]] = [[]]
+        used = 0
+
+        for index, path in enumerate(self.paths):
+            width = cell_len(self._label(path))
+            gap = cell_len(FILE_GAP) if rows[-1] else 0
+
+            if room and rows[-1] and used + gap + width > room:
+                rows.append([])
+                used = 0
+                gap = 0
+
+            rows[-1].append(index)
+            used += gap + width
+
+        return rows
+
+    def _drawn(self, theme: DooitThemeBase) -> Text:
+        """
+        The strip as it is painted, row by row, the picked one lit
+
+        Quiet by default and quieter still when the keyboard is elsewhere: a
+        strip that is not being picked through is a caption under the note,
+        and a caption that shouts is a caption in the way.
+        """
+
+        quiet = Style(color=blend(theme.foreground3, theme.background1, 0.25))
+        icon = Style(color=blend(theme.secondary, theme.background1, 0.35))
+        lit = Style(color=theme.primary, bgcolor=theme.background3, bold=True)
+
+        drawn = Text(no_wrap=True, overflow="ellipsis")
+
+        for row, indexes in enumerate(self.rows):
+            if row:
+                drawn.append("\n")
+
+            for place, index in enumerate(indexes):
+                chip = Text(self._label(self.paths[index]))
+
+                if self.has_the_keyboard and index == self.picked:
+                    chip.stylize(lit)
+                else:
+                    chip.stylize(quiet)
+                    chip.stylize(icon, 0, 3)
+
+                if place:
+                    drawn.append(FILE_GAP)
+
+                drawn.append_text(chip)
+
+        return drawn
+
+    def row_of(self, index: int) -> int:
+        """
+        Which row a file is drawn on
+        """
+
+        for row, indexes in enumerate(self.rows):
+            if index in indexes:
+                return row
+
+        return 0
+
+    def step_row(self, step: int) -> bool:
+        """
+        Move to the file above or below this one; False when there is none
+
+        The same place along the row, as near as the row below has one - which
+        is what moving down a list of things does everywhere else.
+        """
+
+        row = self.row_of(self.picked)
+        place = self.rows[row].index(self.picked)
+        target = row + step
+
+        if not 0 <= target < len(self.rows):
+            return False
+
+        indexes = self.rows[target]
+        self.picked = indexes[min(place, len(indexes) - 1)]
+
+        return True
+
+    def on_resize(self) -> None:
+        """
+        A narrower window deals the same files out over more rows
+        """
+
+        self.refresh_strip()
+
+    def on_focus(self) -> None:
+        self.keyboard_moved()
+
+    def on_blur(self) -> None:
+        self.keyboard_moved()
+
+    def keyboard_moved(self) -> None:
+        """
+        Redraw, and have the window say what the keys down here do
+
+        Hung off the focus events rather than off whatever asked for the
+        focus, because asking is not the same as having it: the window says
+        what it is doing once it is doing it.
+        """
+
+        screen = self.note_screen
+
+        if screen is None:
+            return
+
+        self.refresh_strip()
+        screen.mode_changed()
+
+    @property
+    def note_screen(self) -> Optional["NoteScreenBase"]:
+        """
+        The window this is in, or None on the way off the page
+        """
+
+        try:
+            screen = self.screen
+        except Exception:
+            return None
+
+        return screen if isinstance(screen, NoteScreenBase) else None
+
+    def refresh_strip(self) -> None:
+        screen = self.note_screen
+
+        if screen is not None:
+            self.show(self.paths, screen.api.vars.theme)
+
+    async def _on_key(self, event: events.Key) -> None:
+        """
+        The keys of the strip, which are the keys a list of things answers to
+
+        Everything is swallowed rather than let past: while the strip has the
+        keyboard, a letter is a key here or it is nothing at all - the note
+        underneath is being read, not typed in.
+        """
+
+        event.stop()
+        event.prevent_default()
+
+        screen = self.screen
+        assert isinstance(screen, NoteScreenBase)
+
+        if screen.awaiting_answer:
+            screen.answer(event.key)
+            return
+
+        screen.file_key(screen.resolve_key(event))
+
+
+class NoteFrame(Vertical):
+    """
+    The window itself: the text, and the files along the bottom of it
+
+    The border, the title and the mode chip are drawn here rather than on the
+    editor, because there are two things inside the frame now and both of them
+    belong to the note. What that buys is that the strip is *inside* the
+    window: a file picked out is lit on the note's own background, where the
+    eye is already looking, rather than on a patch of the screen behind it.
+    """
+
+    DEFAULT_CSS = """
+    NoteFrame {
+        & > NoteEditor {
+            height: 1fr;
+        }
+    }
+    """
+
+
 class NoteScreenBase(BaseScreen):
     """
     A note in a window over the whole screen
@@ -1322,7 +1654,7 @@ class NoteScreenBase(BaseScreen):
     NoteScreenBase {
         align: center middle;
 
-        & > NoteEditor {
+        & > NoteFrame {
             width: 70%;
             height: 60%;
         }
@@ -1342,7 +1674,7 @@ class NoteScreenBase(BaseScreen):
     # standing would only be noise
     HINTS = {
         MODE_NORMAL: (
-            "i insert    jklö move    o link    gg/G ends    "
+            "i insert    jklö move    o link    f files    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
         # The marks are what is worth advertising here, since none of them is
@@ -1360,15 +1692,29 @@ class NoteScreenBase(BaseScreen):
         ),
     }
 
+    # And the line for the strip, which is a third thing the window can be
+    # doing: the keys down there are not the keys up in the text
+    FILES_HINT = "jö/kl pick    enter open    xx detach    esc back to the note"
+
     # Worded and escaped the way the confirm bar words a deletion elsewhere in
     # dooit, so the answer is the one the user already knows
     CLEAR_PROMPT = r"Clear the whole note? \[y/N]"
+
+    # The other thing a note has to ask about. A file that has been moved or
+    # thrown away is an entry that will never open again, and the moment that
+    # is found out is the moment worth offering to tidy it
+    GONE_PROMPT = r"{name} is gone. Detach it? \[y/N]"
 
     def __init__(self) -> None:
         super().__init__()
         self._save_timer: Optional[Timer] = None
         self._report_timer: Optional[Timer] = None
-        self._awaiting_clear = False
+
+        # What a `y` would do, and the whole of what says a question is up
+        self._question: Optional[Callable[[], None]] = None
+
+        # Raised by the first `x` of an `xx` down in the strip
+        self._pending_x = False
 
     @property
     def title_text(self) -> str:
@@ -1397,6 +1743,10 @@ class NoteScreenBase(BaseScreen):
         raise NotImplementedError  # pragma: no cover
 
     @property
+    def frame(self) -> NoteFrame:
+        return self.query_one(NoteFrame)
+
+    @property
     def editor(self) -> NoteEditor:
         return self.query_one(NoteEditor)
 
@@ -1405,20 +1755,50 @@ class NoteScreenBase(BaseScreen):
         return self.query_one("#note-hint", Static)
 
     @property
-    def awaiting_clear(self) -> bool:
-        return self._awaiting_clear
+    def awaiting_answer(self) -> bool:
+        return self._question is not None
+
+    def load_attachments(self) -> str:
+        """
+        The files this note carries, as they are stored: one path per line
+        """
+
+        raise NotImplementedError  # pragma: no cover
+
+    def store_attachments(self, text: str) -> None:
+        """
+        Write them back. Unlike the text, this is not on a debounce: attaching
+        and detaching are whole gestures rather than a stream of keystrokes
+        """
+
+        raise NotImplementedError  # pragma: no cover
+
+    @property
+    def files(self) -> AttachmentStrip:
+        return self.query_one(AttachmentStrip)
+
+    @property
+    def picking_files(self) -> bool:
+        return self.files.has_the_keyboard
 
     def compose(self) -> ComposeResult:
         editor = NoteEditor(self.load_note())
-        editor.border_title = self.title_text
 
-        yield editor
+        frame = NoteFrame()
+        frame.border_title = self.title_text
+
+        with frame:
+            yield editor
+            yield AttachmentStrip()
+
         yield Static(self.HINTS[editor.mode], id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
         editor.register_theme(build_theme(self.api.vars.theme))
         editor.theme = THEME_NAME
+
+        self.files.show(read_attachments(self.load_attachments()), self.api.vars.theme)
 
         # The window takes the keyboard, in whichever of the two modes the
         # editor picked out of the text it was handed
@@ -1433,13 +1813,17 @@ class NoteScreenBase(BaseScreen):
 
         mode = self.editor.mode
 
-        self.editor.border_subtitle = f" {mode} "
-        self.editor.set_class(mode == MODE_INSERT, "-insert")
+        frame = self.frame
+
+        frame.border_subtitle = f" {mode} "
+        frame.set_class(mode == MODE_INSERT, "-insert")
 
         # A question standing in the hint line outranks the hints themselves;
         # answering it puts the right ones back
-        if not self._awaiting_clear:
-            self.hint.update(self.HINTS[mode])
+        if not self.awaiting_answer:
+            self.hint.update(
+                self.FILES_HINT if self.picking_files else self.HINTS[mode]
+            )
 
     def report(self, message: str) -> None:
         """
@@ -1470,6 +1854,158 @@ class NoteScreenBase(BaseScreen):
         else:
             self.report("Found no browser to open the link with")
 
+    # ------------------------------------------------------------------
+    # ------------------------- The files ------------------------------
+    # ------------------------------------------------------------------
+
+    def attach(self, paths) -> None:
+        """
+        Put files in the strip, and say which ones went in
+
+        What is kept is the path. The file is never copied, never moved and
+        never looked at: two notes can point at one file, and attaching a film
+        costs exactly what attaching a shopping list costs.
+        """
+
+        held = list(self.files.paths)
+        fresh = []
+
+        for raw in paths:
+            path = resolve_path(str(raw))
+
+            if path is None or path in held:
+                continue
+
+            held.append(path)
+            fresh.append(path)
+
+        if not fresh:
+            self.report("Already attached")
+            return
+
+        self._write(held)
+
+        # Standing on what just arrived, so the key that opens it is the next
+        # one pressed and nothing has to be found first
+        self.files.picked = len(held) - 1
+        self.report(
+            f"Attached {fresh[0].name}"
+            if len(fresh) == 1
+            else f"Attached {len(fresh)} files"
+        )
+
+    def _write(self, paths) -> None:
+        """
+        Put the list back, on the page and in the database at once
+        """
+
+        self.files.show(paths, self.api.vars.theme)
+        self.store_attachments(write_attachments(paths))
+
+    def pick_files(self) -> None:
+        """
+        Hand the keyboard to the strip, where a file can be picked out
+        """
+
+        if not self.files.paths:
+            self.report("Nothing attached")
+            return
+
+        self.files.focus()
+
+    def leave_files(self) -> None:
+        """
+        Hand it back to the text, exactly where the cursor was left standing
+        """
+
+        self.editor.focus()
+
+    def file_key(self, key: str) -> None:
+        """
+        A key pressed while the strip has the keyboard
+
+        The keys of a list of things, and the same ones the panes behind this
+        window use for them: the motions pick one out, `xx` throws one away,
+        and `enter` is what you press on the one you meant.
+        """
+
+        strip = self.files
+        pending_x, self._pending_x = self._pending_x, False
+
+        if key == "x":
+            if pending_x:
+                self.detach()
+            else:
+                self._pending_x = True
+        elif key in ("j", "b"):
+            strip.picked = max(0, strip.picked - 1)
+            strip.refresh_strip()
+        elif key in ("ö", "w"):
+            strip.picked = min(len(strip.paths) - 1, strip.picked + 1)
+            strip.refresh_strip()
+        elif key == "0":
+            strip.picked = 0
+            strip.refresh_strip()
+        elif key == "$":
+            strip.picked = len(strip.paths) - 1
+            strip.refresh_strip()
+        elif key in ("k", "l"):
+            # Up off the top row is the way back into the text, which is where
+            # up from the foot of the window means anywhere else
+            if strip.step_row(-1 if key == "k" else 1):
+                strip.refresh_strip()
+            elif key == "k":
+                self.leave_files()
+        elif key in ("enter", "o"):
+            self.open_file()
+        elif key in ("escape", "f", "i"):
+            self.leave_files()
+
+    def open_file(self) -> None:
+        """
+        Open the file the strip is standing on, and say how it went
+
+        Nothing about it shows up in here - the application it belongs to
+        comes up somewhere else entirely, or nothing does - so the line
+        underneath is what says the key landed.
+        """
+
+        path = self.files.current
+
+        if path is None:
+            return
+
+        outcome = open_path(path)
+
+        if outcome is Opened.OK:
+            self.report(f"Opening {path.name}")
+        elif outcome is Opened.MISSING:
+            self.ask(self.GONE_PROMPT.format(name=escape(path.name)), self.detach)
+        else:
+            self.report("Found nothing to open it with")
+
+    def detach(self) -> None:
+        """
+        Take the file the strip is standing on off the note
+
+        No question and no undoing it: an attachment is a way back to
+        something, and nothing is lost with it but the way back. The file
+        itself is not touched - it never was ours.
+        """
+
+        path = self.files.current
+
+        if path is None:
+            return
+
+        kept = [held for held in self.files.paths if held != path]
+
+        self._write(kept)
+        self.report(f"Detached {path.name}")
+
+        if not kept:
+            self.leave_files()
+
     @on(TextArea.Changed)
     def schedule_save(self, _: TextArea.Changed) -> None:
         if self._save_timer is not None:
@@ -1481,31 +2017,46 @@ class NoteScreenBase(BaseScreen):
         self._save_timer = None
         self.store_note(self.editor.text)
 
-    def request_clear(self) -> None:
+    def ask(self, prompt: str, answered: Callable[[], None]) -> None:
         """
-        Put the question up, in place of the hint line
+        Put a question up, in place of the hint line
+
+        One question at a time, and the next keystroke is its answer: the
+        window keeps the keyboard while it stands, so there is nowhere for a
+        second one to be put and nothing to do with it if there were.
         """
 
-        # Nothing to lose, nothing to ask about
-        if not self.editor.text or self._awaiting_clear:
+        if self.awaiting_answer:
             return
 
-        self._awaiting_clear = True
-        self.hint.update(self.CLEAR_PROMPT)
+        self._question = answered
+        self.hint.update(prompt)
         self.hint.add_class("confirming")
 
-    def answer_clear(self, key: str) -> None:
+    def answer(self, key: str) -> None:
         """
         Anything but a `y` leaves the note exactly where it is
         """
 
-        self._awaiting_clear = False
+        answered, self._question = self._question, None
         self.hint.remove_class("confirming")
         self.mode_changed()
 
-        if key.lower() != "y":
+        if key.lower() == "y" and answered is not None:
+            answered()
+
+    def request_clear(self) -> None:
+        """
+        Offer to throw the whole note away
+        """
+
+        # Nothing to lose, nothing to ask about
+        if not self.editor.text:
             return
 
+        self.ask(self.CLEAR_PROMPT, self._clear)
+
+    def _clear(self) -> None:
         self.editor.clear()
 
         # The debounce would get here on its own; writing it out now means the
@@ -1555,6 +2106,16 @@ class NoteScreen(NoteScreenBase):
 
     def load_note(self) -> str:
         return self.todo.note or ""
+
+    def load_attachments(self) -> str:
+        return self.todo.attachments or ""
+
+    def store_attachments(self, text: str) -> None:
+        if self.todo.attachments == text:
+            return
+
+        self.todo.attachments = text
+        self.todo.save()
 
     def store_note(self, text: str) -> None:
         if self.todo.note == text:

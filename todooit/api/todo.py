@@ -150,6 +150,16 @@ class Todo(DooitModel):
     # it. The window that edits it asks for one note at a time, which is the
     # only place the text is actually wanted.
     note: Mapped[str] = mapped_column(default="", deferred=True)
+    # The files this todo points at, one path per line, and nothing but the
+    # paths: the file itself is never copied anywhere, so attaching costs
+    # nothing and moving the file breaks only the way back to it.
+    #
+    # Kept beside the note rather than inside it because an attachment is not
+    # something the note *says* - it is something the task has - and a line of
+    # text can be typed over, indented, quoted and deleted by accident.
+    # Deferred for the same reason the note is: nothing that draws a pane
+    # wants it.
+    attachments: Mapped[str] = mapped_column(default="", deferred=True)
 
     # --------------------------------------------------------------
     # ------------------- Relationships ----------------------------

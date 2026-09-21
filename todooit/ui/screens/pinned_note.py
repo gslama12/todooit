@@ -27,3 +27,9 @@ class PinnedNoteScreen(NoteScreenBase):
 
     def store_note(self, text: str) -> None:
         PinnedNote.set_text(text)
+
+    def load_attachments(self) -> str:
+        return PinnedNote.get_attachments()
+
+    def store_attachments(self, text: str) -> None:
+        PinnedNote.set_attachments(text)

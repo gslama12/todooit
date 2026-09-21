@@ -23,6 +23,7 @@ A note with something in it opens in NORMAL. An empty one opens in INSERT.
 | `i` | Into INSERT, at the cursor |
 | `O` | Open a line below and type on it |
 | `o` | Open the link under the cursor |
+| `f` | Pick up the [attached files](#attachments) |
 | `ctrl+d` | Clear the whole note (asks first) |
 
 ## Markup
@@ -52,11 +53,46 @@ A URL in a note is underlined and shortened when it is drawn; the full address
 stays behind it. Markdown links — `[name](url)` — work too. `o` opens the one
 under the cursor.
 
+## Attachments
+
+Copy a file in the Finder or in Explorer and press `ctrl+v` in a note. It is
+pinned to the strip along the bottom of the note window, inside its frame —
+not typed into the note, and not at the cursor: an attachment is something the task *has*, not
+something the note says.
+
+Copying the path as text works the same way (`cmd+alt+c` in the Finder,
+`ctrl+shift+c` in Explorer), and several files at once land as several
+entries. A paste that is anything other than paths is text, and goes in as
+text.
+
+When there are more files than fit on a line the strip grows another line and
+carries on — nothing is ever counted away or hidden.
+
+`f` hands the keyboard to the strip; the file it is standing on is lit.
+
+| Key | What it does |
+| --- | --- |
+| `j` / `ö` | Left / right along the strip |
+| `k` / `l` | Up / down a row, when there is more than one; `k` off the top row goes back to the text |
+| `0` / `$` | The first / last file |
+| `enter` | Open it in its application |
+| `xx` | Detach it — no question asked, and nothing goes to the Bin |
+| `escape` | Back to the text, cursor exactly where it was left |
+
+**The file is never copied.** What the task holds is the path to it, so
+attaching costs nothing, one file can be attached to as many tasks as you
+like, and moving the file breaks only the way back. When that happens, opening
+it says so and offers to detach it.
+
+The pinned note carries files the same way.
+
 ## Selecting and copying
 
 `shift` with a motion selects, `ctrl+a` selects everything, and
 `ctrl+c` / `ctrl+x` / `ctrl+v` behave as they do in any text field. They work
-in both modes; the two that edit take the note into INSERT.
+in both modes; the two that edit take the note into INSERT. The one exception
+is a paste that is nothing but file paths, which [attaches](#attachments)
+instead of typing them out.
 
 `ctrl+z` / `ctrl+y` undo and redo inside the note.
 

@@ -92,6 +92,7 @@ def test_comparable_fields():
         "binned_at",
         "origin_path",
         "note",
+        "attachments",
     ]
     assert fields == expected_fields
 

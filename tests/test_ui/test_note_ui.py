@@ -28,6 +28,7 @@ from todooit.ui.screens.note import (
     scan_note,
 )
 from todooit.ui.screens.pinned_note import PinnedNoteScreen
+from todooit.utils import Opened
 from todooit.utils.links import fold_links
 from tests.test_ui.ui_base import (
     boot,
@@ -70,7 +71,7 @@ async def test_space_opens_the_note_window():
 
         # Titled by the todo, and opened ready to write: there is nothing in
         # an empty note to have opened it to read
-        assert screen.editor.border_title == "the todo"
+        assert screen.frame.border_title == "the todo"
         assert screen.editor.mode == MODE_INSERT
 
 
@@ -181,12 +182,12 @@ async def test_clear_note_asks_first():
 
         await pilot.press("ctrl+d")
         await pilot.pause()
-        assert screen.awaiting_clear
+        assert screen.awaiting_answer
 
         # Anything but y leaves the note exactly where it is
         await pilot.press("n")
         await pilot.pause()
-        assert not screen.awaiting_clear
+        assert not screen.awaiting_answer
         assert screen.editor.text == "precious words"
 
         await pilot.press("ctrl+d")
@@ -1199,7 +1200,7 @@ async def test_pinned_note_via_m():
 
         screen = app.screen
         assert isinstance(screen, PinnedNoteScreen)
-        assert screen.editor.border_title == "Pinned Note"
+        assert screen.frame.border_title == "Pinned Note"
 
         await pilot.press(*list("a thought with no task yet"))
         await pilot.press("escape", "escape")
@@ -1218,3 +1219,305 @@ async def test_pinned_note_via_m():
 
         await pilot.press("escape")
         await pilot.pause()
+
+
+# --- the files a note carries ---------------------------------------------
+
+
+async def attach(pilot, screen, *paths):
+    """Put `paths` on the clipboard and paste them into the open note"""
+
+    set_clipboard("\n".join(str(path) for path in paths))
+
+    await pilot.press("ctrl+v")
+    await pilot.pause()
+
+    return screen.files.paths
+
+
+def drawn(screen) -> str:
+    """The strip as the window paints it"""
+
+    return screen.files.render().plain
+
+
+async def test_a_pasted_path_is_attached_beside_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        report = tmp_path / "Q3 report.pdf"
+        report.write_text("x")
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        assert not screen.files.display
+
+        paths = await attach(pilot, screen, report)
+
+        # Beside the note, not in it: what was written stays exactly as it was
+        assert screen.editor.text == "some words"
+        assert paths == [report]
+        assert screen.files.display
+        assert "Q3 report.pdf" in drawn(screen)
+
+        # And it is the todo that carries it, one path per line
+        assert screen.todo.attachments == str(report)
+
+        # Attaching is not typing: the note is not edited and the cursor is
+        # left standing exactly where it was
+        assert screen.editor.mode == MODE_NORMAL
+        assert screen.editor.cursor_location == (0, len("some words"))
+
+
+async def test_what_is_attached_comes_back_with_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # Open it again: the strip is drawn from the database, not remembered
+        await pilot.press(" ")
+        await pilot.pause()
+
+        assert pilot.app.screen.files.paths == [tmp_path / "one.md"]
+
+
+async def test_the_same_file_twice_is_refused(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+        paths = await attach(pilot, screen, tmp_path / "one.md")
+
+        assert paths == [tmp_path / "one.md"]
+        assert "Already attached" in str(screen.hint.render())
+
+
+async def test_several_files_at_once(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        paths = await attach(pilot, screen, tmp_path / "a.md", tmp_path / "b.pdf")
+
+        assert paths == [tmp_path / "a.md", tmp_path / "b.pdf"]
+        assert "Attached 2 files" in str(screen.hint.render())
+
+
+async def test_a_copied_file_leaves_no_text_to_paste(tmp_path):
+    """The clipboard holds the file itself, so the desktop is asked for it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        report = tmp_path / "copied.pdf"
+
+        await pilot.press("escape")
+        set_clipboard("")
+
+        with patch("todooit.ui.screens.note.paste_files", lambda: [str(report)]):
+            await pilot.press("ctrl+v")
+            await pilot.pause()
+
+        assert screen.files.paths == [report]
+
+
+async def test_a_pasted_sentence_is_still_a_sentence(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        set_clipboard("the file is in /mnt/c/data/notes.md")
+
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert screen.files.paths == []
+        assert "the file is in" in screen.editor.text
+
+
+async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        # Nothing attached: the key says so and the text keeps the keyboard
+        await pilot.press("f")
+        await pilot.pause()
+        assert not screen.picking_files
+        assert "Nothing attached" in str(screen.hint.render())
+
+        await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
+
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen.picking_files
+        assert str(screen.hint.render()) == screen.FILES_HINT
+
+        # The motions the panes behind the window use, on a line of files
+        assert screen.files.picked == 1
+        await pilot.press("j")
+        await pilot.pause()
+        assert screen.files.picked == 0
+        await pilot.press("j")
+        await pilot.pause()
+        assert screen.files.picked == 0
+        await pilot.press("ö")
+        await pilot.pause()
+        assert screen.files.picked == 1
+
+        # Back to the text, with the cursor exactly where it was left
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not screen.picking_files
+        assert screen.editor.has_focus
+        assert screen.editor.cursor_location == (0, len("some words"))
+        assert str(screen.hint.render()) == screen.HINTS[MODE_NORMAL]
+
+
+async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+
+        await pilot.press("f")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert pilot.app.screen is screen
+
+
+async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
+    async with run_pilot() as pilot:
+        opened = []
+        screen = await open_note(pilot)
+        report = tmp_path / "Q3 report.pdf"
+
+        with patch(
+            "todooit.ui.screens.note.open_path",
+            lambda path: opened.append(path) or Opened.OK,
+        ):
+            await pilot.press("escape")
+            await attach(pilot, screen, report)
+
+            await pilot.press("f", "enter")
+            await pilot.pause()
+
+            assert opened == [report]
+            assert "Opening Q3 report.pdf" in str(screen.hint.render())
+
+
+async def test_xx_detaches_the_file_that_is_picked_out(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
+
+        await pilot.press("f", "j")          # onto the first of the two
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert screen.files.paths == [tmp_path / "two.md"]
+        assert screen.todo.attachments == str(tmp_path / "two.md")
+        assert "Detached one.md" in str(screen.hint.render())
+
+        # The note itself never noticed
+        assert screen.editor.text == "some words"
+
+        # A single `x` is half a key and does nothing on its own
+        await pilot.press("x")
+        await pilot.pause()
+        assert screen.files.paths == [tmp_path / "two.md"]
+
+        # The last one out takes the strip off the page with it
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert screen.files.paths == []
+        assert not screen.files.display
+        assert not screen.picking_files
+
+
+async def test_the_strip_grows_a_row_rather_than_hiding_a_file(tmp_path):
+    """Everything attached is on the page, however many there are"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        names = [f"a file with a longish name {index}.md" for index in range(8)]
+
+        await pilot.press("escape")
+        await attach(pilot, screen, *(tmp_path / name for name in names))
+        await pilot.pause()
+
+        strip = screen.files
+
+        assert len(strip.rows) > 1
+        assert sorted(index for row in strip.rows for index in row) == list(range(8))
+        assert strip.size.height == len(strip.rows)
+
+        for name in names:
+            assert name in drawn(screen)
+
+        # Up and down walk the rows, and up off the top row is the way out
+        await pilot.press("f")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 1
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 2
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 1
+
+        for _ in range(len(strip.rows)):
+            await pilot.press("k")
+            await pilot.pause()
+
+        assert not screen.picking_files
+
+
+async def test_a_file_that_is_gone_is_offered_for_detaching(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "moved away.md")
+
+        await pilot.press("f", "enter")
+        await pilot.pause()
+
+        assert screen.awaiting_answer
+        assert "is gone" in str(screen.hint.render())
+
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert not screen.awaiting_answer
+        assert screen.files.paths == []
+
+
+async def test_the_pinned_note_carries_files_too(tmp_path):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        await pilot.press("m")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, PinnedNoteScreen)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "scratch.md")
+
+        assert PinnedNote.get_attachments() == str(tmp_path / "scratch.md")

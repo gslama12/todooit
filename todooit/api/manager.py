@@ -29,6 +29,7 @@ class Manager:
         from todooit.api import BaseModel
         from todooit.utils.database import (
             add_agent_column,
+            add_attachments_column,
             add_bin_columns,
             add_completed_at_column,
             add_indexes,
@@ -51,6 +52,7 @@ class Manager:
 
         add_scheduled_column(self.engine)
         add_note_column(self.engine)
+        add_attachments_column(self.engine)
         add_completed_at_column(self.engine)
         add_bin_columns(self.engine)
         add_project_color_column(self.engine)

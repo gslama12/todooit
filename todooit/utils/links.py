@@ -13,11 +13,11 @@ import re
 from bisect import bisect_left
 from dataclasses import dataclass
 from functools import lru_cache
-from shutil import which
-from subprocess import DEVNULL, Popen
 from typing import List, Optional, Tuple
 
 from rich.markup import escape
+
+from todooit.utils.files import hand_over
 
 # A link starts at a scheme - or at the "www." that stands in for one - and
 # runs to the first character that cannot be part of it. Whitespace ends a
@@ -418,48 +418,16 @@ def link_label(url: str) -> str:
     return escape(url)
 
 
-# The commands that hand a URL over to whatever the desktop opens links with,
-# in the order they are tried, each with the arguments that go in front of the
-# URL. The last one is what makes this work under WSL, where there is no
-# xdg-open and no browser on the Linux side at all: `webbrowser` finds nothing
-# there, so without it the key looks dead.
-#
-# It is the URL handler itself rather than `explorer.exe`, which is the
-# obvious way in and the wrong one: handed a URL with a query string on it,
-# explorer gives up on the address and opens a File Explorer window instead
-OPENERS = (
-    ("wslview", ()),
-    ("xdg-open", ()),
-    ("open", ()),
-    ("rundll32.exe", ("url.dll,FileProtocolHandler",)),
-)
-
-
 def open_url(url: str) -> bool:
     """
     Hand `url` to the desktop's browser; False when nothing would take it
+
+    Which program that is, and in what order they are tried, is
+    `todooit.utils.files`: one desktop opens both a page and a file, and there
+    is no reason for dooit to know two lists of doors when the desktop has one
     """
 
-    for name, arguments in OPENERS:
-        command = which(name)
-
-        if command is None:
-            continue
-
-        try:
-            # Detached, with all three streams tied off: whatever is spawned
-            # must not write into the terminal dooit is drawing in, and must
-            # not keep a handle on it either
-            Popen(
-                [command, *arguments, url],
-                stdin=DEVNULL,
-                stdout=DEVNULL,
-                stderr=DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            continue
-
+    if hand_over(url):
         return True
 
     # Last resort, and only where there is a screen to open a window on:

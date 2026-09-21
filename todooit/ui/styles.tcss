@@ -79,7 +79,9 @@ DooitKeyTable {
   }
 }
 
-NoteEditor {
+/* The frame around the whole window - the text and the files under it - so
+   that everything the note is made of is inside one border */
+NoteFrame {
   background: $background2;
   border: $border_type $secondary;
   border-title-background: $primary;
@@ -97,6 +99,21 @@ NoteEditor {
   &.-insert {
     border-subtitle-background: $secondary;
   }
+}
+
+/* Inside the frame, and nothing of its own around it: a TextArea brings a
+   border with it, which would be a second line drawn just inside the first */
+NoteEditor {
+  background: $background2;
+  border: none;
+  padding: 0;
+}
+
+/* The files, along the foot of the frame and hard against its left edge: a
+   caption under the note rather than a second column of anything */
+#note-files {
+  background: $background2;
+  text-align: left;
 }
 
 #note-hint {

@@ -28,6 +28,10 @@ class PinnedNote(BaseModel, BaseModelMixin):
     id: Mapped[int] = mapped_column(primary_key=True, default=PINNED_NOTE_ID)
     note: Mapped[str] = mapped_column(default="")
 
+    # The same as a todo's: one path per line, the files pinned alongside the
+    # text rather than written into it
+    attachments: Mapped[str] = mapped_column(default="")
+
     @classmethod
     def instance(cls) -> "PinnedNote":
         """
@@ -45,6 +49,24 @@ class PinnedNote(BaseModel, BaseModelMixin):
     @classmethod
     def get_text(cls) -> str:
         return cls.instance().note or ""
+
+    @classmethod
+    def get_attachments(cls) -> str:
+        return cls.instance().attachments or ""
+
+    @classmethod
+    def set_attachments(cls, text: str) -> None:
+        """
+        Write the files back, on the same terms the text is written back on
+        """
+
+        row = cls.instance()
+
+        if row.attachments == text:
+            return
+
+        row.attachments = text
+        manager.save(row)
 
     @classmethod
     def set_text(cls, text: str) -> None:

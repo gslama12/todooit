@@ -21,6 +21,7 @@ it was missing.
 - **Quick add** — `C` types a whole task in one line, with its project, priority and day.
 - **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one you pick.
 - **Notes** — every task carries a markdown note (`space`), and `m` opens a pinned scratchpad for thoughts with no task yet.
+- **Attachments** — copy a file anywhere on your machine and `ctrl+v` in a note pins it to the strip along the bottom of the note window. `f` picks the files up, `enter` opens one in whatever your desktop opens that file type with, `xx` detaches it. Nothing is written into the note and nothing is copied on disk — the task simply holds the way back to the file.
 - **Dates** — due and scheduled dates typed as words (`next friday`) or picked off a calendar, and `r` makes a task recur.
 - **Ordering** — `K` / `L` move a task, `I` / `U` nest it, `M` sends it to another project, and `SP` / `SD` / `SS` read a project by priority or date.
 - **The small things** — `ctrl+c` / `ctrl+v` move tasks through the system clipboard, `o` opens the link under the cursor, `a` flags a task handed to an AI, `ctrl+z` takes back anything.
