@@ -221,6 +221,26 @@ async def test_note_marks_the_row():
         assert formatter.format_value(todo.note, todo).plain.strip() != ""
 
 
+async def test_attachment_alone_marks_the_row():
+    """A note that is nothing but a file still says so on the row"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "plain")
+
+        formatter = app.api.formatter.todos.note
+        todo = Todo.all()[0]
+
+        assert formatter.format_value(todo.note, todo).plain.strip() == ""
+
+        todo.attachments = "/tmp/report.pdf"
+        todo.save()
+
+        assert formatter.format_value(todo.note, todo).plain.strip() != ""
+
+
 async def test_emph_and_bullet_markup():
     """Both are written rather than pressed, and both are drawn as typed"""
 
