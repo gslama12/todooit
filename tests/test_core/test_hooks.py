@@ -265,6 +265,59 @@ def test_ticking_a_task_bounces_the_repeating_steps_inside_it(
     assert step.scheduled == datetime(2026, 2, 2)
 
 
+def test_ticking_a_repeating_task_hands_its_steps_back_too(
+    create_project, session
+):
+    """A task that comes round again comes round with nothing done in it"""
+
+    p = create_project()
+    task = p.add_todo()
+    task.scheduled = datetime(2026, 1, 1)
+    task.recurrence = timedelta(days=1)
+    task.save()
+
+    step1 = task.add_todo()
+    step1.save()
+    step2 = task.add_todo()
+    step2.save()
+    sub_step = step2.add_todo()
+    sub_step.save()
+
+    task.toggle_complete()
+    session.expire_all()
+
+    assert task.is_pending
+    assert task.scheduled == datetime(2026, 1, 2)
+
+    for step in (step1, step2, sub_step):
+        assert step.is_pending
+        assert step.completed_at is None
+
+
+def test_a_repeating_step_hands_its_own_steps_back(create_project, session):
+    """The same, for a repeating step carried off by the task around it"""
+
+    p = create_project()
+    task = p.add_todo()
+    task.save()
+
+    step = task.add_todo()
+    step.scheduled = datetime(2026, 2, 1)
+    step.recurrence = timedelta(days=1)
+    step.save()
+
+    sub_step = step.add_todo()
+    sub_step.save()
+
+    task.toggle_complete()
+    session.expire_all()
+
+    assert step.is_pending
+    assert step.scheduled == datetime(2026, 2, 2)
+    assert sub_step.is_pending
+    assert sub_step.completed_at is None
+
+
 # ------------------------------------------------------------------
 # The day a task is planned for, and the days its steps are
 # ------------------------------------------------------------------

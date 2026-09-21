@@ -73,6 +73,11 @@ def _bounce_recurrence(connection, todo: Todo, stamp: datetime) -> None:
     )
     connection.execute(query)
 
+    # The steps of it were ticked off along with everything else being
+    # carried off, and this todo is not being carried off after all: it comes
+    # round again, and so does every part of it
+    _set_pending(connection, list(_descendants(todo)))
+
 
 def _complete(connection, todos: List[Todo], stamp: datetime) -> None:
     """
@@ -199,6 +204,13 @@ def update_scheduled_for_recurrence(mapper, connection, todo: Todo):
 
     todo.pending = True
     todo.scheduled += todo.recurrence
+
+    # Everything under it was ticked off on the way in, by the cascade that
+    # carries a task's steps off with it. The task was not finished though,
+    # only done for now, so its steps are handed back with it rather than
+    # coming round already done -- which is what makes the next occurrence a
+    # fresh one instead of one with nothing left in it to tick.
+    _set_pending(connection, list(_descendants(todo)))
 
 
 def _set_scheduled(
