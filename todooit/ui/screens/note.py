@@ -166,20 +166,27 @@ MODE_INSERT = "INSERT"
 
 # The motions NORMAL mode answers to. The four movement keys are dooit's own
 # rather than vim's - `j`/`ö` step left and right, `k`/`l` up and down - so the
-# note is walked with the same fingers as the trees behind it
+# note is walked with the same fingers as the trees behind it.
+#
+# Only these, and no vim key beyond them: a letter that is not on this list
+# does nothing at all in NORMAL. Word motions were once here on `w` and `b`,
+# and the surprise of a letter moving the cursor was not worth the two hops
+# they saved
 NORMAL_MOTIONS = {
     "j": "cursor_left",
     "ö": "cursor_right",
     "k": "cursor_up",
     "l": "cursor_down",
-    "w": "cursor_word_right",
-    "b": "cursor_word_left",
     "0": "cursor_line_start",
     "$": "cursor_line_end",
 }
 
-# The keys that drop into INSERT, each landing the cursor somewhere different
-INSERT_ENTRIES = ("i", "a", "I", "A")
+# The one key that drops into INSERT, at the cursor. vim's other three ways in
+# - `a` past the cursor, `I` and `A` at either end of the line - are not here:
+# a key that flips the mode out from under the fingers is a key that turns the
+# next letter typed into text in the note, which is not what a reader pressing
+# letters is after
+INSERT_ENTRY = "i"
 
 
 def indent_depth(indent: str) -> int:
@@ -1046,8 +1053,8 @@ class NoteEditor(TextArea):
             self.move_cursor(self.document.end)
             return True
 
-        if key in INSERT_ENTRIES:
-            self._enter_insert_at(key)
+        if key == INSERT_ENTRY:
+            self.enter_insert()
             return True
 
         if key == "o":
@@ -1077,27 +1084,6 @@ class NoteEditor(TextArea):
             return
 
         self.note_screen.open_link(link.url)
-
-    def _enter_insert_at(self, key: str) -> None:
-        """
-        vim's four ways in: at the cursor, past it, or at either end of the line
-        """
-
-        row, column = self.cursor_location
-        line = self.document[row]
-
-        if key == "a":
-            self.move_cursor((row, min(column + 1, len(line))))
-
-        elif key == "I":
-            # Past the marker rather than in front of it: on a bullet or a
-            # quoted line the text starts where the glyph ends
-            self.move_cursor((row, len(line_prefix(line))))
-
-        elif key == "A":
-            self.move_cursor((row, len(line)))
-
-        self.enter_insert()
 
     def _open_line(self) -> None:
         """

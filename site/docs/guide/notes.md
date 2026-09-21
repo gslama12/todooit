@@ -18,10 +18,9 @@ A note with something in it opens in NORMAL. An empty one opens in INSERT.
 | --- | --- |
 | `j` / `ö` | Left / right |
 | `k` / `l` | Up / down |
-| `w` / `b` | Word forward / back |
 | `0` / `$` | Start / end of line |
 | `gg` / `G` | Top / bottom |
-| `i` `a` `I` `A` | Into INSERT: here, past here, start of text, end of line |
+| `i` | Into INSERT, at the cursor |
 | `O` | Open a line below and type on it |
 | `o` | Open the link under the cursor |
 | `ctrl+d` | Clear the whole note (asks first) |

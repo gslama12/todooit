@@ -125,7 +125,7 @@ async def test_the_note_opens_on_what_it_holds():
         assert isinstance(screen, NoteScreen)
         assert screen.editor.text == "first draft"
 
-        await pilot.press("A")  # insert at the end of the line
+        await pilot.press("$", "i")  # to the end of the line, then INSERT
         await pilot.press(*list(" and more"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -145,6 +145,31 @@ async def test_normal_mode_letters_do_not_write():
 
         assert not isinstance(app.screen, NoteScreenBase)
         assert Todo.all()[0].note == ""
+
+
+async def test_normal_mode_answers_to_no_other_letter():
+    """
+    `i` is the only way into INSERT, and no letter outside the motions moves
+    the cursor: vim's `a`/`I`/`A` and its `w`/`b` are not keys here
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("two words"))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_NORMAL
+
+        for key in ("a", "I", "A", "w", "b"):
+            screen.editor.move_cursor((0, 0))
+            await pilot.press(key)
+            await pilot.pause()
+
+            assert screen.editor.mode == MODE_NORMAL, key
+            assert screen.editor.cursor_location == (0, 0), key
+            assert screen.editor.text == "two words", key
 
 
 async def test_clear_note_asks_first():
@@ -1153,8 +1178,9 @@ async def test_open_link_inside_the_note():
             await pilot.pause()
             assert opened == []
 
-            # Walk back onto the link and open it
-            await pilot.press("b", "b")  # word left, onto the url
+            # Walk back onto the link and open it: `see ` is four columns, so
+            # the fifth is the first of the folded address
+            await pilot.press("0", "ö", "ö", "ö", "ö")
             await pilot.press("o")
             await pilot.pause()
 
