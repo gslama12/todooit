@@ -275,11 +275,19 @@ async def test_emph_marks_take_no_room_on_the_line():
 
 
 async def test_emph_is_drawn_in_its_own_color():
+    """
+    The words between the marks are what is lit, and the spans land on the
+    line as it is *drawn* - which is the line with the marks folded out of it
+    """
+
     line = "say " + EMPH_MARK + "this" + EMPH_MARK + " twice"
+    drawn, _ = fold_links(line)
     spans = list(scan_note([line]))[0]
 
+    assert drawn == "say this twice"
     assert (EMPH, "this") in [
-        (name, line.encode()[start:end].decode()) for start, end, name in spans
+        (name, drawn.encode()[start:end].decode())
+        for start, end, name in spans
     ]
 
 
@@ -372,14 +380,14 @@ async def test_typing_a_bullet_marker():
 
         # markdown's `- ` goes in, the bullet it stands for comes out
         await pilot.press(*list("- "))
-        assert screen.editor.text == "\u2022 "
+        assert screen.editor.text == "• "
 
         await pilot.press(*list("first"))
 
         # Enter carries it on, the way it carries a typed bullet on
         await pilot.press("enter")
         await pilot.press(*list("second"))
-        assert screen.editor.text == "\u2022 first\n\u2022 second"
+        assert screen.editor.text == "• first\n• second"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -416,17 +424,167 @@ async def test_a_star_pair_at_the_head_of_a_line_costs_no_column():
         )
         assert cell_len(screen.editor.text) == len("loud and clear")
 
-        # The words are what is emphasised, and the two marks over the top of
-        # them are the pair - drawn, and worth nothing on the page
+        # The words are what is emphasised and the marks are not drawn at all:
+        # they are folded off the page, so there is no span for them to wear
+        # and no column of the window for them to sit in
         text = screen.editor.text
+        drawn, _ = fold_links(text)
         spans = list(scan_note([text]))[0]
 
+        assert drawn == "loud and clear"
         assert [
-            (text.encode()[start:end].decode(), name) for start, end, name in spans
-        ] == [("loud", EMPH), (EMPH_MARK, MARKER), (EMPH_MARK, MARKER)]
+            (drawn.encode()[start:end].decode(), name)
+            for start, end, name in spans
+        ] == [("loud", EMPH)]
 
         await pilot.press("escape", "escape")
         await pilot.pause()
+
+
+async def test_an_emphasised_word_stays_emphasised_across_an_enter():
+    """
+    The bug: `enter` typed in front of an emphasised word un-emphasised it
+
+    The opening mark stood in a column of the page of its own, so the cursor
+    could come to rest between the mark and the word it opened - and the split
+    made there left the mark alone on the line above and the word below it
+    wearing half a pair. The marks are folded off the page now, so the column
+    in front of the word is in front of the mark as well, and the whole of the
+    pair moves down together.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("*loud* and clear"))
+        await pilot.press("home", "enter")
+        await pilot.pause()
+
+        assert screen.editor.text == (
+            "\n" + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
+        )
+
+        # And it is still drawn as emphasis, which is the half of it that a
+        # count of the marks would not catch
+        spans = list(scan_note(screen.editor.text.split("\n")))
+
+        assert EMPH in [name for _, _, name in spans[1]]
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_typing_in_front_of_an_emphasised_word_stays_out_of_it():
+    """
+    The other half of the same column: what is typed at the head of a phrase
+    goes in front of the mark, so the words carry on unemphasised
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("*loud* and clear"))
+        await pilot.press("home")
+        await pilot.press(*list("very "))
+        await pilot.pause()
+
+        assert screen.editor.text == (
+            "very " + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
+        )
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_cursor_never_stands_in_a_mark():
+    """
+    The bug: the cursor went invisible in front of an emphasised word
+
+    A mark is worth no columns to the terminal, so a cursor drawn over one was
+    a cursor drawn over nothing at all - and it stayed that way while the
+    letters went in, since the mark stayed where it was. Folded off the page,
+    there is no column left for it to hide in: every column the cursor can
+    reach is a column with a character of the drawn line in it.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+        await pilot.press("escape")
+
+        editor = screen.editor
+        drawn = editor.document[0]
+
+        assert EMPH_MARK not in drawn
+
+        await pilot.press("0")
+
+        for _ in range(len(drawn)):
+            _, column = editor.cursor_location
+
+            # Standing on a character of the page, or one past the last of
+            # them - and never on something drawn as nothing
+            assert column <= len(drawn)
+            assert column == len(drawn) or drawn[column] != EMPH_MARK
+
+            await pilot.press("ö")
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_a_note_with_emphasis_draws_no_zero_width_column():
+    """
+    The bug: the window's right-hand edge came apart on the lines that carried
+    emphasis
+
+    A mark is a character of the document worth no columns of the terminal,
+    and a window drawn one way and measured the other ends up with its border
+    and its scrollbar a column off on exactly those lines. Nothing zero-width
+    reaches the page any more, so every row of the screen is as many
+    characters wide as it is columns wide.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert EMPH_MARK in screen.editor.text
+
+        for strip in pilot.app.screen._compositor.render_strips():
+            drawn = "".join(segment.text for segment in strip)
+
+            assert cell_len(drawn) == len(drawn)
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_an_emphasised_word_deleted_leaves_no_mark_behind():
+    """
+    Deleting the words out from between a pair leaves two marks holding
+    nothing, which is markup no edit can ever finish. They go when the note is
+    written back rather than being carried around for good.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+
+        # Back over the whole of the emphasised word: the first backspace
+        # takes the emphasis off, and the rest take the letters
+        await pilot.press(*["backspace"] * 11)
+        await pilot.press(*list("that twice"))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+        assert Todo.all()[0].note == "say that twice"
 
 
 async def test_stars_leaning_on_a_space_stay_stars():
@@ -495,7 +653,7 @@ async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
 
         await pilot.press("tab")
         await pilot.press(*list("- nested"))
-        assert screen.editor.text == "  \u25e6 nested"
+        assert screen.editor.text == "  ◦ nested"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -939,6 +1097,130 @@ async def test_tab_nests_a_bullet():
         await pilot.pause()
 
         assert Todo.all()[0].note == "• top\n• child"
+
+
+async def test_enter_on_an_empty_nested_bullet_steps_out_a_level():
+    """
+    The bug: `enter` on an empty nested item threw the marker away
+
+    Which is the right end for a list at its top level and the wrong one for a
+    branch of it: the way back up from a nested bullet was to press the key
+    and then type the marker again by hand. It walks out a level at a time
+    now, and the marker still goes on the `enter` pressed at the top, where
+    there is nothing left to climb to.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("- top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("child"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("grandchild"))
+
+        written = "• top\n  ◦ child\n    ▪ grandchild\n"
+
+        # Out of the deepest level, and the glyph comes back with it
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == written + "  ◦ "
+
+        await pilot.press("enter")
+        assert screen.editor.text == written + "• "
+
+        # And at the top the list ends the way it always did
+        await pilot.press("enter")
+        assert screen.editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_empty_nested_bullet_steps_out_inside_a_quote_too():
+    """A list written in a quote nests inside the bar, and unwinds inside it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- item"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("under"))
+
+        written = QUOTE_GLYPH + "• item\n" + QUOTE_GLYPH + "  ◦ under\n"
+
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+
+        # The bar is the last thing to go, as it always was
+        await pilot.press("enter")
+        assert screen.editor.text == written + QUOTE_GLYPH
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_at_the_words_steps_a_nested_bullet_out():
+    """
+    The bug: `backspace` at the head of a nested item ate the marker
+
+    Which is the wrong end of the list to end: an item under another one is a
+    branch, and the key that walks back up it has to leave it an item. It
+    steps out a level at a time now, words and all, and the marker only goes
+    at the top, where there is no level left to step back to.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("- top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("child"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("grandchild"))
+
+        # Back to the head of the words, where the marker ends
+        screen.editor.move_cursor((2, 6))
+
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\n  ◦ grandchild"
+
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\n• grandchild"
+
+        # At the top the marker goes, and the words stay
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\ngrandchild"
+
+        # And with nothing in front of them a backspace is a backspace again
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ childgrandchild"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_steps_an_empty_nested_bullet_out_inside_a_quote():
+    """The same walk back up, with the bar left standing until the end"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- item"))
+        await pilot.press("enter", "tab")
+
+        written = QUOTE_GLYPH + "• item\n"
+
+        await pilot.press("backspace")
+        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+
+        # The bar is the last thing to go, as it always was
+        await pilot.press("backspace")
+        assert screen.editor.text == written + QUOTE_GLYPH
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
 
 
 async def test_enter_in_front_of_a_bullet_opens_a_line_above():

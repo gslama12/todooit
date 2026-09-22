@@ -38,7 +38,14 @@ from todooit.utils import (
     write_attachments,
 )
 from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
-from todooit.utils.links import drawn_column, folded_link_at, stored_range
+from todooit.utils.links import (
+    EMPH_MARK,
+    drawn_column,
+    folded_emph,
+    folded_link_at,
+    mark_pairs,
+    stored_range,
+)
 
 from .base import BaseScreen
 
@@ -119,16 +126,18 @@ QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
 QUOTE_ITEM = "note-quote-item"
 
-# What emphasis is delimited by: a zero-width space either side of the words.
+# What emphasis is delimited by: a zero-width space either side of the words,
+# `EMPH_MARK`, which is named over in `utils/links.py` because that is where
+# the folding that takes it off the page lives.
 #
 # A heading needs nothing written on its own line to say it is one, because
 # what says so is the rule underneath it - a whole line of its own. Emphasis
 # is a phrase inside a line, so something in the line has to say where it
-# starts and stops, and a TextArea draws exactly the text it holds. The way
-# out is a character that is real to the document and worth no columns to the
-# terminal: the marks are there to be found, deleted and paired up, and take
-# up no more room on the page than the rule under a heading takes out of it
-EMPH_MARK = "\N{ZERO WIDTH SPACE}"
+# starts and stops. The way out is a character that is real to the note and
+# drawn as nothing at all: the marks are there to be found, deleted and paired
+# up, and are folded out of the page the same way the markup of a link is, so
+# that no column of the window is ever spent on one and no cursor ever stands
+# in one
 
 # Either mark. The `*` is what emphasis is *typed* with, being the pair of
 # characters markdown has always used for it, but a finished pair is swapped
@@ -313,10 +322,48 @@ def split_indent(line: str) -> Tuple[str, str, str]:
     return line[: len(line) - len(stripped)], "", stripped
 
 
+def tidy_marks(text: str) -> str:
+    """
+    `text` with the emphasis marks that close nothing taken out of it
+
+    A mark is only ever written as half of a finished pair, so a mark with no
+    partner is a pair an edit cut in two - a line split down the middle of an
+    emphasised phrase, or a phrase deleted out from between its own marks.
+    What is left is drawn as nothing, stands in no column and can never be
+    paired up again: it is not markup any more, only something the note would
+    go on carrying.
+
+    Done on the way out rather than on every keystroke. Nothing upstairs has
+    to care that an orphan is there - the fold keeps it off the page and out
+    of the cursor's way either way - so the tidying belongs where the note is
+    written back, which is also where a note written by an older version of
+    all this gets its orphans swept up.
+    """
+
+    if EMPH_MARK not in text:
+        return text
+
+    lines = []
+
+    for line in text.split("\n"):
+        keep = {column for pair in mark_pairs(line) for column in pair}
+
+        lines.append(
+            "".join(
+                character
+                for column, character in enumerate(line)
+                if character != EMPH_MARK or column in keep
+            )
+        )
+
+    return "\n".join(lines)
+
+
 def scan_markup(
     line: str,
     following: str = "",
     links: Optional[list] = None,
+    emph: Optional[list] = None,
 ) -> Iterator[Tuple[int, int, str]]:
     """
     The styled spans of one line, measured in UTF-8 bytes
@@ -330,13 +377,17 @@ def scan_markup(
 
     `line` is the line as it is *drawn*, which is not always the line as it is
     stored - a link folded down to its name is shorter on the page than in the
-    note. `links` is where the links ended up in what was drawn; handed
-    nothing, the scan reads them off the line itself, which is right for any
-    line that is drawn as it stands.
+    note, and an emphasised phrase has lost the marks either side of it.
+    `links` and `emph` are where the two of them ended up in what was drawn;
+    handed nothing, the scan reads what it can off the line itself, which is
+    right for any line that is drawn as it stands.
     """
 
     def byte(index: int) -> int:
         return len(line[:index].encode("utf-8"))
+
+    links = links if links is not None else find_links(line)
+    emph = emph if emph is not None else folded_emph(line)
 
     if RULE_RE.match(line):
         yield 0, byte(len(line)), RULE_SPAN
@@ -381,11 +432,23 @@ def scan_markup(
     for link in links:
         yield byte(link.start), byte(link.end), LINK
 
+    # Emphasis written the way the note writes it: the marks are already off
+    # the page, so what is left to do is light the words that were between
+    # them. There is nothing to draw a marker over - that is the whole point
+    # of the marks costing no columns
+    for start, end in emph:
+        yield byte(start), byte(end), EMPH
+
+    # And emphasis written with stars, which is how it arrives from somewhere
+    # that speaks markdown and how it looks on the way to being typed: the
+    # stars are real characters on the page, so the words go first and the two
+    # of them over the top, the spans being applied in the order handed over
     for match in EMPH_RE.finditer(line):
+        if match.group("star") is None:
+            continue
+
         start, end = match.span()
 
-        # The words first and the markers over the top: the spans are applied
-        # in the order they are handed over
         yield byte(start + 1), byte(end - 1), EMPH
         yield byte(start), byte(start + 1), MARKER
         yield byte(end - 1), byte(end), MARKER
@@ -406,17 +469,19 @@ def scan_note(lines) -> Iterator[list]:
 
     drawn = []
     found = []
+    lit = []
 
     for line in lines:
         text, links = fold_links(line)
 
         drawn.append(text)
         found.append(links)
+        lit.append(folded_emph(line))
 
     for row, line in enumerate(drawn):
         following = drawn[row + 1] if row + 1 < len(drawn) else ""
 
-        yield list(scan_markup(line, following, found[row]))
+        yield list(scan_markup(line, following, found[row], lit[row]))
 
 
 # What a name for a link may not hold, since the brackets are what say where
@@ -782,49 +847,62 @@ class NoteEditor(TextArea):
         for row, spans in enumerate(scan_note(lines)):
             highlights[row].extend(spans)
 
-    def _emph_pair(self, row: int, column: int) -> Optional[Tuple[int, int]]:
+    def _emph_ending_at(
+        self, row: int, column: int
+    ) -> Optional[Tuple[int, int]]:
         """
-        The columns of the two marks the one left of the cursor is half of, or
-        None when there is no mark of a pair there
+        The columns an emphasised phrase is drawn between, when the cursor is
+        standing at the end of one; None anywhere else
 
-        Read off the same scan that draws the emphasis, so the pair taken out
-        is exactly the pair that was being drawn.
+        Read off the same fold that draws the emphasis, so the phrase taken
+        out is exactly the phrase that was being drawn.
+
+        The end and nowhere else, because the end is where a backspace is
+        aimed: the marks cannot be seen, so the key that comes off them has to
+        be the one already being pressed to delete the last letter.
         """
 
-        line = self.document[row]
-
-        if not column or line[column - 1] != EMPH_MARK:
-            return None
-
-        for match in EMPH_RE.finditer(line):
-            if match.group("emph") is None:
-                continue
-
-            start, end = match.span()
-
-            if column - 1 in (start, end - 1):
-                return start, end - 1
+        for start, end in folded_emph(self._stored_line(row)):
+            if column == end:
+                return start, end
 
         return None
 
     def _take_emph_off(self, row: int, column: int, pair: Tuple[int, int]) -> None:
         """
-        Take both marks of `pair` out, and leave the cursor in the words
+        Take both marks of `pair` out, and leave the words where they were
 
-        The closing one first: taking the opening one out would move it.
+        Written as one rewrite of the phrase rather than two deletions of a
+        mark: the marks are folded off the page, so there is no column of the
+        page to delete them at. What there is, is a run of the page whose
+        stored form carries them - and putting the drawn words back over that
+        run is exactly the emphasis coming off.
         """
 
-        opening, closing = pair
+        start, end = pair
 
         self.replace(
-            "", (row, closing), (row, closing + 1), maintain_selection_offset=False
-        )
-        self.replace(
-            "", (row, opening), (row, opening + 1), maintain_selection_offset=False
+            self.document[row][start:end],
+            (row, start),
+            (row, end),
+            maintain_selection_offset=False,
         )
 
-        # One mark went from in front of the cursor, or both did
-        self.move_cursor((row, column - (2 if column - 1 == closing else 1)))
+        self.move_cursor((row, end))
+
+    def _nested_item(self, row: int) -> bool:
+        """
+        Whether the list item on `row` has a level above it to step back out to
+
+        Read off the indent rather than off the glyph, since the indent is
+        what a level *is*; the glyph only says so as well. A quoted item
+        nests inside its bar, so what is measured is what comes after it.
+        """
+
+        _, body = split_quote(self.document[row])
+        indent, bullet, _ = split_indent(body)
+
+        return bool(bullet) and indent_depth(indent) > 0
 
     def _set_depth(self, row: int, levels: int) -> None:
         """
@@ -1246,12 +1324,22 @@ class NoteEditor(TextArea):
                     self.move_cursor((row + 1, column))
                 elif line[len(prefix) :].strip():
                     self.insert("\n" + prefix, maintain_selection_offset=False)
+                elif self._nested_item(row):
+                    # An empty item nested under another is not the end of the
+                    # list but the end of the branch: `enter` walks it back out
+                    # one level, which is the way back up a list and the thing
+                    # the key is reached for far more often than throwing the
+                    # item away. Unwinding the levels one at a time means the
+                    # marker still goes in the end - on the `enter` pressed at
+                    # the top level, where there is nothing left to climb to
+                    self._set_depth(row, -1)
                 else:
-                    # An empty item is where the list ends: the marker goes,
-                    # rather than another one arriving underneath it. It goes
-                    # one marker at a time, so an empty bullet inside a quote
-                    # leaves the bar standing and the quote ends on the next
-                    # `enter`, the way an unquoted one ends on the first
+                    # An empty item at the top level is where the list ends:
+                    # the marker goes, rather than another one arriving
+                    # underneath it. It goes one marker at a time, so an empty
+                    # bullet inside a quote leaves the bar standing and the
+                    # quote ends on the next `enter`, the way an unquoted one
+                    # ends on the first
                     self.replace("", (row, glyph_at), (row, len(line)))
                     self.move_cursor((row, glyph_at))
 
@@ -1259,17 +1347,52 @@ class NoteEditor(TextArea):
 
         if event.key == "backspace" and self.selection.is_empty:
             row, column = self.cursor_location
-            pair = self._emph_pair(row, column)
+            pair = self._emph_ending_at(row, column)
 
             if pair is not None:
-                # The marks cannot be seen, so a backspace that took only the
-                # one it landed on would look like nothing happening at all
-                # and leave the other behind for good. Both go, and what that
-                # looks like is the emphasis coming off - which is the one
-                # thing anyone reaching for backspace next to a mark can mean
+                # Standing just past an emphasised phrase, where the mark that
+                # closes it is - and where a backspace would otherwise reach
+                # over it to the last letter of the word, leaving the phrase a
+                # letter shorter and still emphasised. The marks cannot be
+                # seen, so the key has to mean the thing that can: the
+                # emphasis comes off, and the words stay
                 event.stop()
                 event.prevent_default()
                 self._take_emph_off(row, column, pair)
+                return
+
+            line = self.document[row]
+            _, body = split_quote(line)
+            _, bullet, _ = split_indent(body)
+
+            if bullet and 0 < column <= len(line_prefix(line)):
+                # Anywhere in the marker or the indent in front of it - which
+                # is where a backspace would otherwise bite a glyph in half or
+                # take a level's worth of indent one space at a time. What the
+                # key means here is the same thing `enter` on an empty item
+                # means: a level back out, one at a time, with the words coming
+                # along - and the marker itself only going at the top, where
+                # there is no level left to step back to
+                event.stop()
+                event.prevent_default()
+
+                if self._nested_item(row):
+                    self._set_depth(row, -1)
+                else:
+                    # The marker goes and the words stay where they start: a
+                    # quoted item leaves its bar standing, so the bullet comes
+                    # off first and the quote ends on the next backspace, the
+                    # way it ends on the next `enter`
+                    glyph_at = marker_start(line)
+
+                    self.replace(
+                        "",
+                        (row, glyph_at),
+                        (row, len(line_prefix(line))),
+                        maintain_selection_offset=False,
+                    )
+                    self.move_cursor((row, glyph_at))
+
                 return
 
         if event.character == EMPH_STAR and self.selection.is_empty:
@@ -1285,16 +1408,23 @@ class NoteEditor(TextArea):
                 event.stop()
                 event.prevent_default()
 
+                # Written as one rewrite of the whole `*phrase`, because the
+                # opening star is a column of the page and the mark that
+                # replaces it is not: swapping them one at a time would leave
+                # the second half of the edit aimed a column past where the
+                # page had just moved to
+                phrase = self.document[row][opening + 1 : column]
+
                 self.replace(
-                    EMPH_MARK,
+                    EMPH_MARK + phrase + EMPH_MARK,
                     (row, opening),
-                    (row, opening + 1),
+                    (row, column),
                     maintain_selection_offset=False,
                 )
-                self.insert(
-                    EMPH_MARK, (row, column), maintain_selection_offset=False
-                )
-                self.move_cursor((row, column + 1))
+
+                # Past the closing mark, which is where the star was typed and
+                # where the next letter belongs: outside the emphasis
+                self.move_cursor((row, opening + len(phrase)))
                 return
 
         if event.character == DASHES[0]:
@@ -2015,7 +2145,7 @@ class NoteScreenBase(BaseScreen):
 
     def save(self) -> None:
         self._save_timer = None
-        self.store_note(self.editor.text)
+        self.store_note(tidy_marks(self.editor.text))
 
     def ask(self, prompt: str, answered: Callable[[], None]) -> None:
         """

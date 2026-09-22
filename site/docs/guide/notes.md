@@ -44,8 +44,18 @@ is drawn the moment it is finished.
 keyboard-driven piece of markup, because nesting is the one thing that cannot
 be read off the characters on the line.
 
+`enter` on an empty item walks a list back out: from a nested bullet it steps
+one level up and keeps the marker, and at the top level it takes the marker
+away, which is where the list ends.
+
 Lists work inside a quote, nested by the same `tab`, and are drawn in the
 quote's green.
+
+Emphasis is held between two marks the page never shows, so the columns in
+front of and behind an emphasised phrase are outside it: typing there writes
+plain words and `enter` there moves the whole phrase, emphasis and all.
+Backspace pressed at the end of one takes the emphasis off and leaves the
+words.
 
 ## Links
 

@@ -3,12 +3,16 @@ The links inside a description or a note
 """
 
 from todooit.utils.links import (
+    EMPH_MARK,
     TITLE_MAX,
+    drawn_column,
     find_links,
     first_link,
     fold_links,
+    folded_emph,
     link_label,
     link_title,
+    mark_pairs,
     stored_range,
 )
 
@@ -248,3 +252,91 @@ def test_two_links_on_one_line_both_land_where_they_are_drawn():
         "atdfsds.sharepoint.com/…/AllItems.aspx",
     ]
     assert [link.url for link in links] == ["https://a.com/x", SHAREPOINT]
+
+
+# The note's emphasis, folded by the same maps as a link's markup: a phrase
+# written between two marks worth no columns at all
+EMPHASISED = "ab" + EMPH_MARK + "cd" + EMPH_MARK + "ef"
+
+
+def test_a_mark_is_drawn_as_nothing():
+    drawn, _ = fold_links(EMPHASISED)
+
+    assert drawn == "abcdef"
+    assert folded_emph(EMPHASISED) == [(2, 4)]
+    assert mark_pairs(EMPHASISED) == [(2, 5)]
+
+
+def test_a_stored_column_comes_back_past_the_mark_it_is_hidden_behind():
+    assert [drawn_column(EMPHASISED, column) for column in range(9)] == [
+        0,
+        1,
+        2,
+        2,
+        3,
+        4,
+        4,
+        5,
+        6,
+    ]
+
+
+def test_typing_at_the_head_of_a_phrase_lands_outside_it():
+    """
+    Which is what keeps an `enter` there from cutting a finished pair in half:
+    the place in front of the word is the place in front of its mark
+    """
+
+    start, end = stored_range(EMPHASISED, 2, 2)
+
+    assert (start, end) == (2, 2)
+    assert EMPHASISED[start] == EMPH_MARK
+
+
+def test_typing_at_the_tail_of_a_phrase_lands_outside_it_too():
+    """Emphasis is extended from inside the words, never from either edge"""
+
+    start, end = stored_range(EMPHASISED, 4, 4)
+
+    assert (start, end) == (6, 6)
+    assert EMPHASISED[start - 1] == EMPH_MARK
+
+
+def test_a_letter_picked_out_of_a_phrase_is_only_the_letter():
+    """So that backspacing the first letter leaves the emphasis standing"""
+
+    assert stored_range(EMPHASISED, 2, 3) == (3, 4)
+    assert stored_range(EMPHASISED, 3, 4) == (4, 5)
+
+
+def test_a_phrase_picked_out_whole_carries_its_marks():
+    """
+    Copying one carries the emphasis, and deleting one leaves no half of a
+    pair behind
+    """
+
+    start, end = stored_range(EMPHASISED, 2, 4)
+
+    assert EMPHASISED[start:end] == EMPH_MARK + "cd" + EMPH_MARK
+
+
+def test_the_whole_page_of_a_line_is_the_whole_line():
+    """A rewrite of a line has to land on the markup at its edges as well"""
+
+    text = EMPH_MARK + "loud" + EMPH_MARK
+    drawn, _ = fold_links(text)
+
+    assert stored_range(text, 0, len(drawn)) == (0, len(text))
+
+
+def test_an_orphan_mark_belongs_to_what_comes_after_it():
+    """
+    Half a pair is drawn as nothing like any other mark, and goes with the
+    word behind it rather than gluing itself to the one in front
+    """
+
+    text = "ab" + EMPH_MARK + "cd"
+
+    assert fold_links(text)[0] == "abcd"
+    assert folded_emph(text) == []
+    assert stored_range(text, 2, 2) == (2, 2)
