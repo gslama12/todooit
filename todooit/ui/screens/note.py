@@ -1,4 +1,5 @@
 import re
+from bisect import bisect_right
 from typing import Callable, Iterator, List, Optional, Tuple
 
 from pathlib import Path
@@ -8,8 +9,12 @@ from rich.markup import escape
 from rich.style import Style
 from rich.text import Text
 from textual import events, on
+from textual._wrap import compute_wrap_offsets
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.expand_tabs import get_tab_widths
+from textual.geometry import Offset
+from textual.strip import Strip
 from textual.timer import Timer
 from textual.document._document import Document, EditResult
 from textual.document._document_navigator import DocumentNavigator
@@ -64,6 +69,14 @@ BULLET_GLYPHS = ("•", "◦", "▪")
 # What one level of nesting is worth. Two columns: wide enough to see, narrow
 # enough that a list several levels deep still has room for words
 INDENT = "  "
+
+# How few columns a wrapped line may be left with before the indent in front
+# of it is given up on. A line wraps under its own first word, so the rows
+# after the first are as narrow as the line is deep: past some depth in a
+# window narrow enough, an item would be drawn as a column of text two
+# characters wide, and a continuation back at the margin reads better than
+# that. Wide enough to hold a word, which is all this has to be
+WRAP_MIN = 12
 
 # A header is the help window's section break brought into the note: a title
 # with a rule drawn across underneath it. Stored as the glyph for the same
@@ -320,6 +333,48 @@ def split_indent(line: str) -> Tuple[str, str, str]:
 
     stripped = line.lstrip(" \t")
     return line[: len(line) - len(stripped)], "", stripped
+
+
+def hanging_prefix(line: str) -> str:
+    """
+    What a line that wraps carries onto the rows below it: its quote bar, its
+    indent and the marker of a list item, or "" for a line that opens at the
+    margin
+
+    A wrapped line is one line of the note however many rows it is drawn
+    across, and a row of one that started back at the margin reads as a line
+    of its own - an item at no depth, sitting under the list rather than in
+    it. So everything in front of the first word is measured here, and every
+    row after the first opens where that first word did.
+
+    The marker itself is part of it: what a continuation lines up under is the
+    words of the item, not the bullet they were written after, which is how a
+    list is set on paper and the only way a nested one can still be read as
+    nested once it is three rows long.
+    """
+
+    bar, body = split_quote(line)
+    item = BULLET_RE.match(body) or ORDERED_RE.match(body)
+
+    if item:
+        return bar + body[: item.end("marker")]
+
+    # Not a list item, but an indent is an indent: a line pushed in by hand,
+    # or the bar of a quote, goes on standing where it was put
+    indent, _, _ = split_indent(body)
+
+    return bar + indent
+
+
+def hanging_width(line: str, tab_width: int = len(INDENT)) -> int:
+    """
+    How many columns `hanging_prefix` stands in
+
+    Counted in cells rather than characters, because the quote bar is one
+    character two columns wide and the wrapping is done in columns.
+    """
+
+    return cell_len(hanging_prefix(line).expandtabs(tab_width))
 
 
 def tidy_marks(text: str) -> str:
@@ -642,6 +697,256 @@ class FoldedDocument(Document):
         return super().get_text_range(top, bottom)
 
 
+class HangingDocument(WrappedDocument):
+    """
+    The wrapping, with every row of a line after the first pushed in under the
+    words of the first
+
+    A TextArea wraps a line at the full width of the window and draws every
+    row of it from column nought, which turns a bullet too long for one row
+    into an item whose second row is not in the list at all. Here a line is
+    wrapped at the width it really has - the window less whatever
+    `hanging_prefix` says stands in front of its words - and the rows after
+    the first are drawn that far in, so an item stays one item and a nested
+    one stays at its depth.
+
+    The indent is a thing of the page and not of the note: nothing is written
+    into the text, so what is saved is what was typed and a line that stops
+    wrapping loses the indent again with no edit of its own.
+
+    Everything in here is counted the way the window draws it, indent and all.
+    A column handed in is where it is on screen, and a column handed back is
+    read off the screen the same way, which is what lets a click land where it
+    was aimed and the cursor keep its column on the way up and down.
+    """
+
+    def wrap(self, width: int, tab_width: Optional[int] = None) -> None:
+        """
+        Wrap every line, each at its own width, and cache what came of it
+
+        Upstream walks the document exactly like this; the one difference is
+        which width each line is wrapped at, and that every line's indent is
+        kept alongside its breaks so that the drawing and the mapping below
+        can be handed it without measuring the line again.
+
+        Every line wrapped is kept under the text it was wrapped from, and a
+        walk at the same width takes back what it can from the last one. That
+        is what makes the whole-document re-wrap below affordable: a keystroke
+        changes one line, and the other few hundred are looked up rather than
+        measured again. The store is rebuilt from the lines that are really
+        there, so it never outgrows the note, and thrown away whenever the
+        width changes, since a line wrapped at one width says nothing about
+        the same line wrapped at another.
+        """
+
+        same_shape = width == self._width and tab_width in (None, self._tab_width)
+        wrapped_before = getattr(self, "_wrap_cache", {}) if same_shape else {}
+        wrap_cache = {}
+
+        self._width = width
+
+        if tab_width:
+            self._tab_width = tab_width
+
+        wrap_offsets: List[List[int]] = []
+        hanging: List[int] = []
+        tab_widths: List[List[int]] = []
+        offset_to_line_info: List[Tuple[int, int]] = []
+        line_index_to_offsets: List[List[int]] = []
+
+        current_offset = 0
+
+        for line_index, line in enumerate(self.document.lines):
+            if line in wrapped_before:
+                offsets, pad = wrapped_before[line]
+            else:
+                offsets, pad = self._wrap_line(line)
+
+            wrap_cache[line] = (offsets, pad)
+            sections = get_tab_widths(line, self._tab_width)
+
+            wrap_offsets.append(offsets)
+            hanging.append(pad)
+            tab_widths.append([section_width for _, section_width in sections])
+            line_index_to_offsets.append([])
+
+            for section_offset in range(len(offsets) + 1):
+                offset_to_line_info.append((line_index, section_offset))
+                line_index_to_offsets[line_index].append(current_offset)
+                current_offset += 1
+
+        self._wrap_cache = wrap_cache
+        self._wrap_offsets = wrap_offsets
+        self._hanging = hanging
+        self._tab_width_cache = tab_widths
+        self._offset_to_line_info = offset_to_line_info
+        self._line_index_to_offsets = line_index_to_offsets
+
+    def wrap_range(self, start: tuple, old_end: tuple, new_end: tuple) -> None:
+        """
+        Re-wrap after an edit, by wrapping the note again from the top
+
+        Upstream re-wraps only the lines an edit touched and shifts the rest,
+        which it has to: a source file can run to thousands of lines. A note
+        is a paragraph or two, and wrapping the whole of one costs less than
+        keeping two ways of doing it in step - and the incremental path would
+        have to be copied out whole to wrap each line at its own width.
+        """
+
+        self.wrap(self._width)
+
+    def _wrap_line(self, line: str) -> Tuple[List[int], int]:
+        """
+        Where `line` breaks, and how far the rows after the first are pushed in
+
+        The first row is as wide as the window; every row after it is narrower
+        by the indent, so the breaks are found one row at a time rather than
+        in a single pass at one width. A line with no indent in front of it is
+        handed straight to the upstream wrap, which is the same walk at a
+        width that never changes.
+        """
+
+        width = self._width
+
+        if not width:
+            return [], 0
+
+        tab_width = self._tab_width
+        prefix = hanging_prefix(line)
+        hanging = cell_len(prefix.expandtabs(tab_width))
+
+        # Nothing to hang, or so little room left that hanging it would leave
+        # a column of text too narrow to read
+        if not hanging or width - hanging < WRAP_MIN:
+            return compute_wrap_offsets(line, width, tab_width), 0
+
+        offsets: List[int] = []
+        start = 0
+        room = width
+
+        while start < len(line):
+            breaks = compute_wrap_offsets(line[start:], room, tab_width)
+
+            if not breaks or breaks[0] <= 0:
+                break
+
+            start += breaks[0]
+            offsets.append(start)
+            room = width - hanging
+
+        if not offsets:
+            return [], 0
+
+        if offsets[0] <= len(prefix):
+            # A first word too long to sit beside its own marker, which is a
+            # word that would leave the first row holding nothing but the
+            # marker. It gets the window instead, the way it had it before
+            return compute_wrap_offsets(line, width, tab_width), 0
+
+        return offsets, hanging
+
+    def hanging_pad(self, line_index: int, section_offset: int) -> int:
+        """
+        How far the row at `section_offset` of a line is pushed in
+
+        The first row of a line opens where it is written and is never pushed;
+        the rest carry the indent. `-1` is the last row, which is how the
+        navigation asks for the bottom row of the line above it.
+        """
+
+        if section_offset == 0:
+            return 0
+
+        try:
+            return self._hanging[line_index]
+        except IndexError:
+            return 0
+
+    def pad_at(self, y_offset: int) -> int:
+        """
+        How far the row drawn at `y_offset` down the document is pushed in
+        """
+
+        try:
+            line_index, section_offset = self._offset_to_line_info[y_offset]
+        except IndexError:
+            return 0
+
+        return self.hanging_pad(line_index, section_offset)
+
+    def location_to_offset(self, location: tuple) -> Offset:
+        """
+        Where in the window a place in the note is drawn, indent included
+        """
+
+        offset = super().location_to_offset(location)
+        line_index = max(0, min(location[0], len(self._wrap_offsets) - 1))
+        section_offset = bisect_right(self.get_offsets(line_index), location[1])
+
+        pad = self.hanging_pad(line_index, section_offset)
+
+        return Offset(offset.x + pad, offset.y)
+
+    def get_target_document_column(
+        self, line_index: int, x_offset: int, y_offset: int
+    ) -> int:
+        """
+        Which column of the note is drawn at `x_offset` of a row, indent taken
+        off first: the other half of `location_to_offset`, and what a click
+        and a cursor moving up or down are both read through
+        """
+
+        pad = self.hanging_pad(line_index, y_offset)
+
+        return super().get_target_document_column(
+            line_index, max(0, x_offset - pad), y_offset
+        )
+
+
+class HangingNavigator(DocumentNavigator):
+    """
+    Moving up and down a wrapped line, by the column the cursor is drawn in
+
+    Upstream counts the cursor's column from the start of the row it is on,
+    which is the same thing as its column on screen only while every row
+    starts at the margin. Here they part: a row pushed in by an indent draws
+    its first character several columns along, and a cursor that kept the
+    count instead of the column would walk left as it crossed into an item's
+    second row and right as it left it.
+
+    So both ways down are asked of the wrapping, which speaks in columns of
+    the window - the cursor lands under itself, and `last_x_offset`, recorded
+    in those same columns, goes on meaning what it did upstream.
+    """
+
+    def get_location_above(self, location: tuple) -> tuple:
+        wrapped = self._wrapped_document
+
+        if self.is_first_wrapped_line(location):
+            return 0, 0
+
+        x_offset, y_offset = wrapped.location_to_offset(location)
+
+        return wrapped.offset_to_location(
+            Offset(max(x_offset, self.last_x_offset), y_offset - 1)
+        )
+
+    def get_location_below(self, location: tuple) -> tuple:
+        wrapped = self._wrapped_document
+
+        if self.is_last_wrapped_line(location):
+            # The end of the note, which is where the last row down goes
+            row = self._document.line_count - 1
+
+            return row, len(self._document[row])
+
+        x_offset, y_offset = wrapped.location_to_offset(location)
+
+        return wrapped.offset_to_location(
+            Offset(max(x_offset, self.last_x_offset), y_offset + 1)
+        )
+
+
 def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
     """
     The editor painted in the dooit theme rather than a TextArea default
@@ -805,14 +1110,50 @@ class NoteEditor(TextArea):
         super()._set_document(text, language)
 
         self.document = FoldedDocument(text)
-        self.wrapped_document = WrappedDocument(
+        self.wrapped_document = HangingDocument(
             self.document, tab_width=self.indent_width
         )
-        self.navigator = DocumentNavigator(self.wrapped_document)
+        self.navigator = HangingNavigator(self.wrapped_document)
 
         self._build_highlight_map()
         self._rewrap_and_refresh_virtual_size()
         self.move_cursor((0, 0))
+
+    def _render_line(self, y: int) -> Strip:
+        """
+        One row of the window, pushed in when it is the continuation of a line
+
+        The text is drawn upstairs exactly as it always was - the wrapping has
+        already cut the row short enough to leave room - and the indent is put
+        in front of it here, where it costs the note nothing: what is added is
+        blank columns on the page, not characters in the line, so no offset
+        anything else holds has to know about it.
+        """
+
+        strip = super()._render_line(y)
+        pad = self.wrapped_document.pad_at(y + self.scroll_offset.y)
+
+        if not pad:
+            return strip
+
+        gutter_width = self.gutter_width
+
+        if gutter_width:
+            gutter, body = strip.divide([gutter_width, strip.cell_length])
+        else:
+            gutter, body = None, strip
+
+        # The row is already painted to its full width, so the last thing on
+        # it is the blank the line was padded out with - and its background is
+        # what the indent has to wear to disappear into the row, the cursor
+        # line being lit a color of its own
+        segments = list(body)
+        trailing = segments[-1].style if segments else None
+        style = Style(bgcolor=trailing.bgcolor) if trailing else Style()
+
+        body = body.crop_pad(max(0, body.cell_length - pad), pad, 0, style)
+
+        return Strip.join([gutter, body]) if gutter else body
 
     def _stored_line(self, row: int) -> str:
         """

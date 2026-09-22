@@ -5,13 +5,16 @@ Notes: the window on a todo's note, and the pinned scratchpad
 from unittest.mock import patch
 
 from rich.cells import cell_len
+from textual.geometry import Offset
 
 from todooit.api import PinnedNote, Todo
 from todooit.api.theme import DooitThemeBase
+
 from todooit.ui.screens.note import (
     EMPH,
     EMPH_MARK,
     HEADER,
+    INDENT,
     LINK,
     MARKER,
     MODE_INSERT,
@@ -22,6 +25,8 @@ from todooit.ui.screens.note import (
     QUOTE_ITEM,
     RULE,
     RULE_SPAN,
+    FoldedDocument,
+    HangingDocument,
     NoteScreen,
     NoteScreenBase,
     build_theme,
@@ -1520,6 +1525,173 @@ async def test_pinned_note_via_m():
         assert screen.editor.text == "a thought with no task yet"
 
         await pilot.press("escape")
+        await pilot.pause()
+
+
+# --- a line too long for the window ---------------------------------------
+
+# Long enough to wrap two or three times over in any window a note is opened
+# in, so that what is asked below is asked of a continuation and not only of a
+# line that happened to run one word past the edge
+LONG_TEXT = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu "
+    "xi omicron pi rho sigma tau upsilon phi chi psi omega"
+)
+
+
+def wrapped(line: str, width: int = 40) -> HangingDocument:
+    """One line of a note, wrapped into a window `width` columns wide"""
+
+    return HangingDocument(FoldedDocument(line), width=width, tab_width=len(INDENT))
+
+
+def rows(document: HangingDocument) -> list:
+    """
+    Every row the one line of `document` is drawn across, each with the indent
+    it is drawn behind written out in front of it
+    """
+
+    return [
+        " " * document.hanging_pad(0, index) + section
+        for index, section in enumerate(document.get_sections(0))
+    ]
+
+
+async def test_a_wrapped_bullet_keeps_its_indent():
+    """
+    The bug this is all here for: an item long enough to wrap used to have its
+    second row drawn from the margin, which reads as a line out of the list
+    """
+
+    drawn = rows(wrapped("• " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(INDENT) and row[2] != " " for row in drawn[1:])
+
+
+async def test_a_nested_bullet_wraps_under_its_own_words():
+    line = INDENT * 2 + "◦ " + LONG_TEXT
+    drawn = rows(wrapped(line))
+
+    # Six columns: two levels of indent and the glyph with its space, which is
+    # exactly where the words of the first row start
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 6) and row[6] != " " for row in drawn[1:])
+
+
+async def test_a_wrapped_enumeration_keeps_its_indent():
+    drawn = rows(wrapped("1. " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 3) and row[3] != " " for row in drawn[1:])
+
+
+async def test_a_wrapped_quoted_bullet_stays_inside_its_block():
+    drawn = rows(wrapped(QUOTE_GLYPH + "• " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 4) and row[4] != " " for row in drawn[1:])
+
+
+async def test_an_indented_line_with_no_marker_keeps_its_indent_too():
+    drawn = rows(wrapped(INDENT + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(INDENT) and row[2] != " " for row in drawn[1:])
+
+
+async def test_a_line_at_the_margin_still_wraps_to_the_margin():
+    drawn = rows(wrapped(LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert not any(row.startswith(" ") for row in drawn)
+
+
+async def test_an_indented_row_still_fits_the_window():
+    """
+    The indent is taken out of the width the line is wrapped at, rather than
+    added to a row already as wide as the window
+    """
+
+    for line in ("• " + LONG_TEXT, INDENT * 2 + "◦ " + LONG_TEXT, "1. " + LONG_TEXT):
+        assert all(cell_len(row) <= 40 for row in rows(wrapped(line)))
+
+
+async def test_a_deep_item_in_a_narrow_window_gives_the_indent_up():
+    """
+    Past some depth there is more indent than window, and a column of text a
+    few characters wide is worse than a row that starts at the margin
+    """
+
+    document = wrapped(INDENT * 6 + "▪ " + LONG_TEXT, width=20)
+
+    assert document.get_offsets(0)
+    assert document.hanging_pad(0, 1) == 0
+
+
+async def test_a_column_of_a_wrapped_row_is_read_where_it_is_drawn():
+    """
+    What the cursor and the mouse are both mapped through: a column three in
+    from the words of the second row, which is five in from the window's edge
+    """
+
+    document = wrapped("• " + LONG_TEXT)
+    (break_at, *_) = document.get_offsets(0)
+
+    assert document.location_to_offset((0, break_at + 3)) == (5, 1)
+    assert document.offset_to_location(Offset(5, 1)) == (0, break_at + 3)
+
+
+async def test_a_wrapped_bullet_is_drawn_under_its_words():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        await pilot.pause()
+
+        assert editor.wrapped_document.get_offsets(0)
+
+        first, second = editor.render_line(0).text, editor.render_line(1).text
+
+        assert second.startswith(" " * 6)
+        assert second.strip()
+
+        # The row is padded, not shifted: nothing was pushed off the end of it
+        assert cell_len(second) == cell_len(first)
+        assert second.split() == rows(wrapped(editor.document[0], 79))[1].split()
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_cursor_keeps_its_column_into_a_wrapped_row():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        await pilot.pause()
+
+        editor.move_cursor((0, 20))
+        wrapped_document = editor.wrapped_document
+
+        assert wrapped_document.location_to_offset(editor.cursor_location) == (20, 0)
+
+        editor.action_cursor_down()
+        await pilot.pause()
+
+        # Down a row and nowhere else: the cursor is drawn in the column it
+        # was in, although the row under it starts six columns along
+        assert wrapped_document.location_to_offset(editor.cursor_location) == (20, 1)
+        assert editor.cursor_location[1] > 20
+
+        editor.action_cursor_up()
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 20)
+
+        await pilot.press("escape", "escape")
         await pilot.pause()
 
 
