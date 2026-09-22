@@ -178,6 +178,83 @@ async def test_normal_mode_answers_to_no_other_letter():
             assert screen.editor.text == "two words", key
 
 
+async def test_the_window_takes_most_of_the_screen():
+    """
+    A note is read in the window, so the window is most of what is on screen
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        width, height = pilot.app.size
+
+        assert screen.frame.outer_size.width == int(width * 0.8)
+        assert screen.frame.outer_size.height == int(height * 0.85)
+
+        # The hint under it is drawn to the same width, so the two line up
+        assert screen.hint.outer_size.width == screen.frame.outer_size.width
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_u_and_d_scroll_half_a_page():
+    """
+    vim's half-page keys, on a note too long to be read in one window
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("\n".join(f"line {n}" for n in range(200)))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert editor.mode == MODE_NORMAL
+        assert editor.cursor_location == (0, 0)
+
+        half = editor.half_page()
+        assert half > 1
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        # The view came with it, so the cursor is back on the row of the
+        # window it started on and the text under it is what changed
+        assert editor.cursor_location == (half, 0)
+        assert editor.scroll_offset.y == half
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert editor.cursor_location == (half * 2, 0)
+        assert editor.scroll_offset.y == half * 2
+
+        await pilot.press("u")
+        await pilot.pause()
+
+        assert editor.cursor_location == (half, 0)
+        assert editor.scroll_offset.y == half
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_u_and_d_are_letters_again_in_insert():
+    """The two keys are motions in NORMAL only; in INSERT they are typed"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("mud"))
+        await pilot.pause()
+
+        assert screen.editor.text == "mud"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_clear_note_asks_first():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -1659,7 +1736,10 @@ async def test_a_wrapped_bullet_is_drawn_under_its_words():
 
         # The row is padded, not shifted: nothing was pushed off the end of it
         assert cell_len(second) == cell_len(first)
-        assert second.split() == rows(wrapped(editor.document[0], 79))[1].split()
+        assert (
+            second.split()
+            == rows(wrapped(editor.document[0], editor.wrap_width))[1].split()
+        )
 
         await pilot.press("escape", "escape")
         await pilot.pause()

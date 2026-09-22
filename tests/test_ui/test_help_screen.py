@@ -95,3 +95,68 @@ async def test_hidden_keybinds_stay_out_of_the_help():
 
         # `?` itself is hidden: the key that opened the window is not news
         assert "?" not in labels
+
+
+async def test_the_help_stays_open_until_escape():
+    """
+    `?` opens a window that stays, the way the note and the finder do
+
+    It used to be a hold-to-show overlay that closed itself as soon as `?`
+    stopped repeating, which left nothing to scroll a listing taller than the
+    screen with: every key that would have moved it also ended it.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        assert isinstance(app.screen, HelpScreen)
+
+        # Nothing held down, and a scroll key pressed where the close timer
+        # used to be waiting
+        for _ in range(5):
+            await pilot.pause()
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MainScreen)
+
+
+async def test_help_scrolls_with_the_navigation_keys():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, HelpScreen)
+
+        # The listing is taller than the window it opens in; a test that
+        # scrolls a window with nothing under the fold proves nothing
+        assert screen.max_scroll_y > 0
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert screen.scroll_target_y > 0
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert screen.scroll_target_y == 0
+
+        await pilot.press("G")
+        await pilot.pause()
+        assert screen.scroll_target_y == screen.max_scroll_y
+
+        # One `g` on its own waits for the second rather than jumping
+        await pilot.press("g")
+        await pilot.pause()
+        assert screen.scroll_target_y == screen.max_scroll_y
+
+        await pilot.press("g")
+        await pilot.pause()
+        assert screen.scroll_target_y == 0

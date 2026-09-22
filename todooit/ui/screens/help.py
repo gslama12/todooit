@@ -3,7 +3,7 @@ from rich.console import Group, RenderableType
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-from textual.app import ComposeResult
+from textual.app import ComposeResult, events
 
 from todooit.ui.api.api_components.keys import KeyManager
 from .base import BaseScreen
@@ -142,17 +142,46 @@ class HelpScreen(BaseScreen):
         ("escape", "app.pop_screen", "Pop screen"),
     ]
 
+    # The listing is taller than the screen on anything but a big terminal, so
+    # it moves under the same navigation cluster as everything else: `k`/`l`
+    # up and down, `j`/`ö` left and right, with the arrows alongside them
+    SCROLLS = {
+        "k": "scroll_up",
+        "l": "scroll_down",
+        "j": "scroll_left",
+        "ö": "scroll_right",
+        "up": "scroll_up",
+        "down": "scroll_down",
+        "left": "scroll_left",
+        "right": "scroll_right",
+        "G": "scroll_end",
+    }
+
+    # Raised by the first `g` of a `gg` and by nothing else
+    _pending_g = False
+
     def compose(self) -> ComposeResult:
         yield DooitKeyTable(self.api.keys)
 
-    def key_down(self):
-        self.scroll_down()
+    def on_screen_resume(self) -> None:
+        self._pending_g = False
 
-    def key_up(self):
-        self.scroll_up()
+    def on_key(self, event: events.Key) -> None:
+        key = self.resolve_key(event)
 
-    def key_k(self):
-        self.scroll_up()
+        # Only the key straight after a `g` can be its second half, so the
+        # flag is read and dropped in one go
+        pending_g, self._pending_g = self._pending_g, False
 
-    def key_l(self):
-        self.scroll_down()
+        if key == "g":
+            if pending_g:
+                self.scroll_home()
+            else:
+                self._pending_g = True
+
+            event.stop()
+            return
+
+        if scroll := self.SCROLLS.get(key):
+            getattr(self, scroll)()
+            event.stop()

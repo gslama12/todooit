@@ -20,7 +20,6 @@ from todooit.ui.api import DooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.dooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
-from todooit.ui.screens import HelpScreen
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.ui.widgets.inputs.model_inputs import Recurrence
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
@@ -315,48 +314,6 @@ def binned_date_formatter(value: str, todo: Todo, api: DooitAPI) -> str:
     color = blend(theme.foreground1, theme.background1, COMPLETED_FADE)
 
     return f"[{color}]{BIN_DATE_ICON}{_strip_markup(value)}[/]"
-
-
-# Hold-to-show help
-
-
-# Terminals don't report key releases, so a held "?" is detected through the
-# terminal's own key auto-repeat: every repeat pushes the close back.
-#
-# The wait for the *first* repeat has to cover the OS repeat delay (Windows:
-# up to 1s), or the menu blinks shut before the hold is noticed. Once repeats
-# are streaming in (every ~30ms) a much shorter wait spots the release, so the
-# menu closes snappily the moment "?" is let go.
-HELP_FIRST_REPEAT_TIMEOUT = 1.0
-HELP_HOLD_TIMEOUT = 0.1
-
-_help_close_timer = None
-
-
-def _close_help(api: DooitAPI):
-    global _help_close_timer
-
-    _help_close_timer = None
-    if isinstance(api.app.screen, HelpScreen):
-        api.app.pop_screen()
-
-
-def _keep_help_open(api: DooitAPI, timeout: float = HELP_HOLD_TIMEOUT):
-    global _help_close_timer
-
-    if _help_close_timer is not None:
-        _help_close_timer.stop()
-
-    _help_close_timer = api.app.set_timer(timeout, lambda: _close_help(api))
-
-
-def show_help_while_held(api: DooitAPI):
-    api.show_help()
-    _keep_help_open(api, HELP_FIRST_REPEAT_TIMEOUT)
-
-
-# Each auto-repeat of "?" reaches the help screen itself, not the tree
-HelpScreen.key_question_mark = lambda self: _keep_help_open(self.api)
 
 
 # Project formatters
@@ -718,8 +675,8 @@ def key_setup(api: DooitAPI, _):
 
     api.keys.set(
         "?",
-        lambda: show_help_while_held(api),
-        description="Show the help screen (while held)",
+        api.show_help,
+        description="Show the help screen",
         group=VIEW,
         hidden=True,
     )

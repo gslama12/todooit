@@ -224,6 +224,14 @@ NORMAL_MOTIONS = {
 # letters is after
 INSERT_ENTRY = "i"
 
+# The two keys that move the note rather than the cursor, on vim's own letters
+# this time: `u` and `d` are what a reader's fingers already reach for, and
+# there is no dooit motion on either of them to get in the way. Bare, not
+# behind `ctrl`, because NORMAL here is a mode for reading and the plain
+# letters are free
+HALF_PAGE_UP = "u"
+HALF_PAGE_DOWN = "d"
+
 
 def indent_depth(indent: str) -> int:
     """
@@ -1527,6 +1535,10 @@ class NoteEditor(TextArea):
             self.enter_insert()
             return True
 
+        if key in (HALF_PAGE_UP, HALF_PAGE_DOWN):
+            self.scroll_half_page(key == HALF_PAGE_UP)
+            return True
+
         if key == "f":
             self.note_screen.pick_files()
             return True
@@ -1540,6 +1552,43 @@ class NoteEditor(TextArea):
             return True
 
         return False
+
+    def half_page(self) -> int:
+        """
+        How far `u` and `d` go: half the window, and never less than a line
+
+        Counted off the window rather than a fixed number, so the same key
+        moves the note by the same fraction of what can be seen whatever the
+        terminal is sized to.
+        """
+
+        return max(1, self.content_size.height // 2)
+
+    def scroll_half_page(self, up: bool) -> None:
+        """
+        Move the note half a window, the way vim's `ctrl+d`/`ctrl+u` do
+
+        Both halves of it: the view goes half a window, and the cursor goes
+        with it, so it comes to rest on the row of the window it started on
+        and the text under it is what changed. Scrolling the cursor alone
+        would leave the first press looking like nothing happened, since a
+        cursor half a window down is still a cursor in view.
+
+        The cursor is walked with `cursor_up`/`cursor_down` rather than jumped
+        by rows, because a wrapped line is several rows on the page and one
+        row in the document: stepping counts the same thing the eye does. The
+        view is then put where it belongs - `scroll_to` clamps it, so the end
+        of the note stops the page rather than the key doing nothing.
+        """
+
+        half = self.half_page()
+        step = self.action_cursor_up if up else self.action_cursor_down
+        target = self.scroll_offset.y + (-half if up else half)
+
+        for _ in range(half):
+            step()
+
+        self.scroll_to(y=target, animate=False)
 
     def _open_link_under_cursor(self) -> None:
         """
@@ -2126,12 +2175,12 @@ class NoteScreenBase(BaseScreen):
         align: center middle;
 
         & > NoteFrame {
-            width: 70%;
-            height: 60%;
+            width: 80%;
+            height: 85%;
         }
 
         & > #note-hint {
-            width: 70%;
+            width: 80%;
             padding: 0 2;
         }
     }
@@ -2145,7 +2194,7 @@ class NoteScreenBase(BaseScreen):
     # standing would only be noise
     HINTS = {
         MODE_NORMAL: (
-            "i insert    jklö move    o link    f files    "
+            "i insert    jklö move    ud half page    o link    f files    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
         # The marks are what is worth advertising here, since none of them is

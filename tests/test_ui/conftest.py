@@ -15,12 +15,11 @@ import pytest
 
 # Anything a test waits out in real seconds is a race it loses the moment the
 # suite runs in parallel and a worker is starved: the notification bar removes
-# itself a second after it appears, the help screen closes itself a second
-# after `?`, the note saves itself 0.4s after the last keypress. None of that
-# is what any test is checking — the tests that care about a flash patch
-# `flash_row` and read off the calls, and a note is stored outright when it
-# closes — so the app's own timers are pushed out past the life of any test
-# rather than being left to fire in the middle of one.
+# itself a second after it appears, the note saves itself 0.4s after the last
+# keypress. None of that is what any test is checking — the tests that care
+# about a flash patch `flash_row` and read off the calls, and a note is stored
+# outright when it closes — so the app's own timers are pushed out past the
+# life of any test rather than being left to fire in the middle of one.
 _FOREVER = 3600.0
 
 # Textual's own machinery (cursor blink, animation) is all well under this,
@@ -46,10 +45,10 @@ def _no_wall_clock_waits(monkeypatch):
         return wrapper
 
     # Patched on Dooit rather than on MessagePump so that only what the app
-    # itself schedules is stretched. This is also the only way to reach the
-    # help screen's timeouts: they live in default_config.py, which is exec'd
-    # into a fresh namespace on every boot, so patching that module's globals
-    # would be thrown away before the first key is pressed.
+    # itself schedules is stretched. It is also the only way to reach a timer
+    # set up in default_config.py, which is exec'd into a fresh namespace on
+    # every boot, so patching that module's globals would be thrown away
+    # before the first key is pressed.
     monkeypatch.setattr(Dooit, "set_interval", stretch(MessagePump.set_interval))
     monkeypatch.setattr(Dooit, "set_timer", stretch(MessagePump.set_timer))
 
