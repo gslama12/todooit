@@ -44,6 +44,36 @@ def add_note_column(engine: Engine):
         )
 
 
+def add_attachments_column(engine: Engine):
+    """
+    Add the `attachments` column to the tables written before it existed.
+
+    Same story as `add_scheduled_column`, twice over: both the todos and the
+    pinned note carry files now, and `create_all` never touches a table it
+    already found. What the column holds is one path per line, so a database
+    from before there were any grows an empty one - which is what "nothing
+    attached" is written as.
+    """
+
+    inspector = inspect(engine)
+
+    for table in ("todo", "pinnednote"):
+        if table not in inspector.get_table_names():
+            continue
+
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "attachments" in columns:
+            continue
+
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    f"ALTER TABLE {table} "
+                    "ADD COLUMN attachments TEXT NOT NULL DEFAULT ''"
+                )
+            )
+
+
 def add_completed_at_column(engine: Engine):
     """
     Add the `completed_at` column to a todo table written before it existed.

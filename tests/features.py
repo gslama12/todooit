@@ -24,6 +24,7 @@ FEATURE_BY_MODULE = {
     "test_hooks": "hooks",
     "test_quick_add": "quickadd",
     "test_links": "links",
+    "test_files": "notes",
     "test_date_parse": "dates",
     "test_holidays": "dates",
     "test_pinned_note": "notes",

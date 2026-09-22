@@ -3,7 +3,17 @@ from .css_manager import CssManager
 from .colors import blend
 from .day_names import DATE_FORMAT, WEEKDAY_NAMES, day_label
 from .holidays import holiday_name, holidays
-from .clipboard import copy_text, paste_text
+from .clipboard import copy_text, paste_files, paste_text
+from .files import (
+    Opened,
+    display_name,
+    file_icon,
+    looks_like_path,
+    open_path,
+    read_attachments,
+    resolve_path,
+    write_attachments,
+)
 from .links import (
     TITLE_MAX,
     Link,
@@ -28,7 +38,16 @@ __all__ = [
     "holiday_name",
     "holidays",
     "copy_text",
+    "paste_files",
     "paste_text",
+    "Opened",
+    "display_name",
+    "file_icon",
+    "looks_like_path",
+    "open_path",
+    "read_attachments",
+    "resolve_path",
+    "write_attachments",
     "TITLE_MAX",
     "Link",
     "find_links",

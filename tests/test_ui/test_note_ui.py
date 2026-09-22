@@ -28,6 +28,7 @@ from todooit.ui.screens.note import (
     scan_note,
 )
 from todooit.ui.screens.pinned_note import PinnedNoteScreen
+from todooit.utils import Opened
 from todooit.utils.links import fold_links
 from tests.test_ui.ui_base import (
     boot,
@@ -70,7 +71,7 @@ async def test_space_opens_the_note_window():
 
         # Titled by the todo, and opened ready to write: there is nothing in
         # an empty note to have opened it to read
-        assert screen.editor.border_title == "the todo"
+        assert screen.frame.border_title == "the todo"
         assert screen.editor.mode == MODE_INSERT
 
 
@@ -125,7 +126,7 @@ async def test_the_note_opens_on_what_it_holds():
         assert isinstance(screen, NoteScreen)
         assert screen.editor.text == "first draft"
 
-        await pilot.press("A")  # insert at the end of the line
+        await pilot.press("$", "i")  # to the end of the line, then INSERT
         await pilot.press(*list(" and more"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -147,6 +148,31 @@ async def test_normal_mode_letters_do_not_write():
         assert Todo.all()[0].note == ""
 
 
+async def test_normal_mode_answers_to_no_other_letter():
+    """
+    `i` is the only way into INSERT, and no letter outside the motions moves
+    the cursor: vim's `a`/`I`/`A` and its `w`/`b` are not keys here
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("two words"))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_NORMAL
+
+        for key in ("a", "I", "A", "w", "b"):
+            screen.editor.move_cursor((0, 0))
+            await pilot.press(key)
+            await pilot.pause()
+
+            assert screen.editor.mode == MODE_NORMAL, key
+            assert screen.editor.cursor_location == (0, 0), key
+            assert screen.editor.text == "two words", key
+
+
 async def test_clear_note_asks_first():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -156,12 +182,12 @@ async def test_clear_note_asks_first():
 
         await pilot.press("ctrl+d")
         await pilot.pause()
-        assert screen.awaiting_clear
+        assert screen.awaiting_answer
 
         # Anything but y leaves the note exactly where it is
         await pilot.press("n")
         await pilot.pause()
-        assert not screen.awaiting_clear
+        assert not screen.awaiting_answer
         assert screen.editor.text == "precious words"
 
         await pilot.press("ctrl+d")
@@ -190,6 +216,26 @@ async def test_note_marks_the_row():
         assert formatter.format_value(todo.note, todo).plain.strip() == ""
 
         todo.note = "something"
+        todo.save()
+
+        assert formatter.format_value(todo.note, todo).plain.strip() != ""
+
+
+async def test_attachment_alone_marks_the_row():
+    """A note that is nothing but a file still says so on the row"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "plain")
+
+        formatter = app.api.formatter.todos.note
+        todo = Todo.all()[0]
+
+        assert formatter.format_value(todo.note, todo).plain.strip() == ""
+
+        todo.attachments = "/tmp/report.pdf"
         todo.save()
 
         assert formatter.format_value(todo.note, todo).plain.strip() != ""
@@ -229,11 +275,19 @@ async def test_emph_marks_take_no_room_on_the_line():
 
 
 async def test_emph_is_drawn_in_its_own_color():
+    """
+    The words between the marks are what is lit, and the spans land on the
+    line as it is *drawn* - which is the line with the marks folded out of it
+    """
+
     line = "say " + EMPH_MARK + "this" + EMPH_MARK + " twice"
+    drawn, _ = fold_links(line)
     spans = list(scan_note([line]))[0]
 
+    assert drawn == "say this twice"
     assert (EMPH, "this") in [
-        (name, line.encode()[start:end].decode()) for start, end, name in spans
+        (name, drawn.encode()[start:end].decode())
+        for start, end, name in spans
     ]
 
 
@@ -326,14 +380,14 @@ async def test_typing_a_bullet_marker():
 
         # markdown's `- ` goes in, the bullet it stands for comes out
         await pilot.press(*list("- "))
-        assert screen.editor.text == "\u2022 "
+        assert screen.editor.text == "• "
 
         await pilot.press(*list("first"))
 
         # Enter carries it on, the way it carries a typed bullet on
         await pilot.press("enter")
         await pilot.press(*list("second"))
-        assert screen.editor.text == "\u2022 first\n\u2022 second"
+        assert screen.editor.text == "• first\n• second"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -370,17 +424,167 @@ async def test_a_star_pair_at_the_head_of_a_line_costs_no_column():
         )
         assert cell_len(screen.editor.text) == len("loud and clear")
 
-        # The words are what is emphasised, and the two marks over the top of
-        # them are the pair - drawn, and worth nothing on the page
+        # The words are what is emphasised and the marks are not drawn at all:
+        # they are folded off the page, so there is no span for them to wear
+        # and no column of the window for them to sit in
         text = screen.editor.text
+        drawn, _ = fold_links(text)
         spans = list(scan_note([text]))[0]
 
+        assert drawn == "loud and clear"
         assert [
-            (text.encode()[start:end].decode(), name) for start, end, name in spans
-        ] == [("loud", EMPH), (EMPH_MARK, MARKER), (EMPH_MARK, MARKER)]
+            (drawn.encode()[start:end].decode(), name)
+            for start, end, name in spans
+        ] == [("loud", EMPH)]
 
         await pilot.press("escape", "escape")
         await pilot.pause()
+
+
+async def test_an_emphasised_word_stays_emphasised_across_an_enter():
+    """
+    The bug: `enter` typed in front of an emphasised word un-emphasised it
+
+    The opening mark stood in a column of the page of its own, so the cursor
+    could come to rest between the mark and the word it opened - and the split
+    made there left the mark alone on the line above and the word below it
+    wearing half a pair. The marks are folded off the page now, so the column
+    in front of the word is in front of the mark as well, and the whole of the
+    pair moves down together.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("*loud* and clear"))
+        await pilot.press("home", "enter")
+        await pilot.pause()
+
+        assert screen.editor.text == (
+            "\n" + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
+        )
+
+        # And it is still drawn as emphasis, which is the half of it that a
+        # count of the marks would not catch
+        spans = list(scan_note(screen.editor.text.split("\n")))
+
+        assert EMPH in [name for _, _, name in spans[1]]
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_typing_in_front_of_an_emphasised_word_stays_out_of_it():
+    """
+    The other half of the same column: what is typed at the head of a phrase
+    goes in front of the mark, so the words carry on unemphasised
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("*loud* and clear"))
+        await pilot.press("home")
+        await pilot.press(*list("very "))
+        await pilot.pause()
+
+        assert screen.editor.text == (
+            "very " + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
+        )
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_cursor_never_stands_in_a_mark():
+    """
+    The bug: the cursor went invisible in front of an emphasised word
+
+    A mark is worth no columns to the terminal, so a cursor drawn over one was
+    a cursor drawn over nothing at all - and it stayed that way while the
+    letters went in, since the mark stayed where it was. Folded off the page,
+    there is no column left for it to hide in: every column the cursor can
+    reach is a column with a character of the drawn line in it.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+        await pilot.press("escape")
+
+        editor = screen.editor
+        drawn = editor.document[0]
+
+        assert EMPH_MARK not in drawn
+
+        await pilot.press("0")
+
+        for _ in range(len(drawn)):
+            _, column = editor.cursor_location
+
+            # Standing on a character of the page, or one past the last of
+            # them - and never on something drawn as nothing
+            assert column <= len(drawn)
+            assert column == len(drawn) or drawn[column] != EMPH_MARK
+
+            await pilot.press("ö")
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_a_note_with_emphasis_draws_no_zero_width_column():
+    """
+    The bug: the window's right-hand edge came apart on the lines that carried
+    emphasis
+
+    A mark is a character of the document worth no columns of the terminal,
+    and a window drawn one way and measured the other ends up with its border
+    and its scrollbar a column off on exactly those lines. Nothing zero-width
+    reaches the page any more, so every row of the screen is as many
+    characters wide as it is columns wide.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert EMPH_MARK in screen.editor.text
+
+        for strip in pilot.app.screen._compositor.render_strips():
+            drawn = "".join(segment.text for segment in strip)
+
+            assert cell_len(drawn) == len(drawn)
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_an_emphasised_word_deleted_leaves_no_mark_behind():
+    """
+    Deleting the words out from between a pair leaves two marks holding
+    nothing, which is markup no edit can ever finish. They go when the note is
+    written back rather than being carried around for good.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say *this* twice"))
+
+        # Back over the whole of the emphasised word: the first backspace
+        # takes the emphasis off, and the rest take the letters
+        await pilot.press(*["backspace"] * 11)
+        await pilot.press(*list("that twice"))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+        assert Todo.all()[0].note == "say that twice"
 
 
 async def test_stars_leaning_on_a_space_stay_stars():
@@ -449,7 +653,7 @@ async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
 
         await pilot.press("tab")
         await pilot.press(*list("- nested"))
-        assert screen.editor.text == "  \u25e6 nested"
+        assert screen.editor.text == "  ◦ nested"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -895,6 +1099,130 @@ async def test_tab_nests_a_bullet():
         assert Todo.all()[0].note == "• top\n• child"
 
 
+async def test_enter_on_an_empty_nested_bullet_steps_out_a_level():
+    """
+    The bug: `enter` on an empty nested item threw the marker away
+
+    Which is the right end for a list at its top level and the wrong one for a
+    branch of it: the way back up from a nested bullet was to press the key
+    and then type the marker again by hand. It walks out a level at a time
+    now, and the marker still goes on the `enter` pressed at the top, where
+    there is nothing left to climb to.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("- top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("child"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("grandchild"))
+
+        written = "• top\n  ◦ child\n    ▪ grandchild\n"
+
+        # Out of the deepest level, and the glyph comes back with it
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == written + "  ◦ "
+
+        await pilot.press("enter")
+        assert screen.editor.text == written + "• "
+
+        # And at the top the list ends the way it always did
+        await pilot.press("enter")
+        assert screen.editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_empty_nested_bullet_steps_out_inside_a_quote_too():
+    """A list written in a quote nests inside the bar, and unwinds inside it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- item"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("under"))
+
+        written = QUOTE_GLYPH + "• item\n" + QUOTE_GLYPH + "  ◦ under\n"
+
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+
+        # The bar is the last thing to go, as it always was
+        await pilot.press("enter")
+        assert screen.editor.text == written + QUOTE_GLYPH
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_at_the_words_steps_a_nested_bullet_out():
+    """
+    The bug: `backspace` at the head of a nested item ate the marker
+
+    Which is the wrong end of the list to end: an item under another one is a
+    branch, and the key that walks back up it has to leave it an item. It
+    steps out a level at a time now, words and all, and the marker only goes
+    at the top, where there is no level left to step back to.
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("- top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("child"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("grandchild"))
+
+        # Back to the head of the words, where the marker ends
+        screen.editor.move_cursor((2, 6))
+
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\n  ◦ grandchild"
+
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\n• grandchild"
+
+        # At the top the marker goes, and the words stay
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ child\ngrandchild"
+
+        # And with nothing in front of them a backspace is a backspace again
+        await pilot.press("backspace")
+        assert screen.editor.text == "• top\n  ◦ childgrandchild"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_steps_an_empty_nested_bullet_out_inside_a_quote():
+    """The same walk back up, with the bar left standing until the end"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("- item"))
+        await pilot.press("enter", "tab")
+
+        written = QUOTE_GLYPH + "• item\n"
+
+        await pilot.press("backspace")
+        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+
+        # The bar is the last thing to go, as it always was
+        await pilot.press("backspace")
+        assert screen.editor.text == written + QUOTE_GLYPH
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_enter_in_front_of_a_bullet_opens_a_line_above():
     """
     The bug: `enter` from the head of a bullet wrote the marker out twice
@@ -1153,8 +1481,9 @@ async def test_open_link_inside_the_note():
             await pilot.pause()
             assert opened == []
 
-            # Walk back onto the link and open it
-            await pilot.press("b", "b")  # word left, onto the url
+            # Walk back onto the link and open it: `see ` is four columns, so
+            # the fifth is the first of the folded address
+            await pilot.press("0", "ö", "ö", "ö", "ö")
             await pilot.press("o")
             await pilot.pause()
 
@@ -1173,7 +1502,7 @@ async def test_pinned_note_via_m():
 
         screen = app.screen
         assert isinstance(screen, PinnedNoteScreen)
-        assert screen.editor.border_title == "Pinned Note"
+        assert screen.frame.border_title == "Pinned Note"
 
         await pilot.press(*list("a thought with no task yet"))
         await pilot.press("escape", "escape")
@@ -1192,3 +1521,305 @@ async def test_pinned_note_via_m():
 
         await pilot.press("escape")
         await pilot.pause()
+
+
+# --- the files a note carries ---------------------------------------------
+
+
+async def attach(pilot, screen, *paths):
+    """Put `paths` on the clipboard and paste them into the open note"""
+
+    set_clipboard("\n".join(str(path) for path in paths))
+
+    await pilot.press("ctrl+v")
+    await pilot.pause()
+
+    return screen.files.paths
+
+
+def drawn(screen) -> str:
+    """The strip as the window paints it"""
+
+    return screen.files.render().plain
+
+
+async def test_a_pasted_path_is_attached_beside_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        report = tmp_path / "Q3 report.pdf"
+        report.write_text("x")
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        assert not screen.files.display
+
+        paths = await attach(pilot, screen, report)
+
+        # Beside the note, not in it: what was written stays exactly as it was
+        assert screen.editor.text == "some words"
+        assert paths == [report]
+        assert screen.files.display
+        assert "Q3 report.pdf" in drawn(screen)
+
+        # And it is the todo that carries it, one path per line
+        assert screen.todo.attachments == str(report)
+
+        # Attaching is not typing: the note is not edited and the cursor is
+        # left standing exactly where it was
+        assert screen.editor.mode == MODE_NORMAL
+        assert screen.editor.cursor_location == (0, len("some words"))
+
+
+async def test_what_is_attached_comes_back_with_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # Open it again: the strip is drawn from the database, not remembered
+        await pilot.press(" ")
+        await pilot.pause()
+
+        assert pilot.app.screen.files.paths == [tmp_path / "one.md"]
+
+
+async def test_the_same_file_twice_is_refused(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+        paths = await attach(pilot, screen, tmp_path / "one.md")
+
+        assert paths == [tmp_path / "one.md"]
+        assert "Already attached" in str(screen.hint.render())
+
+
+async def test_several_files_at_once(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        paths = await attach(pilot, screen, tmp_path / "a.md", tmp_path / "b.pdf")
+
+        assert paths == [tmp_path / "a.md", tmp_path / "b.pdf"]
+        assert "Attached 2 files" in str(screen.hint.render())
+
+
+async def test_a_copied_file_leaves_no_text_to_paste(tmp_path):
+    """The clipboard holds the file itself, so the desktop is asked for it"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        report = tmp_path / "copied.pdf"
+
+        await pilot.press("escape")
+        set_clipboard("")
+
+        with patch("todooit.ui.screens.note.paste_files", lambda: [str(report)]):
+            await pilot.press("ctrl+v")
+            await pilot.pause()
+
+        assert screen.files.paths == [report]
+
+
+async def test_a_pasted_sentence_is_still_a_sentence(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        set_clipboard("the file is in /mnt/c/data/notes.md")
+
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert screen.files.paths == []
+        assert "the file is in" in screen.editor.text
+
+
+async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        # Nothing attached: the key says so and the text keeps the keyboard
+        await pilot.press("f")
+        await pilot.pause()
+        assert not screen.picking_files
+        assert "Nothing attached" in str(screen.hint.render())
+
+        await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
+
+        await pilot.press("f")
+        await pilot.pause()
+        assert screen.picking_files
+        assert str(screen.hint.render()) == screen.FILES_HINT
+
+        # The motions the panes behind the window use, on a line of files
+        assert screen.files.picked == 1
+        await pilot.press("j")
+        await pilot.pause()
+        assert screen.files.picked == 0
+        await pilot.press("j")
+        await pilot.pause()
+        assert screen.files.picked == 0
+        await pilot.press("ö")
+        await pilot.pause()
+        assert screen.files.picked == 1
+
+        # Back to the text, with the cursor exactly where it was left
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not screen.picking_files
+        assert screen.editor.has_focus
+        assert screen.editor.cursor_location == (0, len("some words"))
+        assert str(screen.hint.render()) == screen.HINTS[MODE_NORMAL]
+
+
+async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md")
+
+        await pilot.press("f")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert pilot.app.screen is screen
+
+
+async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
+    async with run_pilot() as pilot:
+        opened = []
+        screen = await open_note(pilot)
+        report = tmp_path / "Q3 report.pdf"
+
+        with patch(
+            "todooit.ui.screens.note.open_path",
+            lambda path: opened.append(path) or Opened.OK,
+        ):
+            await pilot.press("escape")
+            await attach(pilot, screen, report)
+
+            await pilot.press("f", "enter")
+            await pilot.pause()
+
+            assert opened == [report]
+            assert "Opening Q3 report.pdf" in str(screen.hint.render())
+
+
+async def test_xx_detaches_the_file_that_is_picked_out(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
+
+        await pilot.press("f", "j")          # onto the first of the two
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert screen.files.paths == [tmp_path / "two.md"]
+        assert screen.todo.attachments == str(tmp_path / "two.md")
+        assert "Detached one.md" in str(screen.hint.render())
+
+        # The note itself never noticed
+        assert screen.editor.text == "some words"
+
+        # A single `x` is half a key and does nothing on its own
+        await pilot.press("x")
+        await pilot.pause()
+        assert screen.files.paths == [tmp_path / "two.md"]
+
+        # The last one out takes the strip off the page with it
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert screen.files.paths == []
+        assert not screen.files.display
+        assert not screen.picking_files
+
+
+async def test_the_strip_grows_a_row_rather_than_hiding_a_file(tmp_path):
+    """Everything attached is on the page, however many there are"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        names = [f"a file with a longish name {index}.md" for index in range(8)]
+
+        await pilot.press("escape")
+        await attach(pilot, screen, *(tmp_path / name for name in names))
+        await pilot.pause()
+
+        strip = screen.files
+
+        assert len(strip.rows) > 1
+        assert sorted(index for row in strip.rows for index in row) == list(range(8))
+        assert strip.size.height == len(strip.rows)
+
+        for name in names:
+            assert name in drawn(screen)
+
+        # Up and down walk the rows, and up off the top row is the way out
+        await pilot.press("f")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 1
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 2
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert strip.row_of(strip.picked) == len(strip.rows) - 1
+
+        for _ in range(len(strip.rows)):
+            await pilot.press("k")
+            await pilot.pause()
+
+        assert not screen.picking_files
+
+
+async def test_a_file_that_is_gone_is_offered_for_detaching(tmp_path):
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "moved away.md")
+
+        await pilot.press("f", "enter")
+        await pilot.pause()
+
+        assert screen.awaiting_answer
+        assert "is gone" in str(screen.hint.render())
+
+        await pilot.press("y")
+        await pilot.pause()
+
+        assert not screen.awaiting_answer
+        assert screen.files.paths == []
+
+
+async def test_the_pinned_note_carries_files_too(tmp_path):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        await pilot.press("m")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, PinnedNoteScreen)
+
+        await pilot.press("escape")
+        await attach(pilot, screen, tmp_path / "scratch.md")
+
+        assert PinnedNote.get_attachments() == str(tmp_path / "scratch.md")

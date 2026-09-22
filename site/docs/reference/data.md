@@ -38,8 +38,8 @@ without touching your real todos.
 
 SQLite through SQLAlchemy. The schema is created on first connect, and older
 databases are migrated in place on startup: columns that were added later
-(`scheduled`, `note`, `completed_at`, the agent flag, the Bin columns, project
-color) are bolted on when they are missing, and the indexes are laid after.
+(`scheduled`, `note`, `attachments`, `completed_at`, the agent flag, the Bin
+columns, project color) are bolted on when they are missing, and the indexes are laid after.
 
 ::: tip Two todooits on one database
 The app polls the database file's modification time once a second. A write

@@ -1,7 +1,12 @@
 import re
-from typing import Iterator, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 
+from pathlib import Path
+
+from rich.cells import cell_len
+from rich.markup import escape
 from rich.style import Style
+from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -9,22 +14,38 @@ from textual.timer import Timer
 from textual.document._document import Document, EditResult
 from textual.document._document_navigator import DocumentNavigator
 from textual.document._wrapped_document import WrappedDocument
+from textual.containers import Vertical
 from textual.widgets import Static, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from todooit.api import Todo
 from todooit.api.theme import DooitThemeBase
 from todooit.utils import (
+    Opened,
     blend,
     copy_text,
+    file_icon,
     find_links,
     fold_links,
     link_label,
+    looks_like_path,
+    open_path,
     open_url,
+    paste_files,
     paste_text,
+    read_attachments,
+    resolve_path,
+    write_attachments,
 )
 from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
-from todooit.utils.links import drawn_column, folded_link_at, stored_range
+from todooit.utils.links import (
+    EMPH_MARK,
+    drawn_column,
+    folded_emph,
+    folded_link_at,
+    mark_pairs,
+    stored_range,
+)
 
 from .base import BaseScreen
 
@@ -105,16 +126,18 @@ QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
 QUOTE_ITEM = "note-quote-item"
 
-# What emphasis is delimited by: a zero-width space either side of the words.
+# What emphasis is delimited by: a zero-width space either side of the words,
+# `EMPH_MARK`, which is named over in `utils/links.py` because that is where
+# the folding that takes it off the page lives.
 #
 # A heading needs nothing written on its own line to say it is one, because
 # what says so is the rule underneath it - a whole line of its own. Emphasis
 # is a phrase inside a line, so something in the line has to say where it
-# starts and stops, and a TextArea draws exactly the text it holds. The way
-# out is a character that is real to the document and worth no columns to the
-# terminal: the marks are there to be found, deleted and paired up, and take
-# up no more room on the page than the rule under a heading takes out of it
-EMPH_MARK = "\N{ZERO WIDTH SPACE}"
+# starts and stops. The way out is a character that is real to the note and
+# drawn as nothing at all: the marks are there to be found, deleted and paired
+# up, and are folded out of the page the same way the markup of a link is, so
+# that no column of the window is ever spent on one and no cursor ever stands
+# in one
 
 # Either mark. The `*` is what emphasis is *typed* with, being the pair of
 # characters markdown has always used for it, but a finished pair is swapped
@@ -166,20 +189,27 @@ MODE_INSERT = "INSERT"
 
 # The motions NORMAL mode answers to. The four movement keys are dooit's own
 # rather than vim's - `j`/`ö` step left and right, `k`/`l` up and down - so the
-# note is walked with the same fingers as the trees behind it
+# note is walked with the same fingers as the trees behind it.
+#
+# Only these, and no vim key beyond them: a letter that is not on this list
+# does nothing at all in NORMAL. Word motions were once here on `w` and `b`,
+# and the surprise of a letter moving the cursor was not worth the two hops
+# they saved
 NORMAL_MOTIONS = {
     "j": "cursor_left",
     "ö": "cursor_right",
     "k": "cursor_up",
     "l": "cursor_down",
-    "w": "cursor_word_right",
-    "b": "cursor_word_left",
     "0": "cursor_line_start",
     "$": "cursor_line_end",
 }
 
-# The keys that drop into INSERT, each landing the cursor somewhere different
-INSERT_ENTRIES = ("i", "a", "I", "A")
+# The one key that drops into INSERT, at the cursor. vim's other three ways in
+# - `a` past the cursor, `I` and `A` at either end of the line - are not here:
+# a key that flips the mode out from under the fingers is a key that turns the
+# next letter typed into text in the note, which is not what a reader pressing
+# letters is after
+INSERT_ENTRY = "i"
 
 
 def indent_depth(indent: str) -> int:
@@ -292,10 +322,48 @@ def split_indent(line: str) -> Tuple[str, str, str]:
     return line[: len(line) - len(stripped)], "", stripped
 
 
+def tidy_marks(text: str) -> str:
+    """
+    `text` with the emphasis marks that close nothing taken out of it
+
+    A mark is only ever written as half of a finished pair, so a mark with no
+    partner is a pair an edit cut in two - a line split down the middle of an
+    emphasised phrase, or a phrase deleted out from between its own marks.
+    What is left is drawn as nothing, stands in no column and can never be
+    paired up again: it is not markup any more, only something the note would
+    go on carrying.
+
+    Done on the way out rather than on every keystroke. Nothing upstairs has
+    to care that an orphan is there - the fold keeps it off the page and out
+    of the cursor's way either way - so the tidying belongs where the note is
+    written back, which is also where a note written by an older version of
+    all this gets its orphans swept up.
+    """
+
+    if EMPH_MARK not in text:
+        return text
+
+    lines = []
+
+    for line in text.split("\n"):
+        keep = {column for pair in mark_pairs(line) for column in pair}
+
+        lines.append(
+            "".join(
+                character
+                for column, character in enumerate(line)
+                if character != EMPH_MARK or column in keep
+            )
+        )
+
+    return "\n".join(lines)
+
+
 def scan_markup(
     line: str,
     following: str = "",
     links: Optional[list] = None,
+    emph: Optional[list] = None,
 ) -> Iterator[Tuple[int, int, str]]:
     """
     The styled spans of one line, measured in UTF-8 bytes
@@ -309,13 +377,17 @@ def scan_markup(
 
     `line` is the line as it is *drawn*, which is not always the line as it is
     stored - a link folded down to its name is shorter on the page than in the
-    note. `links` is where the links ended up in what was drawn; handed
-    nothing, the scan reads them off the line itself, which is right for any
-    line that is drawn as it stands.
+    note, and an emphasised phrase has lost the marks either side of it.
+    `links` and `emph` are where the two of them ended up in what was drawn;
+    handed nothing, the scan reads what it can off the line itself, which is
+    right for any line that is drawn as it stands.
     """
 
     def byte(index: int) -> int:
         return len(line[:index].encode("utf-8"))
+
+    links = links if links is not None else find_links(line)
+    emph = emph if emph is not None else folded_emph(line)
 
     if RULE_RE.match(line):
         yield 0, byte(len(line)), RULE_SPAN
@@ -360,11 +432,23 @@ def scan_markup(
     for link in links:
         yield byte(link.start), byte(link.end), LINK
 
+    # Emphasis written the way the note writes it: the marks are already off
+    # the page, so what is left to do is light the words that were between
+    # them. There is nothing to draw a marker over - that is the whole point
+    # of the marks costing no columns
+    for start, end in emph:
+        yield byte(start), byte(end), EMPH
+
+    # And emphasis written with stars, which is how it arrives from somewhere
+    # that speaks markdown and how it looks on the way to being typed: the
+    # stars are real characters on the page, so the words go first and the two
+    # of them over the top, the spans being applied in the order handed over
     for match in EMPH_RE.finditer(line):
+        if match.group("star") is None:
+            continue
+
         start, end = match.span()
 
-        # The words first and the markers over the top: the spans are applied
-        # in the order they are handed over
         yield byte(start + 1), byte(end - 1), EMPH
         yield byte(start), byte(start + 1), MARKER
         yield byte(end - 1), byte(end), MARKER
@@ -385,22 +469,43 @@ def scan_note(lines) -> Iterator[list]:
 
     drawn = []
     found = []
+    lit = []
 
     for line in lines:
         text, links = fold_links(line)
 
         drawn.append(text)
         found.append(links)
+        lit.append(folded_emph(line))
 
     for row, line in enumerate(drawn):
         following = drawn[row + 1] if row + 1 < len(drawn) else ""
 
-        yield list(scan_markup(line, following, found[row]))
+        yield list(scan_markup(line, following, found[row], lit[row]))
 
 
 # What a name for a link may not hold, since the brackets are what say where
 # the name stops
 _NO_BRACKETS = str.maketrans("", "", "[]")
+
+
+def pasted_paths(text: str) -> list:
+    """
+    The paths a paste is, when the whole of it is nothing else; [] otherwise
+
+    One per line, which is how a file manager writes a copied path out and how
+    several of them arrive at once. A single line that is not a path is text
+    and goes in as text, and so is a paragraph with a path inside it: the
+    whole of what was pasted has to be paths for the paste to mean files.
+    """
+
+    lines = [line.strip().strip("\"'").strip() for line in text.splitlines()]
+    lines = [line for line in lines if line]
+
+    if not lines or not all(looks_like_path(line) for line in lines):
+        return []
+
+    return lines
 
 
 def _pasted_link(text: str):
@@ -628,6 +733,12 @@ class NoteEditor(TextArea):
     working inside one: a list written in a quote is a list, nested by the same
     `tab`, and drawn in the quote's own green rather than the list palette,
     because in there the color is already saying something.
+
+    Files are the one thing here that is never typed. A file copied in a file
+    manager - or a path copied as text - is attached by `ctrl+v` and lands in
+    the strip along the foot of the window rather than at the cursor, and `f`
+    hands the keyboard down to it. Nothing about them is in the text: what is
+    written here is what the task says, and what is down there is what it has.
     """
 
     BINDINGS = [
@@ -736,49 +847,62 @@ class NoteEditor(TextArea):
         for row, spans in enumerate(scan_note(lines)):
             highlights[row].extend(spans)
 
-    def _emph_pair(self, row: int, column: int) -> Optional[Tuple[int, int]]:
+    def _emph_ending_at(
+        self, row: int, column: int
+    ) -> Optional[Tuple[int, int]]:
         """
-        The columns of the two marks the one left of the cursor is half of, or
-        None when there is no mark of a pair there
+        The columns an emphasised phrase is drawn between, when the cursor is
+        standing at the end of one; None anywhere else
 
-        Read off the same scan that draws the emphasis, so the pair taken out
-        is exactly the pair that was being drawn.
+        Read off the same fold that draws the emphasis, so the phrase taken
+        out is exactly the phrase that was being drawn.
+
+        The end and nowhere else, because the end is where a backspace is
+        aimed: the marks cannot be seen, so the key that comes off them has to
+        be the one already being pressed to delete the last letter.
         """
 
-        line = self.document[row]
-
-        if not column or line[column - 1] != EMPH_MARK:
-            return None
-
-        for match in EMPH_RE.finditer(line):
-            if match.group("emph") is None:
-                continue
-
-            start, end = match.span()
-
-            if column - 1 in (start, end - 1):
-                return start, end - 1
+        for start, end in folded_emph(self._stored_line(row)):
+            if column == end:
+                return start, end
 
         return None
 
     def _take_emph_off(self, row: int, column: int, pair: Tuple[int, int]) -> None:
         """
-        Take both marks of `pair` out, and leave the cursor in the words
+        Take both marks of `pair` out, and leave the words where they were
 
-        The closing one first: taking the opening one out would move it.
+        Written as one rewrite of the phrase rather than two deletions of a
+        mark: the marks are folded off the page, so there is no column of the
+        page to delete them at. What there is, is a run of the page whose
+        stored form carries them - and putting the drawn words back over that
+        run is exactly the emphasis coming off.
         """
 
-        opening, closing = pair
+        start, end = pair
 
         self.replace(
-            "", (row, closing), (row, closing + 1), maintain_selection_offset=False
-        )
-        self.replace(
-            "", (row, opening), (row, opening + 1), maintain_selection_offset=False
+            self.document[row][start:end],
+            (row, start),
+            (row, end),
+            maintain_selection_offset=False,
         )
 
-        # One mark went from in front of the cursor, or both did
-        self.move_cursor((row, column - (2 if column - 1 == closing else 1)))
+        self.move_cursor((row, end))
+
+    def _nested_item(self, row: int) -> bool:
+        """
+        Whether the list item on `row` has a level above it to step back out to
+
+        Read off the indent rather than off the glyph, since the indent is
+        what a level *is*; the glyph only says so as well. A quoted item
+        nests inside its bar, so what is measured is what comes after it.
+        """
+
+        _, body = split_quote(self.document[row])
+        indent, bullet, _ = split_indent(body)
+
+        return bool(bullet) and indent_depth(indent) > 0
 
     def _set_depth(self, row: int, levels: int) -> None:
         """
@@ -941,6 +1065,18 @@ class NoteEditor(TextArea):
 
         text = paste_text(self.app)
 
+        # A file copied in a file manager puts nothing on the text clipboard
+        # at all, so an empty one is not an empty clipboard - it is the one
+        # case worth asking the desktop a second question about
+        paths = pasted_paths(text) if text else paste_files()
+
+        if paths:
+            # Not into the text: a file is attached to the note rather than
+            # written into it, so the strip is where a pasted one lands and
+            # the note goes on saying exactly what it said
+            self.note_screen.attach(paths)
+            return
+
         if not text:
             return
 
@@ -1046,8 +1182,12 @@ class NoteEditor(TextArea):
             self.move_cursor(self.document.end)
             return True
 
-        if key in INSERT_ENTRIES:
-            self._enter_insert_at(key)
+        if key == INSERT_ENTRY:
+            self.enter_insert()
+            return True
+
+        if key == "f":
+            self.note_screen.pick_files()
             return True
 
         if key == "o":
@@ -1078,27 +1218,6 @@ class NoteEditor(TextArea):
 
         self.note_screen.open_link(link.url)
 
-    def _enter_insert_at(self, key: str) -> None:
-        """
-        vim's four ways in: at the cursor, past it, or at either end of the line
-        """
-
-        row, column = self.cursor_location
-        line = self.document[row]
-
-        if key == "a":
-            self.move_cursor((row, min(column + 1, len(line))))
-
-        elif key == "I":
-            # Past the marker rather than in front of it: on a bullet or a
-            # quoted line the text starts where the glyph ends
-            self.move_cursor((row, len(line_prefix(line))))
-
-        elif key == "A":
-            self.move_cursor((row, len(line)))
-
-        self.enter_insert()
-
     def _open_line(self) -> None:
         """
         Start a line under this one and type on it
@@ -1127,13 +1246,13 @@ class NoteEditor(TextArea):
         line carries over from the one above it
         """
 
-        if self.note_screen.awaiting_clear:
+        if self.note_screen.awaiting_answer:
             # The editor keeps the keyboard while the question stands, so the
             # answer arrives here rather than at a binding on the screen - and
             # is swallowed either way, so a `y` is an answer and not a letter
             event.stop()
             event.prevent_default()
-            self.note_screen.answer_clear(event.key)
+            self.note_screen.answer(event.key)
             return
 
         # The character rather than the key name, so that a keyboard where the
@@ -1205,12 +1324,22 @@ class NoteEditor(TextArea):
                     self.move_cursor((row + 1, column))
                 elif line[len(prefix) :].strip():
                     self.insert("\n" + prefix, maintain_selection_offset=False)
+                elif self._nested_item(row):
+                    # An empty item nested under another is not the end of the
+                    # list but the end of the branch: `enter` walks it back out
+                    # one level, which is the way back up a list and the thing
+                    # the key is reached for far more often than throwing the
+                    # item away. Unwinding the levels one at a time means the
+                    # marker still goes in the end - on the `enter` pressed at
+                    # the top level, where there is nothing left to climb to
+                    self._set_depth(row, -1)
                 else:
-                    # An empty item is where the list ends: the marker goes,
-                    # rather than another one arriving underneath it. It goes
-                    # one marker at a time, so an empty bullet inside a quote
-                    # leaves the bar standing and the quote ends on the next
-                    # `enter`, the way an unquoted one ends on the first
+                    # An empty item at the top level is where the list ends:
+                    # the marker goes, rather than another one arriving
+                    # underneath it. It goes one marker at a time, so an empty
+                    # bullet inside a quote leaves the bar standing and the
+                    # quote ends on the next `enter`, the way an unquoted one
+                    # ends on the first
                     self.replace("", (row, glyph_at), (row, len(line)))
                     self.move_cursor((row, glyph_at))
 
@@ -1218,17 +1347,52 @@ class NoteEditor(TextArea):
 
         if event.key == "backspace" and self.selection.is_empty:
             row, column = self.cursor_location
-            pair = self._emph_pair(row, column)
+            pair = self._emph_ending_at(row, column)
 
             if pair is not None:
-                # The marks cannot be seen, so a backspace that took only the
-                # one it landed on would look like nothing happening at all
-                # and leave the other behind for good. Both go, and what that
-                # looks like is the emphasis coming off - which is the one
-                # thing anyone reaching for backspace next to a mark can mean
+                # Standing just past an emphasised phrase, where the mark that
+                # closes it is - and where a backspace would otherwise reach
+                # over it to the last letter of the word, leaving the phrase a
+                # letter shorter and still emphasised. The marks cannot be
+                # seen, so the key has to mean the thing that can: the
+                # emphasis comes off, and the words stay
                 event.stop()
                 event.prevent_default()
                 self._take_emph_off(row, column, pair)
+                return
+
+            line = self.document[row]
+            _, body = split_quote(line)
+            _, bullet, _ = split_indent(body)
+
+            if bullet and 0 < column <= len(line_prefix(line)):
+                # Anywhere in the marker or the indent in front of it - which
+                # is where a backspace would otherwise bite a glyph in half or
+                # take a level's worth of indent one space at a time. What the
+                # key means here is the same thing `enter` on an empty item
+                # means: a level back out, one at a time, with the words coming
+                # along - and the marker itself only going at the top, where
+                # there is no level left to step back to
+                event.stop()
+                event.prevent_default()
+
+                if self._nested_item(row):
+                    self._set_depth(row, -1)
+                else:
+                    # The marker goes and the words stay where they start: a
+                    # quoted item leaves its bar standing, so the bullet comes
+                    # off first and the quote ends on the next backspace, the
+                    # way it ends on the next `enter`
+                    glyph_at = marker_start(line)
+
+                    self.replace(
+                        "",
+                        (row, glyph_at),
+                        (row, len(line_prefix(line))),
+                        maintain_selection_offset=False,
+                    )
+                    self.move_cursor((row, glyph_at))
+
                 return
 
         if event.character == EMPH_STAR and self.selection.is_empty:
@@ -1244,16 +1408,23 @@ class NoteEditor(TextArea):
                 event.stop()
                 event.prevent_default()
 
+                # Written as one rewrite of the whole `*phrase`, because the
+                # opening star is a column of the page and the mark that
+                # replaces it is not: swapping them one at a time would leave
+                # the second half of the edit aimed a column past where the
+                # page had just moved to
+                phrase = self.document[row][opening + 1 : column]
+
                 self.replace(
-                    EMPH_MARK,
+                    EMPH_MARK + phrase + EMPH_MARK,
                     (row, opening),
-                    (row, opening + 1),
+                    (row, column),
                     maintain_selection_offset=False,
                 )
-                self.insert(
-                    EMPH_MARK, (row, column), maintain_selection_offset=False
-                )
-                self.move_cursor((row, column + 1))
+
+                # Past the closing mark, which is where the star was typed and
+                # where the next letter belongs: outside the emphasis
+                self.move_cursor((row, opening + len(phrase)))
                 return
 
         if event.character == DASHES[0]:
@@ -1322,6 +1493,283 @@ class NoteEditor(TextArea):
         await super()._on_key(event)
 
 
+# What stands between two files in the strip. One column, because each file is
+# already drawn with a space either side of it - the room its background needs
+# to read as a thing picked up rather than as words that have gone dark
+FILE_GAP = " "
+
+# Nothing about the strip counts, hides or shortens: every file attached to a
+# note is drawn on it, and when they stop fitting on a line the strip grows
+# another one and goes on. A file nobody can see is a file nobody remembers is
+# there, which is the whole of what an attachment is for
+
+
+class AttachmentStrip(Static):
+    """
+    The files a note carries, along the foot of the window inside its frame
+
+    Not part of the note. Nothing here is text that can be typed over,
+    indented or deleted by accident: the note is what the task *says* and this
+    is what it *has*, and the two are kept apart on the page because they are
+    kept apart in the database.
+
+    It takes the keyboard while files are being picked through, which is what
+    makes the cursor in the text go quiet - two cursors on one window, one of
+    them live and one of them left behind, is the thing this avoids - and
+    hands it straight back on `escape`.
+    """
+
+    DEFAULT_CSS = """
+    AttachmentStrip {
+        height: auto;
+        display: none;
+    }
+    """
+
+    can_focus = True
+
+    def __init__(self) -> None:
+        super().__init__(id="note-files")
+
+        self.paths: List[Path] = []
+        self.picked = 0
+
+        # Which files are drawn on which row, worked out from how wide the
+        # window is; one empty row until there is something to put on it
+        self.rows: List[List[int]] = [[]]
+
+    @property
+    def has_the_keyboard(self) -> bool:
+        """
+        Whether the keys are landing here rather than up in the text
+
+        Read off the screen rather than off `has_focus`, which is a reactive
+        and is still catching up while the `Focus` event that sets it is being
+        handled - which is exactly when this is asked
+        """
+
+        screen = self.note_screen
+
+        return screen is not None and screen.focused is self
+
+    @property
+    def current(self) -> Optional[Path]:
+        """
+        The file the strip is standing on, if it is standing on one
+        """
+
+        if not self.paths or not 0 <= self.picked < len(self.paths):
+            return None
+
+        return self.paths[self.picked]
+
+    def show(self, paths, theme: DooitThemeBase) -> None:
+        """
+        Draw the strip, and take it off the page when there is nothing on it
+        """
+
+        self.paths = list(paths)
+        self.picked = max(0, min(self.picked, len(self.paths) - 1))
+        self.display = bool(self.paths)
+
+        if self.paths:
+            self.rows = self._rows()
+            self.update(self._drawn(theme))
+
+    def _label(self, path: Path) -> str:
+        """
+        One file as it is written on the page: what it is, and what it is
+        called, with a space either side for the background to sit in
+        """
+
+        return f" {file_icon(path.name)} {path.name} "
+
+    def _rows(self) -> List[List[int]]:
+        """
+        The files dealt out into the rows they are drawn on
+
+        As many as fit on a line, then the next line, for as many lines as it
+        takes. Nothing is ever left off: the strip grows up into the note
+        instead. The one thing that is ever shortened is a name too long for a
+        line of its own, and only as far as the line - the file is still
+        listed, and it is still the one the keys open.
+        """
+
+        room = self.size.width or 0
+        rows: List[List[int]] = [[]]
+        used = 0
+
+        for index, path in enumerate(self.paths):
+            width = cell_len(self._label(path))
+            gap = cell_len(FILE_GAP) if rows[-1] else 0
+
+            if room and rows[-1] and used + gap + width > room:
+                rows.append([])
+                used = 0
+                gap = 0
+
+            rows[-1].append(index)
+            used += gap + width
+
+        return rows
+
+    def _drawn(self, theme: DooitThemeBase) -> Text:
+        """
+        The strip as it is painted, row by row, the picked one lit
+
+        Quiet by default and quieter still when the keyboard is elsewhere: a
+        strip that is not being picked through is a caption under the note,
+        and a caption that shouts is a caption in the way.
+        """
+
+        quiet = Style(color=blend(theme.foreground3, theme.background1, 0.25))
+        icon = Style(color=blend(theme.secondary, theme.background1, 0.35))
+        lit = Style(color=theme.primary, bgcolor=theme.background3, bold=True)
+
+        drawn = Text(no_wrap=True, overflow="ellipsis")
+
+        for row, indexes in enumerate(self.rows):
+            if row:
+                drawn.append("\n")
+
+            for place, index in enumerate(indexes):
+                chip = Text(self._label(self.paths[index]))
+
+                if self.has_the_keyboard and index == self.picked:
+                    chip.stylize(lit)
+                else:
+                    chip.stylize(quiet)
+                    chip.stylize(icon, 0, 3)
+
+                if place:
+                    drawn.append(FILE_GAP)
+
+                drawn.append_text(chip)
+
+        return drawn
+
+    def row_of(self, index: int) -> int:
+        """
+        Which row a file is drawn on
+        """
+
+        for row, indexes in enumerate(self.rows):
+            if index in indexes:
+                return row
+
+        return 0
+
+    def step_row(self, step: int) -> bool:
+        """
+        Move to the file above or below this one; False when there is none
+
+        The same place along the row, as near as the row below has one - which
+        is what moving down a list of things does everywhere else.
+        """
+
+        row = self.row_of(self.picked)
+        place = self.rows[row].index(self.picked)
+        target = row + step
+
+        if not 0 <= target < len(self.rows):
+            return False
+
+        indexes = self.rows[target]
+        self.picked = indexes[min(place, len(indexes) - 1)]
+
+        return True
+
+    def on_resize(self) -> None:
+        """
+        A narrower window deals the same files out over more rows
+        """
+
+        self.refresh_strip()
+
+    def on_focus(self) -> None:
+        self.keyboard_moved()
+
+    def on_blur(self) -> None:
+        self.keyboard_moved()
+
+    def keyboard_moved(self) -> None:
+        """
+        Redraw, and have the window say what the keys down here do
+
+        Hung off the focus events rather than off whatever asked for the
+        focus, because asking is not the same as having it: the window says
+        what it is doing once it is doing it.
+        """
+
+        screen = self.note_screen
+
+        if screen is None:
+            return
+
+        self.refresh_strip()
+        screen.mode_changed()
+
+    @property
+    def note_screen(self) -> Optional["NoteScreenBase"]:
+        """
+        The window this is in, or None on the way off the page
+        """
+
+        try:
+            screen = self.screen
+        except Exception:
+            return None
+
+        return screen if isinstance(screen, NoteScreenBase) else None
+
+    def refresh_strip(self) -> None:
+        screen = self.note_screen
+
+        if screen is not None:
+            self.show(self.paths, screen.api.vars.theme)
+
+    async def _on_key(self, event: events.Key) -> None:
+        """
+        The keys of the strip, which are the keys a list of things answers to
+
+        Everything is swallowed rather than let past: while the strip has the
+        keyboard, a letter is a key here or it is nothing at all - the note
+        underneath is being read, not typed in.
+        """
+
+        event.stop()
+        event.prevent_default()
+
+        screen = self.screen
+        assert isinstance(screen, NoteScreenBase)
+
+        if screen.awaiting_answer:
+            screen.answer(event.key)
+            return
+
+        screen.file_key(screen.resolve_key(event))
+
+
+class NoteFrame(Vertical):
+    """
+    The window itself: the text, and the files along the bottom of it
+
+    The border, the title and the mode chip are drawn here rather than on the
+    editor, because there are two things inside the frame now and both of them
+    belong to the note. What that buys is that the strip is *inside* the
+    window: a file picked out is lit on the note's own background, where the
+    eye is already looking, rather than on a patch of the screen behind it.
+    """
+
+    DEFAULT_CSS = """
+    NoteFrame {
+        & > NoteEditor {
+            height: 1fr;
+        }
+    }
+    """
+
+
 class NoteScreenBase(BaseScreen):
     """
     A note in a window over the whole screen
@@ -1336,7 +1784,7 @@ class NoteScreenBase(BaseScreen):
     NoteScreenBase {
         align: center middle;
 
-        & > NoteEditor {
+        & > NoteFrame {
             width: 70%;
             height: 60%;
         }
@@ -1356,7 +1804,7 @@ class NoteScreenBase(BaseScreen):
     # standing would only be noise
     HINTS = {
         MODE_NORMAL: (
-            "i insert    jklö move    o link    gg/G ends    "
+            "i insert    jklö move    o link    f files    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
         # The marks are what is worth advertising here, since none of them is
@@ -1374,15 +1822,29 @@ class NoteScreenBase(BaseScreen):
         ),
     }
 
+    # And the line for the strip, which is a third thing the window can be
+    # doing: the keys down there are not the keys up in the text
+    FILES_HINT = "jö/kl pick    enter open    xx detach    esc back to the note"
+
     # Worded and escaped the way the confirm bar words a deletion elsewhere in
     # dooit, so the answer is the one the user already knows
     CLEAR_PROMPT = r"Clear the whole note? \[y/N]"
+
+    # The other thing a note has to ask about. A file that has been moved or
+    # thrown away is an entry that will never open again, and the moment that
+    # is found out is the moment worth offering to tidy it
+    GONE_PROMPT = r"{name} is gone. Detach it? \[y/N]"
 
     def __init__(self) -> None:
         super().__init__()
         self._save_timer: Optional[Timer] = None
         self._report_timer: Optional[Timer] = None
-        self._awaiting_clear = False
+
+        # What a `y` would do, and the whole of what says a question is up
+        self._question: Optional[Callable[[], None]] = None
+
+        # Raised by the first `x` of an `xx` down in the strip
+        self._pending_x = False
 
     @property
     def title_text(self) -> str:
@@ -1411,6 +1873,10 @@ class NoteScreenBase(BaseScreen):
         raise NotImplementedError  # pragma: no cover
 
     @property
+    def frame(self) -> NoteFrame:
+        return self.query_one(NoteFrame)
+
+    @property
     def editor(self) -> NoteEditor:
         return self.query_one(NoteEditor)
 
@@ -1419,20 +1885,50 @@ class NoteScreenBase(BaseScreen):
         return self.query_one("#note-hint", Static)
 
     @property
-    def awaiting_clear(self) -> bool:
-        return self._awaiting_clear
+    def awaiting_answer(self) -> bool:
+        return self._question is not None
+
+    def load_attachments(self) -> str:
+        """
+        The files this note carries, as they are stored: one path per line
+        """
+
+        raise NotImplementedError  # pragma: no cover
+
+    def store_attachments(self, text: str) -> None:
+        """
+        Write them back. Unlike the text, this is not on a debounce: attaching
+        and detaching are whole gestures rather than a stream of keystrokes
+        """
+
+        raise NotImplementedError  # pragma: no cover
+
+    @property
+    def files(self) -> AttachmentStrip:
+        return self.query_one(AttachmentStrip)
+
+    @property
+    def picking_files(self) -> bool:
+        return self.files.has_the_keyboard
 
     def compose(self) -> ComposeResult:
         editor = NoteEditor(self.load_note())
-        editor.border_title = self.title_text
 
-        yield editor
+        frame = NoteFrame()
+        frame.border_title = self.title_text
+
+        with frame:
+            yield editor
+            yield AttachmentStrip()
+
         yield Static(self.HINTS[editor.mode], id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
         editor.register_theme(build_theme(self.api.vars.theme))
         editor.theme = THEME_NAME
+
+        self.files.show(read_attachments(self.load_attachments()), self.api.vars.theme)
 
         # The window takes the keyboard, in whichever of the two modes the
         # editor picked out of the text it was handed
@@ -1447,13 +1943,17 @@ class NoteScreenBase(BaseScreen):
 
         mode = self.editor.mode
 
-        self.editor.border_subtitle = f" {mode} "
-        self.editor.set_class(mode == MODE_INSERT, "-insert")
+        frame = self.frame
+
+        frame.border_subtitle = f" {mode} "
+        frame.set_class(mode == MODE_INSERT, "-insert")
 
         # A question standing in the hint line outranks the hints themselves;
         # answering it puts the right ones back
-        if not self._awaiting_clear:
-            self.hint.update(self.HINTS[mode])
+        if not self.awaiting_answer:
+            self.hint.update(
+                self.FILES_HINT if self.picking_files else self.HINTS[mode]
+            )
 
     def report(self, message: str) -> None:
         """
@@ -1484,6 +1984,158 @@ class NoteScreenBase(BaseScreen):
         else:
             self.report("Found no browser to open the link with")
 
+    # ------------------------------------------------------------------
+    # ------------------------- The files ------------------------------
+    # ------------------------------------------------------------------
+
+    def attach(self, paths) -> None:
+        """
+        Put files in the strip, and say which ones went in
+
+        What is kept is the path. The file is never copied, never moved and
+        never looked at: two notes can point at one file, and attaching a film
+        costs exactly what attaching a shopping list costs.
+        """
+
+        held = list(self.files.paths)
+        fresh = []
+
+        for raw in paths:
+            path = resolve_path(str(raw))
+
+            if path is None or path in held:
+                continue
+
+            held.append(path)
+            fresh.append(path)
+
+        if not fresh:
+            self.report("Already attached")
+            return
+
+        self._write(held)
+
+        # Standing on what just arrived, so the key that opens it is the next
+        # one pressed and nothing has to be found first
+        self.files.picked = len(held) - 1
+        self.report(
+            f"Attached {fresh[0].name}"
+            if len(fresh) == 1
+            else f"Attached {len(fresh)} files"
+        )
+
+    def _write(self, paths) -> None:
+        """
+        Put the list back, on the page and in the database at once
+        """
+
+        self.files.show(paths, self.api.vars.theme)
+        self.store_attachments(write_attachments(paths))
+
+    def pick_files(self) -> None:
+        """
+        Hand the keyboard to the strip, where a file can be picked out
+        """
+
+        if not self.files.paths:
+            self.report("Nothing attached")
+            return
+
+        self.files.focus()
+
+    def leave_files(self) -> None:
+        """
+        Hand it back to the text, exactly where the cursor was left standing
+        """
+
+        self.editor.focus()
+
+    def file_key(self, key: str) -> None:
+        """
+        A key pressed while the strip has the keyboard
+
+        The keys of a list of things, and the same ones the panes behind this
+        window use for them: the motions pick one out, `xx` throws one away,
+        and `enter` is what you press on the one you meant.
+        """
+
+        strip = self.files
+        pending_x, self._pending_x = self._pending_x, False
+
+        if key == "x":
+            if pending_x:
+                self.detach()
+            else:
+                self._pending_x = True
+        elif key in ("j", "b"):
+            strip.picked = max(0, strip.picked - 1)
+            strip.refresh_strip()
+        elif key in ("ö", "w"):
+            strip.picked = min(len(strip.paths) - 1, strip.picked + 1)
+            strip.refresh_strip()
+        elif key == "0":
+            strip.picked = 0
+            strip.refresh_strip()
+        elif key == "$":
+            strip.picked = len(strip.paths) - 1
+            strip.refresh_strip()
+        elif key in ("k", "l"):
+            # Up off the top row is the way back into the text, which is where
+            # up from the foot of the window means anywhere else
+            if strip.step_row(-1 if key == "k" else 1):
+                strip.refresh_strip()
+            elif key == "k":
+                self.leave_files()
+        elif key in ("enter", "o"):
+            self.open_file()
+        elif key in ("escape", "f", "i"):
+            self.leave_files()
+
+    def open_file(self) -> None:
+        """
+        Open the file the strip is standing on, and say how it went
+
+        Nothing about it shows up in here - the application it belongs to
+        comes up somewhere else entirely, or nothing does - so the line
+        underneath is what says the key landed.
+        """
+
+        path = self.files.current
+
+        if path is None:
+            return
+
+        outcome = open_path(path)
+
+        if outcome is Opened.OK:
+            self.report(f"Opening {path.name}")
+        elif outcome is Opened.MISSING:
+            self.ask(self.GONE_PROMPT.format(name=escape(path.name)), self.detach)
+        else:
+            self.report("Found nothing to open it with")
+
+    def detach(self) -> None:
+        """
+        Take the file the strip is standing on off the note
+
+        No question and no undoing it: an attachment is a way back to
+        something, and nothing is lost with it but the way back. The file
+        itself is not touched - it never was ours.
+        """
+
+        path = self.files.current
+
+        if path is None:
+            return
+
+        kept = [held for held in self.files.paths if held != path]
+
+        self._write(kept)
+        self.report(f"Detached {path.name}")
+
+        if not kept:
+            self.leave_files()
+
     @on(TextArea.Changed)
     def schedule_save(self, _: TextArea.Changed) -> None:
         if self._save_timer is not None:
@@ -1493,33 +2145,48 @@ class NoteScreenBase(BaseScreen):
 
     def save(self) -> None:
         self._save_timer = None
-        self.store_note(self.editor.text)
+        self.store_note(tidy_marks(self.editor.text))
 
-    def request_clear(self) -> None:
+    def ask(self, prompt: str, answered: Callable[[], None]) -> None:
         """
-        Put the question up, in place of the hint line
+        Put a question up, in place of the hint line
+
+        One question at a time, and the next keystroke is its answer: the
+        window keeps the keyboard while it stands, so there is nowhere for a
+        second one to be put and nothing to do with it if there were.
         """
 
-        # Nothing to lose, nothing to ask about
-        if not self.editor.text or self._awaiting_clear:
+        if self.awaiting_answer:
             return
 
-        self._awaiting_clear = True
-        self.hint.update(self.CLEAR_PROMPT)
+        self._question = answered
+        self.hint.update(prompt)
         self.hint.add_class("confirming")
 
-    def answer_clear(self, key: str) -> None:
+    def answer(self, key: str) -> None:
         """
         Anything but a `y` leaves the note exactly where it is
         """
 
-        self._awaiting_clear = False
+        answered, self._question = self._question, None
         self.hint.remove_class("confirming")
         self.mode_changed()
 
-        if key.lower() != "y":
+        if key.lower() == "y" and answered is not None:
+            answered()
+
+    def request_clear(self) -> None:
+        """
+        Offer to throw the whole note away
+        """
+
+        # Nothing to lose, nothing to ask about
+        if not self.editor.text:
             return
 
+        self.ask(self.CLEAR_PROMPT, self._clear)
+
+    def _clear(self) -> None:
         self.editor.clear()
 
         # The debounce would get here on its own; writing it out now means the
@@ -1569,6 +2236,16 @@ class NoteScreen(NoteScreenBase):
 
     def load_note(self) -> str:
         return self.todo.note or ""
+
+    def load_attachments(self) -> str:
+        return self.todo.attachments or ""
+
+    def store_attachments(self, text: str) -> None:
+        if self.todo.attachments == text:
+            return
+
+        self.todo.attachments = text
+        self.todo.save()
 
     def store_note(self, text: str) -> None:
         if self.todo.note == text:

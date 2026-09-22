@@ -6,6 +6,11 @@ Three things that have to be kept together: what dooit *underlines*, what it
 something drawn as a link can never come back saying there was no link there -
 and a link drawn short can never point somewhere other than the address that
 is written behind it.
+
+This is also where the note's *folding* lives - the one translation between
+the text as it is stored and the text as it is drawn - so the other thing a
+note writes into a line and does not want drawn is folded here too: the
+zero-width marks a note puts either side of an emphasised phrase.
 """
 
 import os
@@ -13,11 +18,11 @@ import re
 from bisect import bisect_left
 from dataclasses import dataclass
 from functools import lru_cache
-from shutil import which
-from subprocess import DEVNULL, Popen
 from typing import List, Optional, Tuple
 
 from rich.markup import escape
+
+from todooit.utils.files import hand_over
 
 # A link starts at a scheme - or at the "www." that stands in for one - and
 # runs to the first character that cannot be part of it. Whitespace ends a
@@ -193,22 +198,70 @@ def link_title(url: str) -> str:
     return drawn
 
 
+# What a note delimits an emphasised phrase with: one zero-width mark either
+# side of the words. The character is chosen in `ui/screens/note.py`, which is
+# what puts it there and what draws what it means; it is named here because
+# this is the module that says what a line looks like on the page, and what a
+# mark looks like on the page is nothing at all.
+#
+# "Nothing at all" has to mean nothing at all. A mark left in the drawn line
+# would be a column of the page worth no columns of the terminal, and the two
+# disagreeing is how a window ends up with its right-hand edge - its border,
+# its scrollbar - drawn a column off on exactly the lines that carry emphasis.
+# It would also be a column the cursor could stand in and not be seen in, and
+# a column an `enter` could split a finished pair across. None of the three is
+# a problem once the marks are off the page altogether, which is what folding
+# them does
+EMPH_MARK = "\N{ZERO WIDTH SPACE}"
+
+# A finished pair: two marks with something written between them. A mark with
+# no partner is markup that was cut in half by an edit - it is drawn as
+# nothing, stands in no column and is tidied away the next time the note is
+# written back
+MARK_PAIR_RE = re.compile(rf"{EMPH_MARK}[^{EMPH_MARK}]+{EMPH_MARK}")
+
+
+def mark_pairs(text: str) -> List[Tuple[int, int]]:
+    """
+    Where each finished pair of emphasis marks is written: the column of the
+    opening mark and of the closing one, in the line as it is *stored*
+    """
+
+    return [
+        (match.start(), match.end() - 1)
+        for match in MARK_PAIR_RE.finditer(text)
+    ]
+
+
 @dataclass(frozen=True)
 class Folded:
     """
     One line as the page shows it, and everything needed to get back
 
-    `text` is what is drawn and `links` are the links in it, at the columns
-    they are drawn at. `opens[c]` is the column of the stored line that drawn
-    column `c` begins at, and `closes[c]` the column just past where drawn
-    column `c - 1` ends; the two differ only over a link that is drawn as
-    something not written anywhere. `written` is each link's span in the
-    stored line, with a flag for whether what is drawn for it was made up
-    rather than copied out.
+    `text` is what is drawn, `links` are the links in it and `emph` the
+    emphasised phrases, both at the columns they are drawn at.
+
+    Three column maps, all of them from a drawn column to a stored one, and
+    all of them the same map on a line with nothing folded out of it:
+
+    - `at[c]` is where drawn column `c` is *written*: where a run picked out
+      on the page starts, and the one map that is also read backwards, to say
+      where a stored column landed on the page.
+    - `opens[c]` is where something *inserted* at drawn column `c` goes in.
+      It sits in front of any markup hidden ahead of that column, which is
+      what keeps a newline typed at the head of an emphasised phrase outside
+      the pair instead of splitting it.
+    - `closes[c]` is the column just past where drawn column `c - 1` ends,
+      which is where a run picked out on the page stops.
+
+    `written` is each link's span in the stored line, with a flag for whether
+    what is drawn for it was made up rather than copied out.
     """
 
     text: str
     links: Tuple[Link, ...]
+    emph: Tuple[Tuple[int, int], ...]
+    at: Tuple[int, ...]
     opens: Tuple[int, ...]
     closes: Tuple[int, ...]
     written: Tuple[Tuple[int, int, bool], ...]
@@ -231,34 +284,72 @@ def _fold(text: str) -> Folded:
     an atom - a single thing the whole of which is either there or not - and
     so is a bare address too long to be left as it stands.
 
-    The two maps say, for every column of the drawn line and one past its end,
+    The maps say, for every column of the drawn line and one past its end,
     which column of the stored line it stands at. They differ only over an
     atom: a range *opening* inside one takes it from the front and a range
     *closing* inside one takes it to the back, which is what makes an edit
     reaching into a link swallow the whole link instead of cutting an address
     in half.
+
+    The emphasis marks are folded out on the same pass and are the other kind
+    of hidden markup: not an atom standing in for a run, but a character worth
+    no column that belongs to the words beside it. An opening mark goes with
+    the phrase it opens, so what is typed at the head of one lands in front of
+    the mark and outside the emphasis; a closing mark goes with the phrase
+    behind it, so what is typed at its tail lands past the mark and outside it
+    too. Emphasis is edited from the inside, never from either edge.
     """
 
     drawn: List[str] = []
     found: List[Link] = []
+    emph: List[Tuple[int, int]] = []
     spans: List[Tuple[int, int, bool]] = []
+    written_at: List[int] = []
     opens: List[int] = []
     closes: List[int] = [0]
     at = 0
     width = 0
 
+    pairs = mark_pairs(text)
+    opening = {start for start, _ in pairs}
+    closing = {end for _, end in pairs}
+    started: List[int] = []
+
+    # How many marks are standing in front of the next drawn column. Held back
+    # rather than written straight out: an opening mark is only known to be in
+    # front of a column once that column arrives, and the run at the very end
+    # of a line is in front of the position one past it
+    hidden = 0
+
     def verbatim(start: int, end: int) -> None:
         """A run of the line that is drawn exactly as it is written"""
 
-        nonlocal width
-
-        drawn.append(text[start:end])
+        nonlocal width, hidden
 
         for index in range(start, end):
-            opens.append(index)
+            if text[index] == EMPH_MARK:
+                if index in opening:
+                    started.append(width)
+                    hidden += 1
+                elif index in closing and started:
+                    emph.append((started.pop(), width))
+
+                # An orphan is neither, and is drawn as nothing by both: it
+                # goes with whatever comes after it, the same way an opening
+                # mark does, so that it cannot glue itself onto the word in
+                # front of it
+                else:
+                    hidden += 1
+
+                continue
+
+            drawn.append(text[index])
+            written_at.append(index)
+            opens.append(index - hidden)
             closes.append(index + 1)
 
-        width += end - start
+            hidden = 0
+            width += 1
 
     for link in find_links(text):
         verbatim(at, link.start)
@@ -284,8 +375,11 @@ def _fold(text: str) -> Folded:
             drawn.append(atom)
 
             for _ in range(len(atom)):
-                opens.append(link.start)
+                written_at.append(link.start)
+                opens.append(link.start - hidden)
                 closes.append(link.end)
+
+            hidden = 0
 
             found.append(Link(width, width + len(atom), link.url, link.title))
             spans.append((link.start, link.end, atom != written))
@@ -295,11 +389,20 @@ def _fold(text: str) -> Folded:
 
     verbatim(at, len(text))
 
-    # One past the end of the drawn line is one past the end of the stored one
-    opens.append(len(text))
+    # One past the end of the drawn line is one past the end of the stored
+    # one - behind any mark left standing there, which is markup the position
+    # is in front of like any other
+    written_at.append(len(text))
+    opens.append(len(text) - hidden)
 
     return Folded(
-        "".join(drawn), tuple(found), tuple(opens), tuple(closes), tuple(spans)
+        "".join(drawn),
+        tuple(found),
+        tuple(emph),
+        tuple(written_at),
+        tuple(opens),
+        tuple(closes),
+        tuple(spans),
     )
 
 
@@ -320,6 +423,19 @@ def fold_links(text: str) -> Tuple[str, List[Link]]:
     folded = _fold(text)
 
     return folded.text, list(folded.links)
+
+
+def folded_emph(text: str) -> List[Tuple[int, int]]:
+    """
+    Where the emphasised phrases of `text` land on the page: one (start, end)
+    per finished pair, in drawn columns, with the marks themselves nowhere in
+    it because they are nowhere on the page
+
+    This is what draws the emphasis and what takes it off again, so the words
+    that are lit and the words a backspace unlights are always the same words.
+    """
+
+    return list(_fold(text).emph)
 
 
 def folded_link_at(text: str, column: int) -> Optional[Link]:
@@ -357,6 +473,12 @@ def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
     start = max(0, min(start, last))
     end = max(start, min(end, last))
 
+    if (start, end) == (0, last):
+        # The whole of the page a line takes up is the whole of the line,
+        # markup hidden at either edge and all: out there is nothing for a run
+        # to stop short of, and a rewrite of the line has to land on all of it
+        return 0, len(text)
+
     if start == end:
         # Nothing picked out: one place, and it has to come back as one column
         # twice over rather than as the two the maps would give it. Standing at
@@ -368,7 +490,7 @@ def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
 
         return folded.opens[start], folded.opens[start]
 
-    opening = folded.opens[start]
+    opening = folded.at[start]
     closing = folded.closes[end]
 
     for link, (written_start, written_end, atom) in zip(
@@ -384,6 +506,11 @@ def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
         opening = min(opening, written_start)
         closing = max(closing, written_end)
 
+    for phrase_start, phrase_end in folded.emph:
+        if start <= phrase_start and end >= phrase_end:
+            opening = min(opening, folded.at[phrase_start] - 1)
+            closing = max(closing, folded.closes[phrase_end] + 1)
+
     return opening, closing
 
 
@@ -396,9 +523,9 @@ def drawn_column(text: str, column: int) -> int:
     past what that markup was hidden behind.
     """
 
-    opens = _fold(text).opens
+    at = _fold(text).at
 
-    return min(bisect_left(opens, column), len(opens) - 1)
+    return min(bisect_left(at, column), len(at) - 1)
 
 
 # How much of a URL is said back when one is opened: enough to tell two links
@@ -418,48 +545,16 @@ def link_label(url: str) -> str:
     return escape(url)
 
 
-# The commands that hand a URL over to whatever the desktop opens links with,
-# in the order they are tried, each with the arguments that go in front of the
-# URL. The last one is what makes this work under WSL, where there is no
-# xdg-open and no browser on the Linux side at all: `webbrowser` finds nothing
-# there, so without it the key looks dead.
-#
-# It is the URL handler itself rather than `explorer.exe`, which is the
-# obvious way in and the wrong one: handed a URL with a query string on it,
-# explorer gives up on the address and opens a File Explorer window instead
-OPENERS = (
-    ("wslview", ()),
-    ("xdg-open", ()),
-    ("open", ()),
-    ("rundll32.exe", ("url.dll,FileProtocolHandler",)),
-)
-
-
 def open_url(url: str) -> bool:
     """
     Hand `url` to the desktop's browser; False when nothing would take it
+
+    Which program that is, and in what order they are tried, is
+    `todooit.utils.files`: one desktop opens both a page and a file, and there
+    is no reason for dooit to know two lists of doors when the desktop has one
     """
 
-    for name, arguments in OPENERS:
-        command = which(name)
-
-        if command is None:
-            continue
-
-        try:
-            # Detached, with all three streams tied off: whatever is spawned
-            # must not write into the terminal dooit is drawing in, and must
-            # not keep a handle on it either
-            Popen(
-                [command, *arguments, url],
-                stdin=DEVNULL,
-                stdout=DEVNULL,
-                stderr=DEVNULL,
-                start_new_session=True,
-            )
-        except OSError:
-            continue
-
+    if hand_over(url):
         return True
 
     # Last resort, and only where there is a screen to open a window on:

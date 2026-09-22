@@ -224,16 +224,21 @@ def todo_agent_formatter(agent: bool, _: Todo) -> str:
     return " "
 
 
-# A sheet of paper on the rows that carry a note, and nothing at all on the
-# ones that do not. The column is never wider than its own header, so the icon
+# A sheet of paper on the rows whose note carries anything - text, files, or
+# both - and nothing at all on the ones that do not. The column is never wider than its own header, so the icon
 # marks the row without taking any room from the description.
 NOTE_ICON = ""
 
 
-def todo_note_formatter(note: str, _: Todo, api: DooitAPI) -> str:
+def todo_note_formatter(note: str, todo: Todo, api: DooitAPI) -> str:
+    # A file hanging off a note is something the task carries just as much as
+    # the text is, so a note holding nothing but an attachment is still a note
+    # to open: the column marks it either way, rather than leaving the row
+    # looking bare because nothing was typed into it.
+    #
     # A space rather than an empty string: the formatter store turns anything
     # falsy into a dim, centered "-", which is not the same as nothing
-    if not (note or "").strip():
+    if not (note or "").strip() and not (todo.attachments or "").strip():
         return " "
 
     return f"[{api.vars.theme.foreground3}]{NOTE_ICON}[/]"
