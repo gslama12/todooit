@@ -2236,8 +2236,13 @@ class NoteScreenBase(BaseScreen):
     # is found out is the moment worth offering to tidy it
     GONE_PROMPT = r"{name} is gone. Detach it? \[y/N]"
 
-    def __init__(self) -> None:
+    def __init__(self, at: Optional[Tuple[int, int]] = None) -> None:
         super().__init__()
+
+        # Where in the note the cursor starts, as a row and a column of the
+        # note as it is stored; the top when nobody asked for anywhere else
+        self._at = at
+
         self._save_timer: Optional[Timer] = None
         self._report_timer: Optional[Timer] = None
 
@@ -2335,6 +2340,26 @@ class NoteScreenBase(BaseScreen):
         # editor picked out of the text it was handed
         editor.focus()
         self.mode_changed()
+
+        if self._at is not None:
+            # Once the window has a size, or there is no middle to scroll to
+            self.call_after_refresh(self.go_to, *self._at)
+
+    def go_to(self, row: int, column: int) -> None:
+        """
+        Put the cursor on a place in the note, and the place in the middle
+        of the window
+
+        The column is one of the note as it is stored, and carried across to
+        the page the way an edit's is, since a folded link in front of it
+        makes the line shorter on the page than it is written.
+        """
+
+        document = self.editor.document
+        row = max(0, min(row, document.line_count - 1))
+        column = drawn_column(document.stored_line(row), column)
+
+        self.editor.move_cursor((row, column), center=True)
 
     def mode_changed(self) -> None:
         """
@@ -2618,8 +2643,8 @@ class NoteScreen(NoteScreenBase):
     The note of one todo
     """
 
-    def __init__(self, todo: Todo) -> None:
-        super().__init__()
+    def __init__(self, todo: Todo, at: Optional[Tuple[int, int]] = None) -> None:
+        super().__init__(at)
         self.todo = todo
 
     @property

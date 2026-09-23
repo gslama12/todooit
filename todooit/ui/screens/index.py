@@ -56,7 +56,7 @@ from .calendar import CalendarScreen, calendar_title
 from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
-from .search import SearchScreen, task_root
+from .search import Found, SearchScreen, task_root
 
 
 # How many rows one history step is willing to point out one at a time.
@@ -386,9 +386,18 @@ class MainScreen(BaseScreen):
     def spawn_search(self, _: SpawnSearch) -> None:
         self.app.push_screen(SearchScreen(), self.search_done)
 
-    async def search_done(self, todo: Optional[Todo]) -> None:
-        if todo is not None:
-            await self.reveal_todo(todo)
+    async def search_done(self, found: Optional[Found]) -> None:
+        if found is None:
+            return
+
+        await self.reveal_todo(found.todo)
+
+        # Found through its note, the note is what was being looked for: it
+        # opens over the task on the line the words were on, and closing it
+        # leaves the cursor on the task
+        if found.hit is not None:
+            hit = found.hit
+            self.app.push_screen(NoteScreen(found.todo, at=(hit.row, hit.column)))
 
     @on(RevealTodo)
     async def reveal_moved_todo(self, event: RevealTodo) -> None:
