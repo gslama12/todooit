@@ -89,8 +89,9 @@ WRAP_MIN = 12
 RULE = "─"
 
 # How wide the rule is drawn, before a narrow window is allowed to shorten it.
-# Long enough to read as a divider, short enough not to wrap in a small note
-HEADER_WIDTH = 40
+# Long enough to read as a divider across most of the window, short enough
+# not to wrap in a small note
+HEADER_WIDTH = 60
 
 # What a quoted line opens with: markdown's `>` drawn as the bar it means.
 # Stored as the glyph for the same reason the bullet is, and typed as the `>`
@@ -1343,24 +1344,27 @@ class NoteEditor(TextArea):
 
         return row > 0 and bool(self.document[row - 1].strip())
 
-    def _draw_header(self, row: int) -> None:
+    def _draw_header(self, row: int, column: int) -> None:
         """
         Swap the `#` on `row` for the rule that will close the title over it
 
         The header is the help window's section break: a title with a rule
-        drawn across underneath it. There is nothing to write on the title
-        line yet - the `# ` is the whole of what has been typed - so what this
-        leaves is the rule, and the cursor on the empty line above it, which
-        is where the title is about to be typed. It is drawn as a title from
-        its first letter, because the rule saying so is already there.
+        drawn across underneath it. Whatever stands to the right of the mark
+        is that title, because a `#` is as often put in front of a line
+        already written as typed before one is. Nothing there leaves the
+        title line empty and the cursor on it, which is where the title is
+        about to be typed - either way the line is drawn as a title from its
+        first letter, because the rule saying so is already underneath it.
 
         Whatever indent the mark was typed at goes with it. By the time it is
         drawn a header is a whole line of the note, the rule under it as wide
         as the window allows, so there is no level for it to sit at.
         """
 
+        title = self.document[row][column:].strip()
+
         self.replace(
-            "\n" + self.rule,
+            title + "\n" + self.rule,
             (row, 0),
             (row, len(self.document[row])),
             maintain_selection_offset=False,
@@ -1848,6 +1852,13 @@ class NoteEditor(TextArea):
             # opens at the level it is standing on
             mark = body[len(indent) :] if column == len(line) else ""
 
+            # What has been typed in front of the cursor, which is the whole
+            # of what a header asks for: the words the title is made of are
+            # allowed to be standing to its right already, so that a `#` put
+            # in front of a written line opens one the same way a `#` typed
+            # on an empty one does
+            head = body[len(indent) : max(0, column - len(bar))]
+
             glyph = None
 
             # The two that are whole lines rather than things inside one, and
@@ -1855,10 +1866,10 @@ class NoteEditor(TextArea):
             # no second bar to be drawn with, and a title is a line with a
             # rule under it, which is not a line a quote can hold
             if not bar:
-                if mark and set(mark) == {HEADER_MARK}:
+                if head and set(head) == {HEADER_MARK}:
                     event.stop()
                     event.prevent_default()
-                    self._draw_header(row)
+                    self._draw_header(row, column)
                     return
 
                 if mark == QUOTE_MARK:

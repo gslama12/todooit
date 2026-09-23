@@ -1532,6 +1532,33 @@ async def test_a_run_of_hashes_opens_the_one_header_there_is():
         await pilot.pause()
 
 
+async def test_a_hash_in_front_of_a_written_line_titles_it():
+    """The mark opens a header where the words already are, not only before"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("Section"))
+        await pilot.press("home")
+        await pilot.press(*list("# "))
+        await pilot.pause()
+
+        # The words stay put and the rule arrives underneath them: the same
+        # header, written the other way round
+        lines = screen.editor.text.splitlines()
+        assert lines[0] == "Section"
+        assert set(lines[1]) == {RULE}
+
+        names = [name for row in scan_note(lines) for _, _, name in row]
+        assert names == [HEADER, RULE_SPAN]
+
+        # The cursor is left where the mark was, in front of the title
+        assert screen.editor.cursor_location == (0, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_a_hash_mid_line_stays_a_number_sign():
     """Only a mark at the head of a line is opening one"""
 
