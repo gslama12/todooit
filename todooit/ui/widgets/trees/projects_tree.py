@@ -306,10 +306,6 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def shift_down(self):
         return super().shift_down()
 
-    @reject_fixed_node(FIXED_MESSAGE)
-    def start_sort(self):
-        return super().start_sort()
-
     def _new_sibling(self) -> Optional[Project]:
         """
         The empty project a new sibling starts out as

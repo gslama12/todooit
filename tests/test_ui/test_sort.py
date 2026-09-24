@@ -3,8 +3,7 @@ The order a project's tasks are read in: the SP / SD / SS chords
 
 The order belongs to the pane, not to a project: it holds across projects
 until it is switched again. Fixed projects order their own rows and turn the
-chords down. (The old modal sort bar these chords replaced has no key bound
-to it any more.)
+chords down.
 """
 
 from todooit.api import Todo

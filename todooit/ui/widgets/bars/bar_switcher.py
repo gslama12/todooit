@@ -1,14 +1,12 @@
-from typing import Callable, Optional
+from typing import Optional
 from textual.await_complete import AwaitComplete
 from textual.widget import Widget
 from textual.widgets import ContentSwitcher
-from todooit.api.model import DooitModel
 from todooit.ui.api.events.events import BarNotification, ShowConfirm
 from todooit.ui.widgets.bars._base import BarBase
 from .status_bar import StatusBar
 from .confirm_bar import ConfirmBar
 from .notification_bar import NotificationBar
-from .sort_bar import SortBar
 from .field_bar import FieldBar
 
 
@@ -59,14 +57,6 @@ class BarSwitcher(ContentSwitcher):
         self.add_content(
             widget=confirm_bar,
             id="confirm_bar",
-            set_current=True,
-        )
-
-    def switch_to_sort(self, model: DooitModel, callback: Callable):
-        sort_bar = SortBar(model, callback)
-        self.add_content(
-            widget=sort_bar,
-            id="sort_bar",
             set_current=True,
         )
 

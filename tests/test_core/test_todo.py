@@ -1,21 +1,8 @@
-from typing import List, Tuple
 from datetime import datetime, timedelta
-from pytest import raises, mark
+from pytest import raises
 from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Todo, Project
+from todooit.api import Todo
 from tests.test_core.core_base import *  # noqa
-
-
-def _sort_before_and_after(session, field) -> Tuple[List[Todo], List[Todo]]:
-    from tests.generate_test_data import generate
-
-    generate(session)
-    p = Project.all()[2]
-    t = p.todos[0]
-    old_todos = t.siblings
-    t.sort_siblings(field)
-    new_descriptions = t.siblings
-    return old_todos, new_descriptions
 
 
 def test_todo_creation(create_project, create_todo):
@@ -76,25 +63,6 @@ def test_sibling_add(create_todo):
     assert len(t.siblings) == 2
     assert len(t2.siblings) == 2
     assert t2.order_index == 1
-
-
-def test_comparable_fields():
-    fields = Todo.comparable_fields()
-    expected_fields = [
-        "description",
-        "due",
-        "scheduled",
-        "agent",
-        "recurrence",
-        "priority",
-        "pending",
-        "completed_at",
-        "binned_at",
-        "origin_path",
-        "note",
-        "attachments",
-    ]
-    assert fields == expected_fields
 
 
 def test_nest_level(create_todo):
@@ -226,43 +194,6 @@ def test_recurrence_drops_a_due_date_it_cannot_use(create_project):
     assert t.due is None
     assert t.scheduled == datetime.strptime("2021-02-01", "%Y-%m-%d")
 
-
-def test_sort_invalid(create_project, create_todo):
-    p = create_project()
-    t = p.add_todo()
-    with raises(AttributeError):
-        t.sort_siblings("???????")
-
-
-@mark.parametrize(
-    "field,sort_key,filter_func,compare_ids",
-    [
-        (
-            "pending",
-            lambda x: (not x.pending, x.due or datetime.max, x.order_index),
-            None,
-            True,
-        ),
-        ("description", lambda x: x.description, None, False),
-        ("recurrence", lambda x: x.recurrence, lambda x: x.recurrence, False),
-        ("agent", lambda x: x.agent, None, False),
-        ("priority", lambda x: x.priority, None, False),
-        ("due", lambda x: x.due, lambda x: x.due, True),
-    ],
-)
-def test_sort(session, create_project, field, sort_key, filter_func, compare_ids):
-    old, new = _sort_before_and_after(session, field)
-
-    if filter_func:
-        old = [t for t in old if filter_func(t)]
-        new = new[: len(old)]
-
-    old.sort(key=sort_key)
-
-    if compare_ids:
-        assert [i.id for i in old] == [i.id for i in new]
-    else:
-        assert old == new
 
 # ------------------------------------------------------------------
 # Behaviour this fork added to the model itself

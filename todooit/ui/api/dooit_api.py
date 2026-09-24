@@ -420,10 +420,6 @@ class DooitAPI:
         # was picked in it
         self.app.screen.post_message(SpawnSearch())
 
-    def start_sort(self):
-        """Start sorting the siblings of the highlighted item"""
-        self.focused.start_sort()
-
     def toggle_complete(self):
         """Toggle the completion of the todo"""
         if isinstance(self.focused, TodosTree):

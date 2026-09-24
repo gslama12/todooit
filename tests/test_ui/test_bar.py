@@ -2,8 +2,8 @@
 The bar under the panes: the status line, and the bars that take it over
 
 Notifications, the y/N that guards a delete, and the field editor a fixed
-pane borrows when a hidden column is edited. (The old modal sort bar has no
-key bound to it any more; the sort chords are tested in test_sort.py.)
+pane borrows when a hidden column is edited. The sort chords are tested in
+test_sort.py.
 """
 
 from typing import Optional

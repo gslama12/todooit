@@ -2,14 +2,13 @@ from datetime import date, timedelta, datetime
 from typing import Any, Callable, Literal, Optional, Union
 from textual.message import Message
 
-from todooit.api.model import DooitModel
 from todooit.api import FixedProject, Project, Todo
 
 # A pane can be showing a stored project or one of the fixed ones, and every
 # event about "the current project" carries whichever it is
 ProjectType = Union[Project, FixedProject]
 
-ModeType = Literal["NORMAL", "INSERT", "DATE", "SORT", "CONFIRM"]
+ModeType = Literal["NORMAL", "INSERT", "CONFIRM"]
 NotificationType = Literal["info", "warning", "error"]
 
 
@@ -142,17 +141,6 @@ class SpawnSearch(DooitEvent):
     """
     Emitted when user wants to find a task anywhere in the tree
     """
-
-
-class StartSort(DooitEvent):
-    """
-    Emitted when user wants to sort
-    """
-
-    def __init__(self, model: DooitModel, callback: Callable) -> None:
-        super().__init__()
-        self.model = model
-        self.callback = callback
 
 
 class GotoFixedProject(DooitEvent):

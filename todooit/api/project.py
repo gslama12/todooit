@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from sqlalchemy import ForeignKey, asc, select
+from sqlalchemy import ForeignKey, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..api.todo import Todo
 from .model import DooitModel
@@ -109,21 +109,6 @@ class Project(DooitModel):
         assert not self.is_root
 
         return self.parent_project.projects
-
-    def sort_siblings(self, field: str):
-        items = (
-            self.session.query(Project)
-            .filter_by(
-                parent_project=self.parent_project,
-            )
-            .order_by(asc(getattr(Project, field)))
-            .all()
-        )
-
-        for index, project in enumerate(items):
-            project.order_index = index
-
-        manager.commit()
 
     @property
     def color_root(self) -> "Project":

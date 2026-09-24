@@ -2,7 +2,6 @@ from typing import Any, List
 from typing_extensions import Self
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.declarative import declared_attr
-from sqlalchemy import inspect
 from .manager import manager
 
 
@@ -25,18 +24,6 @@ class DooitModel(BaseModel, BaseModelMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
-
-    @classmethod
-    def comparable_fields(cls):
-        to_ignore = ["id", "order_index", "is_root"]
-
-        comparable_fields = [
-            column.name
-            for column in inspect(cls).columns
-            if not column.name.endswith("_id") and column.name not in to_ignore
-        ]
-
-        return comparable_fields
 
     @property
     def uuid(self) -> str:
@@ -87,15 +74,6 @@ class DooitModel(BaseModel, BaseModelMixin):
     @property
     def has_same_parent_kind(self) -> bool:
         raise NotImplementedError  # pragma: no cover
-
-    def sort_siblings(self, field: str):
-        raise NotImplementedError  # pragma: no cover
-
-    def reverse_siblings(self):
-        for index, model in enumerate(reversed(self.siblings)):
-            model.order_index = index
-
-        manager.commit()
 
     def swap_with(self, other: Self) -> bool:
         """

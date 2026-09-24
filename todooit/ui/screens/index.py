@@ -22,7 +22,6 @@ from todooit.ui.api.events import (
     ModeChanged,
     ShowConfirm,
     StartFieldEdit,
-    StartSort,
     TodoChanged,
     TodoDescriptionChanged,
     TodoDueChanged,
@@ -501,11 +500,6 @@ class MainScreen(BaseScreen):
     @on(StartFieldEdit)
     def start_field_edit(self, event: StartFieldEdit):
         self.app.bar_switcher.switch_to_field(event.tree, event.column)
-
-    @on(StartSort)
-    def start_sort(self, event: StartSort):
-        self.app.bar_switcher.switch_to_sort(event.model, event.callback)
-        self.post_message(ModeChanged("SORT"))
 
     @on(ShowConfirm)
     def show_confirm(self, event: ShowConfirm):

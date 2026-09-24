@@ -32,7 +32,6 @@ from todooit.api import Todo, Project
 from todooit.ui.api.events import (
     ModeChanged,
     SpawnCalendar,
-    StartSort,
     BarNotification,
 )
 from todooit.ui.widgets.renderers import (
@@ -666,10 +665,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         super().notify_style_update()
         self.refresh_border_title()
 
-    @require_highlighted_node
-    def start_sort(self):
-        self.post_message(StartSort(self.current_model, self.sort))
-
     def start_edit(self, property: str) -> bool:
         if property not in self.editable_columns:
             self.post_message(
@@ -1171,13 +1166,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     @refresh_tree
     def shift_down(self):
         self._shift(1)
-
-    @refresh_tree
-    def sort(self, attr: str):
-        if attr == "reverse":
-            self.current_model.reverse_siblings()
-        else:
-            self.current_model.sort_siblings(attr)
 
     def compose(self) -> ComposeResult:
         with Label(id="empty_message"):

@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
 from datetime import date, datetime, timedelta
 from typing import List
-from sqlalchemy import ForeignKey, Index, select, nulls_last, text
+from sqlalchemy import ForeignKey, Index, select, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from .model import DooitModel
 from .manager import manager
@@ -309,32 +309,6 @@ class Todo(DooitModel):
             return self.parent_todo.todos
 
         return []
-
-    def sort_siblings(self, field: str):
-        if field != "pending":
-            items = (
-                self.session.query(Todo)
-                .filter_by(
-                    parent_project=self.parent_project,
-                    parent_todo=self.parent_todo,
-                )
-                .order_by(nulls_last(getattr(Todo, field).asc()))
-                .all()
-            )
-        else:
-            items = sorted(
-                self.siblings,
-                key=lambda x: (
-                    not x.pending,
-                    x.due or datetime.max,
-                    x.order_index,
-                ),
-            )
-
-        for index, todo in enumerate(items):
-            todo.order_index = index
-
-        manager.commit()
 
     def add_todo(self) -> "Todo":
         todo = Todo(parent_todo=self)

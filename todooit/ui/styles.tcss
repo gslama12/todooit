@@ -280,12 +280,6 @@ ConfirmBar {
     text-style: bold;
 }
 
-SortBar {
-  .option-highlighted {
-    background: $secondary;
-  }
-}
-
 NotificationBar {
   color: $background1;
 

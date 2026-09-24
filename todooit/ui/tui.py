@@ -18,10 +18,6 @@ class Dooit(App):
     CSS_PATH = CssManager().css_file
     ENABLE_COMMAND_PALETTE = False
 
-    SCREENS = {
-        "main": MainScreen,
-    }
-
     def __init__(
         self,
         db_path: Optional[str] = None,
@@ -43,7 +39,7 @@ class Dooit(App):
         self.api.plugin_manager.scan()
         self.post_message(Startup())
         self.post_message(ModeChanged("NORMAL"))
-        self.push_screen("main")
+        self.push_screen(MainScreen())
 
     async def setup_poller(self):
         self.set_interval(1, self.poll_dooit_db)

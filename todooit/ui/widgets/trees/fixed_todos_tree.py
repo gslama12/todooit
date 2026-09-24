@@ -395,9 +395,6 @@ class FixedTodosTree(TodosTree):
     def shift_down(self):
         self._not_here("Tasks can't be reordered")
 
-    def start_sort(self):
-        self._not_here("Tasks can't be sorted")
-
     def sort_by(self, mode: str) -> bool:
         """
         The order keys do nothing here, rather than quietly re-ordering

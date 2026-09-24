@@ -4,34 +4,9 @@ The help overlay: the keybinds of the config, grouped the way it groups them
 
 from textual.screen import ModalScreen
 
-from todooit.ui.api.events import SpawnHelp
 from todooit.ui.screens import HelpScreen, MainScreen
 from todooit.ui.screens.help import DooitKeyTable
 from tests.test_ui.ui_base import boot, run_pilot
-
-
-async def test_help_screen_mount():
-    async with run_pilot() as pilot:
-        # Settled first: the startup jump to Today lands as a message, and one
-        # arriving while the help is on top finds no projects pane to move
-        # the cursor in
-        app = await boot(pilot)
-
-        app.api.keys.set("X", app.api.no_op)  # test cover no_op
-        app.api.keys.set("Z", app.api.move_up, group="test")  # group test
-
-        # test with keybinding
-        await pilot.press("?")
-        await pilot.pause()
-        assert isinstance(app.screen, HelpScreen)
-        await pilot.press("escape")
-        await pilot.pause()
-
-        # test function
-        assert isinstance(app.screen, MainScreen)
-        await app.screen.spawn_help(SpawnHelp())
-        await pilot.pause()
-        assert isinstance(app.screen, HelpScreen)
 
 
 async def test_help_is_an_overlay_like_the_others():
@@ -41,17 +16,25 @@ async def test_help_is_an_overlay_like_the_others():
     """
 
     async with run_pilot() as pilot:
+        # Settled first: the startup jump to Today lands as a message, and one
+        # arriving while the help is on top finds no projects pane to move
+        # the cursor in
         app = await boot(pilot)
 
         assert "help" not in app.SCREENS
 
-        app.api.show_help()
+        # A keybind to a no-op and one in a group of its own both get a row
+        app.api.keys.set("X", app.api.no_op)
+        app.api.keys.set("Z", app.api.move_up, group="test")
+
+        await pilot.press("?")
         await pilot.pause()
 
         first = app.screen
         assert isinstance(first, HelpScreen)
         assert isinstance(first, ModalScreen)
         assert first.panel.border_title == "Key Bindings"
+        assert "Z" in dict(first.query_one(DooitKeyTable)._rows("test"))
 
         # The panes stay behind it, dimmed rather than gone
         assert isinstance(app.screen_stack[-2], MainScreen)
@@ -59,6 +42,7 @@ async def test_help_is_an_overlay_like_the_others():
         await pilot.press("escape")
         await pilot.pause()
 
+        # Through the api this time, which is what the keybind calls
         app.api.show_help()
         await pilot.pause()
         assert isinstance(app.screen, HelpScreen)
