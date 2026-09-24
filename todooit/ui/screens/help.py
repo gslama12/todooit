@@ -4,19 +4,20 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult, events
+from textual.containers import VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Static
 
 from todooit.ui.api.api_components.keys import KeyManager
 from .base import BaseScreen
-from textual.widgets import Static
 
 
 class DooitKeyTable(Static):
     DEFAULT_CSS = """
     DooitKeyTable {
-        content-align: center middle;
-        width: 80%;
-        margin: 1;
-        padding: 1 2;
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
     }
     """
 
@@ -27,8 +28,6 @@ class DooitKeyTable(Static):
         "table-title",
         "separator",
     }
-    BORDER_TITLE = "Key Bindings"
-
     def __init__(self, keybinds: KeyManager):
         super().__init__()
         self.keybinds = keybinds
@@ -127,22 +126,26 @@ class DooitKeyTable(Static):
         return Group(*renderables)
 
 
-class HelpScreen(BaseScreen):
+# What the panel is titled, in the border, the way every other overlay is
+PANEL_TITLE = "Key Bindings"
+
+HINT_GAP = "  "
+
+# Only the ways around the listing and out of it: the listing itself is the
+# rest of the keys
+HINT = HINT_GAP.join(("k/l scroll", "gg/G top/end", "esc close"))
+
+
+class HelpScreen(BaseScreen, ModalScreen):
     """
-    Help Screen to view Help Menu
+    The key bindings, in a panel over a dimmed copy of the app
+
+    An overlay like the note, the finder and the calendar: the panes stay
+    visible behind it, and it is spawned fresh each time rather than kept
+    around as a named screen.
     """
 
-    DEFAULT_CSS = """
-    HelpScreen {
-        align: center top;
-    }
-    """
-
-    BINDINGS = [
-        ("escape", "app.pop_screen", "Pop screen"),
-    ]
-
-    # The listing is taller than the screen on anything but a big terminal, so
+    # The listing is taller than the panel on anything but a big terminal, so
     # it moves under the same navigation cluster as everything else: `k`/`l`
     # up and down, `j`/`ö` left and right, with the arrows alongside them
     SCROLLS = {
@@ -160,14 +163,31 @@ class HelpScreen(BaseScreen):
     # Raised by the first `g` of a `gg` and by nothing else
     _pending_g = False
 
+    @property
+    def panel(self) -> VerticalScroll:
+        return self.query_one("#help-panel", VerticalScroll)
+
     def compose(self) -> ComposeResult:
-        yield DooitKeyTable(self.api.keys)
+        # Not focusable: a focused scroll view has arrow bindings of its own,
+        # and every key is the screen's to route
+        with VerticalScroll(id="help-panel", can_focus=False):
+            yield DooitKeyTable(self.api.keys)
 
-    def on_screen_resume(self) -> None:
-        self._pending_g = False
+        yield Static(HINT, id="help-hint")
 
-    def on_key(self, event: events.Key) -> None:
+    def on_mount(self) -> None:
+        self.panel.border_title = PANEL_TITLE
+
+    async def handle_key(self, event: events.Key) -> bool:
+        # Every key belongs to the window: the app's own bindings are about
+        # the panes behind it, and none of them can be reached from here
+        event.stop()
+
         key = self.resolve_key(event)
+
+        if key == "escape":
+            self.dismiss()
+            return True
 
         # Only the key straight after a `g` can be its second half, so the
         # flag is read and dropped in one go
@@ -175,13 +195,11 @@ class HelpScreen(BaseScreen):
 
         if key == "g":
             if pending_g:
-                self.scroll_home()
+                self.panel.scroll_home()
             else:
                 self._pending_g = True
 
-            event.stop()
-            return
+        elif scroll := self.SCROLLS.get(key):
+            getattr(self.panel, scroll)()
 
-        if scroll := self.SCROLLS.get(key):
-            getattr(self, scroll)()
-            event.stop()
+        return True

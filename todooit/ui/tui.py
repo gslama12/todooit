@@ -7,7 +7,7 @@ from todooit.ui.api.events.events import ShutDown
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree
-from todooit.ui.screens import MainScreen, HelpScreen
+from todooit.ui.screens import MainScreen
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from todooit.utils import CssManager, open_url
 from .api import DooitAPI
@@ -19,7 +19,6 @@ class Dooit(App):
     ENABLE_COMMAND_PALETTE = False
 
     SCREENS = {
-        "help": HelpScreen,
         "main": MainScreen,
     }
 

@@ -50,12 +50,6 @@ ModelTree {
 }
 
 DooitKeyTable {
-  background: $background2;
-  border: blank $secondary;
-  border-title-background: $primary;
-  border-title-color: $background1;
-  border-title-align: center;
-
   .keybind {
     color: $primary;
   }
@@ -205,6 +199,35 @@ CalendarScreen {
      to keep the second line off a third one */
   & > #calendar-hint {
     width: 32;
+    color: $foreground1 60%;
+    text-align: center;
+  }
+}
+
+/* The key bindings, laid over the app like the windows around it. As wide as
+   the finder, and capped short of the screen's height: the listing runs longer
+   than most terminals, and it scrolls inside the panel rather than pushing the
+   hint off the bottom. */
+HelpScreen {
+  align: center middle;
+  background: $background1 70%;
+
+  & > #help-panel {
+    width: 80%;
+    height: auto;
+    max-height: 85%;
+    background: $background2;
+    border: $border_type $secondary;
+    border-title-background: $primary;
+    border-title-color: $background1;
+    border-title-align: center;
+    padding: 0 1;
+    scrollbar-size-vertical: 1;
+  }
+
+  & > #help-hint {
+    width: 80%;
+    padding: 0 2;
     color: $foreground1 60%;
     text-align: center;
   }

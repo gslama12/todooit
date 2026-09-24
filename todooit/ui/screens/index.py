@@ -53,6 +53,7 @@ from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
 from todooit.ui.widgets import BarSwitcher, Dashboard, ModelTree
 from .base import BaseScreen
 from .calendar import CalendarScreen, calendar_title
+from .help import HelpScreen
 from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
@@ -237,7 +238,7 @@ class MainScreen(BaseScreen):
 
     @on(SpawnHelp)
     async def spawn_help(self, _: SpawnHelp) -> None:
-        self.app.push_screen("help")
+        self.app.push_screen(HelpScreen())
 
     @on(SpawnNote)
     def spawn_note(self, event: SpawnNote) -> None:

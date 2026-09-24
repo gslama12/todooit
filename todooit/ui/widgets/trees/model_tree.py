@@ -1179,9 +1179,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         else:
             self.current_model.sort_siblings(attr)
 
-    def show_help(self):
-        self.app.push_screen("help")
-
     def compose(self) -> ComposeResult:
         with Label(id="empty_message"):
             yield Label("No items to display")

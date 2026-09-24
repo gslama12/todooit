@@ -16,6 +16,7 @@ from .events import (
     GotoFixedProject,
     HistoryStep,
     ShowConfirm,
+    SpawnHelp,
     SpawnQuickAdd,
     SpawnSearch,
     QuitApp,
@@ -507,5 +508,8 @@ class DooitAPI:
             self.notify("Found no browser to open the link with", "error")
 
     def show_help(self):
-        """Show the help screen"""
-        self.focused.show_help()
+        """Show the key bindings in an overlay"""
+
+        # Posted at the screen like every other overlay, rather than pushed
+        # from the pane that happened to have the key
+        self.app.screen.post_message(SpawnHelp())
