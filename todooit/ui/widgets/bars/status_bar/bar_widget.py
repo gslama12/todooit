@@ -12,7 +12,7 @@ class StatusBarWidget:
 
     @property
     def value(self) -> str:
-        res = getattr(self.func, "__dooit_value", "")
+        res = getattr(self.func, "__todooit_value", "")
 
         if isinstance(res, Text):
             return res.markup

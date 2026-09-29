@@ -155,7 +155,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     }
     """
 
-    HEADER_ID = "dooit-column-header"
+    HEADER_ID = "todooit-column-header"
     show_header: bool = False
 
     # The attribute a node's children hang off, walked into when the node is

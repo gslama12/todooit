@@ -1,12 +1,12 @@
 from typing import Callable, Optional
-from todooit.ui.api import DooitAPI
+from todooit.ui.api import TodooitAPI
 from ._base import BarUtilWidgetBase
 
 
 class Custom(BarUtilWidgetBase):
     def __init__(
         self,
-        api: DooitAPI,
+        api: TodooitAPI,
         function: Callable,
         width: Optional[int] = None,
         fmt: str = " {} ",

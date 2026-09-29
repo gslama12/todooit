@@ -367,7 +367,7 @@ class History:
         """
         Take whatever the database holds now as what the next key changes
 
-        Something outside the app wrote to it — another copy of dooit, or the
+        Something outside the app wrote to it — another copy of todooit, or the
         file itself — and rows that arrived that way are not a change made here
         to be taken back. They become the state the next key is measured
         against instead of being folded into whatever it does.

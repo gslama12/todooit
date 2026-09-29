@@ -1,5 +1,5 @@
 from typing import Union
-from todooit.ui.api import DooitAPI, subscribe
+from todooit.ui.api import TodooitAPI, subscribe
 from todooit.ui.api.events import Startup, ProjectSelected
 from .text_poller import Custom
 
@@ -7,7 +7,7 @@ from .text_poller import Custom
 def get_project_name_wrapper(no_project_text: str):
     @subscribe(ProjectSelected, Startup)
     def get_project_name(
-        _: DooitAPI, event: Union[ProjectSelected, Startup]
+        _: TodooitAPI, event: Union[ProjectSelected, Startup]
     ) -> str:
         if isinstance(event, Startup):
             return no_project_text
@@ -26,7 +26,7 @@ def get_project_name_wrapper(no_project_text: str):
 class CurrentProject(Custom):
     def __init__(
         self,
-        api: DooitAPI,
+        api: TodooitAPI,
         no_project_text="No Project Selected",
         fmt=" {} ",
         fg: str = "",

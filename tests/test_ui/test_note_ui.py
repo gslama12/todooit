@@ -8,7 +8,7 @@ from rich.cells import cell_len
 from textual.geometry import Offset
 
 from todooit.api import PinnedNote, Todo
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 
 from todooit.ui.screens.note import (
     EMPH,
@@ -407,7 +407,7 @@ async def test_star_markers_are_faint_but_not_hidden():
     indent that is not there. Faint, then, but visible
     """
 
-    theme = build_theme(DooitThemeBase)
+    theme = build_theme(TodooitThemeBase)
     marker = theme.syntax_styles[MARKER].color.triplet
 
     assert marker != theme.base_style.bgcolor.triplet
@@ -813,7 +813,7 @@ async def test_a_quoted_marker_is_green_rather_than_its_depth():
 
     assert names == [[QUOTE, QUOTE_BAR, QUOTE_ITEM]] * 3
 
-    theme = build_theme(DooitThemeBase)
+    theme = build_theme(TodooitThemeBase)
 
     assert (
         theme.syntax_styles[QUOTE_ITEM].color.triplet

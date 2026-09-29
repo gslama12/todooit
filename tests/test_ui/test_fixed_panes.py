@@ -101,7 +101,7 @@ def context_ids(tree):
     return [
         o.id
         for o in tree._options
-        if (o.id or "").startswith("dooit-todo-context-")
+        if (o.id or "").startswith("todooit-todo-context-")
     ]
 
 
@@ -129,7 +129,7 @@ async def test_today_draws_a_block_per_project():
         headings = [
             _id
             for _id in (o.id for o in tree._options)
-            if _id and _id.startswith("dooit-todo-group")
+            if _id and _id.startswith("todooit-todo-group")
         ]
         assert len(headings) == 2
 

@@ -10,7 +10,7 @@ same list of what is still possible is drawn underneath.
 
 What differs between the two is only where in the line the name sits and how a
 finished one is punctuated, which is what the hooks at the foot of the mixin
-are for. The working out is `dooit.utils.project_complete`, which knows nothing
+are for. The working out is `todooit.utils.project_complete`, which knows nothing
 about the database; which projects there are is settled here.
 """
 

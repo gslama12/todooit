@@ -9,7 +9,7 @@ from pytest import raises
 from todooit.api import Todo
 from todooit.api.exceptions import NoNodeError
 from todooit.ui.api.widgets import TodoWidget
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
 from tests.test_ui.ui_base import (
     commit_line,
@@ -28,7 +28,7 @@ def custom_formatter(value, todo):
 async def test_todo_tree_focus():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         await create_and_move_to_todo(pilot)
 
 
@@ -158,7 +158,7 @@ async def test_todo_formatter():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         tree = await create_and_move_to_todo(pilot)
 
@@ -175,7 +175,7 @@ async def test_todo_formatter():
 async def test_todo_tree_layout():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         tree = await create_and_move_to_todo(pilot)
 
@@ -419,7 +419,7 @@ async def test_agent_column_is_never_typed_into():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         tree = await create_and_move_to_todo(pilot)
 

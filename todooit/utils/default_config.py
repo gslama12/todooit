@@ -16,8 +16,8 @@ from todooit.extras.bar_widgets import (
     Powerline,
     Spacer,
 )
-from todooit.ui.api import DooitAPI, extra_formatter, subscribe, timer
-from todooit.ui.api.dooit_api import SORT_LABELS
+from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
+from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
 from todooit.ui.widgets.bars import StatusBarWidget
@@ -36,7 +36,7 @@ from rich.text import Text
 COUNT_FADE = 0.4
 
 
-def count_color(api: DooitAPI) -> str:
+def count_color(api: TodooitAPI) -> str:
     return blend(api.vars.theme.primary, api.vars.theme.background1, COUNT_FADE)
 
 
@@ -44,7 +44,7 @@ def count_color(api: DooitAPI) -> str:
 PRIORITIES = (1, 2, 3)
 
 
-def priority_color(priority: int, api: DooitAPI) -> str:
+def priority_color(priority: int, api: TodooitAPI) -> str:
     theme = api.vars.theme
     colors = {
         1: theme.red,
@@ -74,7 +74,7 @@ CHECKBOX_TICKED = "󰄵"
 # color, so a row's urgency reads from the very first column and needs no column
 # of its own; the tick only pulls that color a notch towards the background,
 # dimming it without draining it the way the other columns get grayed out.
-def todo_status_formatter(status: str, todo: Todo, api: DooitAPI):
+def todo_status_formatter(status: str, todo: Todo, api: TodooitAPI):
     completed = status == "completed"
     color = priority_color(todo.priority, api)
 
@@ -140,7 +140,7 @@ DATE_ICON_OVERDUE = " "
 # formatter above it then drops in favor of one style over the whole column.
 def date_icon(field: str):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI):
+    def wrapper(value: str, todo: Todo, api: TodooitAPI):
         date = getattr(todo, field)
 
         if not date:
@@ -167,7 +167,7 @@ def date_icon(field: str):
 # string, since a Text would get escaped by the formatter store.
 def date_color_formatter(field: str):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI) -> str:
+    def wrapper(value: str, todo: Todo, api: TodooitAPI) -> str:
         date = getattr(todo, field)
 
         if not date:
@@ -205,7 +205,7 @@ def date_color_formatter(field: str):
 # How many todos hang below this one, at any depth. Nesting is invisible while a
 # todo is collapsed, so the count rides along with the description, in the same
 # dimmed accent as the project pane's task tally.
-def todo_description_formatter(description: str, todo: Todo, api: DooitAPI) -> str:
+def todo_description_formatter(description: str, todo: Todo, api: TodooitAPI) -> str:
     count = todo.total_children
 
     if not count:
@@ -229,7 +229,7 @@ def todo_agent_formatter(agent: bool, _: Todo) -> str:
 NOTE_ICON = ""
 
 
-def todo_note_formatter(note: str, todo: Todo, api: DooitAPI) -> str:
+def todo_note_formatter(note: str, todo: Todo, api: TodooitAPI) -> str:
     # A file hanging off a note is something the task carries just as much as
     # the text is, so a note holding nothing but an attachment is still a note
     # to open: the column marks it either way, rather than leaving the row
@@ -262,7 +262,7 @@ COMPLETED_FADE = 0.55
 # the row.
 def _gray_out(applies: Callable[[Todo], bool], strike: bool):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI):
+    def wrapper(value: str, todo: Todo, api: TodooitAPI):
         if not applies(todo):
             return
 
@@ -306,7 +306,7 @@ BIN_DATE_ICON = "󰆴 "
 
 
 @extra_formatter
-def binned_date_formatter(value: str, todo: Todo, api: DooitAPI) -> str:
+def binned_date_formatter(value: str, todo: Todo, api: TodooitAPI) -> str:
     if not todo.binned_at:
         return value
 
@@ -324,7 +324,7 @@ def binned_date_formatter(value: str, todo: Todo, api: DooitAPI) -> str:
 # nothing but the number is needed. The column header is drawn in the accent
 # color, and the numbers under it in a dimmer shade of the same, so the pair
 # reads as one unit without competing with the descriptions beside it.
-def project_tasks_formatter(count: int, _: Project, api: DooitAPI) -> str:
+def project_tasks_formatter(count: int, _: Project, api: TodooitAPI) -> str:
     if not count:
         return ""
 
@@ -364,7 +364,7 @@ PROJECT_COLOR_LIFT = 0.25
 PROJECT_MUTED_FADE = 0.45
 
 
-def project_palette(api: DooitAPI) -> Tuple[str, ...]:
+def project_palette(api: TodooitAPI) -> Tuple[str, ...]:
     """
     The ten colors a project can be given, in the order the digits hand them out
     """
@@ -390,7 +390,7 @@ def project_palette(api: DooitAPI) -> Tuple[str, ...]:
     )
 
 
-def project_color(project, api: DooitAPI) -> Optional[str]:
+def project_color(project, api: TodooitAPI) -> Optional[str]:
     """
     The color a project was given, or None for one that was never colored
 
@@ -426,7 +426,7 @@ PROJECT_ICON_FADE = 0.35
 # fixed project takes the accent, since it is part of the app rather than one
 # more thing in the list.
 @extra_formatter
-def project_icon_formatter(name: str, project, api: DooitAPI) -> str:
+def project_icon_formatter(name: str, project, api: TodooitAPI) -> str:
     theme = api.vars.theme
 
     if getattr(project, "is_fixed", False):
@@ -453,7 +453,7 @@ MUTED_PROJECT_FADE = COMPLETED_FADE
 # all. The accent the fixed projects otherwise carry would put it on a level
 # with Today, which is where the day actually starts.
 @extra_formatter
-def gray_out_muted_project(value: str, project, api: DooitAPI):
+def gray_out_muted_project(value: str, project, api: TodooitAPI):
     if not getattr(project, "muted", False):
         return
 
@@ -476,7 +476,7 @@ def gray_out_muted_project(value: str, project, api: DooitAPI):
 # while a project is collapsed, so the count rides along with the name, in the
 # same dimmed accent as the task tally beside it.
 def project_description_formatter(
-    description: str, project: Project, api: DooitAPI
+    description: str, project: Project, api: TodooitAPI
 ) -> str:
     count = project.total_projects
 
@@ -491,7 +491,7 @@ def project_description_formatter(
 # color of its own on an inner span and keeps it: it is the pane counting, not
 # part of what the project is called.
 @extra_formatter
-def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
+def project_color_formatter(name: str, project, api: TodooitAPI) -> Optional[str]:
     color = project_color(project, api)
 
     if color is None:
@@ -501,7 +501,7 @@ def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
 
 
 @subscribe(Startup)
-def key_setup(api: DooitAPI, _):
+def key_setup(api: TodooitAPI, _):
     # Groups show up as sections in the help screen, in this order
     NAVIGATION = "Navigation"
     EDITING = "Editing"
@@ -649,7 +649,7 @@ def key_setup(api: DooitAPI, _):
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
     api.keys.set("q", api.toggle_row_shading, group=VIEW)
-    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
+    # The one way out of todooit: ctrl+c is a copy here, as it is everywhere
     # else, and nothing else quits
     api.keys.set("<ctrl+q>", api.quit, group=VIEW)
 
@@ -683,7 +683,7 @@ def key_setup(api: DooitAPI, _):
 
 
 @subscribe(Startup)
-def layout_setup(api: DooitAPI, _):
+def layout_setup(api: TodooitAPI, _):
     api.layouts.project_layout = [
         ProjectWidget.description,
         ProjectWidget.tasks,
@@ -705,7 +705,7 @@ def layout_setup(api: DooitAPI, _):
 
 
 @subscribe(Startup)
-def formatter_setup(api: DooitAPI, _):
+def formatter_setup(api: TodooitAPI, _):
     # Added first => runs last, so the graying has the final say over every
     # color the formatters below hand out
     for gray_out in (gray_out_binned, gray_out_completed):
@@ -782,7 +782,7 @@ ROUND_CLOSE = ""
 
 
 # What the caps at either end of a chain sit on: the bar's own background
-def bar_background(api: DooitAPI) -> str:
+def bar_background(api: TodooitAPI) -> str:
     return api.vars.theme.background2
 
 
@@ -792,7 +792,7 @@ MODE_COLORS = {
 }
 
 
-def mode_color(api: DooitAPI, mode: str) -> str:
+def mode_color(api: TodooitAPI, mode: str) -> str:
     theme = api.vars.theme
     return getattr(theme, MODE_COLORS.get(mode, "primary"))
 
@@ -801,9 +801,9 @@ def mode_color(api: DooitAPI, mode: str) -> str:
 # have to be repainted whenever it changes. A Powerline widget is fixed at
 # startup and can't follow along, so all three pieces are built here, each one
 # its own widget listening to the same event.
-def mode_widget(render: Callable[[DooitAPI, str], Text]) -> StatusBarWidget:
+def mode_widget(render: Callable[[TodooitAPI, str], Text]) -> StatusBarWidget:
     @subscribe(ModeChanged)
-    def wrapper(api: DooitAPI, event: ModeChanged) -> Text:
+    def wrapper(api: TodooitAPI, event: ModeChanged) -> Text:
         return render(api, event.mode)
 
     return StatusBarWidget(wrapper)
@@ -818,7 +818,7 @@ def mode_cap(glyph: str) -> StatusBarWidget:
     )
 
 
-def mode_label(api: DooitAPI, mode: str) -> Text:
+def mode_label(api: TodooitAPI, mode: str) -> Text:
     return Text(
         f" {mode} ",
         style=Style(
@@ -835,7 +835,7 @@ def mode_label(api: DooitAPI, mode: str) -> Text:
 DATE_TICK = 60
 
 
-def date_widget(api: DooitAPI, fg: str, bg: str) -> StatusBarWidget:
+def date_widget(api: TodooitAPI, fg: str, bg: str) -> StatusBarWidget:
     @timer(DATE_TICK)
     def today(*_) -> str:
         return day_label(date.today())
@@ -844,7 +844,7 @@ def date_widget(api: DooitAPI, fg: str, bg: str) -> StatusBarWidget:
 
 
 @subscribe(Startup)
-def bar_setup(api: DooitAPI, _):
+def bar_setup(api: TodooitAPI, _):
     theme = api.vars.theme
 
     # The mode sits alone on the left as a pill, and the three things that say
@@ -881,10 +881,10 @@ def bar_setup(api: DooitAPI, _):
 
 
 @subscribe(Startup)
-def dashboard_setup(api: DooitAPI, _):
+def dashboard_setup(api: TodooitAPI, _):
     api.dashboard.set(
         [
-            "Welcome to Dooit!",
+            "Welcome to Todooit!",
             "",
             "If you're stuck, press '?' for help.",
         ]

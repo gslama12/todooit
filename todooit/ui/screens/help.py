@@ -12,9 +12,9 @@ from todooit.ui.api.api_components.keys import KeyManager
 from .base import BaseScreen
 
 
-class DooitKeyTable(Static):
+class TodooitKeyTable(Static):
     DEFAULT_CSS = """
-    DooitKeyTable {
+    TodooitKeyTable {
         width: 1fr;
         height: auto;
         padding: 0 1;
@@ -171,7 +171,7 @@ class HelpScreen(BaseScreen, ModalScreen):
         # Not focusable: a focused scroll view has arrow bindings of its own,
         # and every key is the screen's to route
         with VerticalScroll(id="help-panel", can_focus=False):
-            yield DooitKeyTable(self.api.keys)
+            yield TodooitKeyTable(self.api.keys)
 
         yield Static(HINT, id="help-hint")
 

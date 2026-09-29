@@ -1,5 +1,5 @@
-class DooitThemeBase:
-    _name: str = "dooit-base"
+class TodooitThemeBase:
+    _name: str = "todooit-base"
 
     # background colors
     background1: str = "#2E3440"  # Darkest
@@ -51,7 +51,7 @@ $secondary: {cls.secondary};
         return css
 
 
-class TokyoNight(DooitThemeBase):
+class TokyoNight(TodooitThemeBase):
     """
     The "night" variant of Tokyo Night: a deep blue-black ground, text in a
     washed periwinkle, and a palette that leans blue/purple, with the warm

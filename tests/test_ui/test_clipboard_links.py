@@ -88,7 +88,7 @@ async def test_open_link_on_a_row():
         opened = []
 
         with patch(
-            "todooit.ui.api.dooit_api.open_url",
+            "todooit.ui.api.todooit_api.open_url",
             lambda url: opened.append(url) or True,
         ):
             await create_and_move_to_todo(pilot)
@@ -111,7 +111,7 @@ async def test_open_link_without_one_warns():
         opened = []
 
         with patch(
-            "todooit.ui.api.dooit_api.open_url",
+            "todooit.ui.api.todooit_api.open_url",
             lambda url: opened.append(url) or True,
         ):
             await create_and_move_to_todo(pilot)
@@ -131,7 +131,7 @@ async def test_open_link_with_no_browser_reports_it():
     async with run_pilot() as pilot:
         app = pilot.app
 
-        with patch("todooit.ui.api.dooit_api.open_url", lambda url: False):
+        with patch("todooit.ui.api.todooit_api.open_url", lambda url: False):
             await create_and_move_to_todo(pilot)
 
             await pilot.press("n")

@@ -1,9 +1,9 @@
 from typing import Any, Generic, TypeVar
 
-from todooit.api import DooitModel
+from todooit.api import TodooitModel
 from ._input import Input
 
-ModelType = TypeVar("ModelType", bound=DooitModel)
+ModelType = TypeVar("ModelType", bound=TodooitModel)
 ModelValue = TypeVar("ModelValue", bound=Any)
 
 

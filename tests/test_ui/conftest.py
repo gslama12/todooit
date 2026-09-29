@@ -1,9 +1,9 @@
 """
 Imported by pytest before any test module in this directory
 
-`dooit.ui.widgets` and `dooit.ui.api` import each other, and the circle only
-resolves when the walk into it starts from `dooit.ui.tui`. A test module whose
-first dooit import is anything deeper — a bar, a tree — trips the cycle and
+`todooit.ui.widgets` and `todooit.ui.api` import each other, and the circle only
+resolves when the walk into it starts from `todooit.ui.tui`. A test module whose
+first todooit import is anything deeper — a bar, a tree — trips the cycle and
 poisons the module cache for every file after it. Importing the base module
 here settles the import order once, for the whole directory, and makes single
 test files runnable on their own.
@@ -32,7 +32,7 @@ def _no_wall_clock_waits(monkeypatch):
     from textual.message_pump import MessagePump
 
     from todooit.ui.screens import note
-    from todooit.ui.tui import Dooit
+    from todooit.ui.tui import Todooit
     from todooit.ui.widgets.trees.model_tree import ModelTree
 
     def stretch(original):
@@ -44,13 +44,13 @@ def _no_wall_clock_waits(monkeypatch):
 
         return wrapper
 
-    # Patched on Dooit rather than on MessagePump so that only what the app
+    # Patched on Todooit rather than on MessagePump so that only what the app
     # itself schedules is stretched. It is also the only way to reach a timer
     # set up in default_config.py, which is exec'd into a fresh namespace on
     # every boot, so patching that module's globals would be thrown away
     # before the first key is pressed.
-    monkeypatch.setattr(Dooit, "set_interval", stretch(MessagePump.set_interval))
-    monkeypatch.setattr(Dooit, "set_timer", stretch(MessagePump.set_timer))
+    monkeypatch.setattr(Todooit, "set_interval", stretch(MessagePump.set_interval))
+    monkeypatch.setattr(Todooit, "set_timer", stretch(MessagePump.set_timer))
 
     # These hang off the note screen and the trees, not off the app
     monkeypatch.setattr(note, "SAVE_DEBOUNCE", _FOREVER)

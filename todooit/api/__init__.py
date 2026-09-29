@@ -1,4 +1,4 @@
-from .model import DooitModel, BaseModel
+from .model import TodooitModel, BaseModel
 from .todo import (
     SORT_KEYS,
     Todo,
@@ -58,7 +58,7 @@ def drop_blank_models() -> None:
 
 __all__ = [
     "BaseModel",
-    "DooitModel",
+    "TodooitModel",
     "Todo",
     "TodoSortModeType",
     "SORT_KEYS",

@@ -9,7 +9,7 @@ test_sort.py.
 from typing import Optional
 
 from todooit.api import BIN, Todo
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.widgets.bars import StatusBar
 from tests.test_ui.ui_base import (
     boot,
@@ -29,7 +29,7 @@ async def settle(pilot):
         await pilot.pause()
 
 
-def confirm_message(app: Dooit) -> Optional[str]:
+def confirm_message(app: Todooit) -> Optional[str]:
     """The question the bar is holding the keyboard for, if it is asking one"""
 
     if app.bar_switcher.current != "confirm_bar":
@@ -290,11 +290,11 @@ async def test_a_bar_widget_tick_survives_the_screen_going_away():
         app._screen_stack.clear()
 
         try:
-            app.api.plugin_manager._update_dooit_value(tick)
+            app.api.plugin_manager._update_todooit_value(tick)
         finally:
             app._screen_stack.extend(stack)
 
-        assert getattr(tick, "__dooit_value") == "09:19:58"
+        assert getattr(tick, "__todooit_value") == "09:19:58"
 
 
 async def test_binning_says_where_it_went_and_how_to_get_back():

@@ -30,8 +30,8 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     # The rules that keep the fixed projects apart from the stored ones. Same
     # hairline the column titles sit on, so the blocks outside them read as
     # part of the pane's own furniture rather than as one more project
-    FIXED_RULE_ID = "dooit-fixed-projects-rule"
-    BOTTOM_RULE_ID = "dooit-bottom-projects-rule"
+    FIXED_RULE_ID = "todooit-fixed-projects-rule"
+    BOTTOM_RULE_ID = "todooit-bottom-projects-rule"
 
     FIXED_MESSAGE = "[b]{}[/b] is a fixed project and can't be changed"
 

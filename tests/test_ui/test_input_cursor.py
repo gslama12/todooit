@@ -9,7 +9,7 @@ width from the first keystroke to the last.
 
 from typing import Optional, Tuple
 
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.inputs._input import Input
 
 from tests.test_ui.ui_base import (
@@ -19,7 +19,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
 )
 
-THEME = DooitThemeBase
+THEME = TodooitThemeBase
 
 
 def editing(value: str, cursor: Optional[int] = None) -> Input:

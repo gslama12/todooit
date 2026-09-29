@@ -2,12 +2,12 @@ from typing import Optional
 from rich.style import Style
 from rich.text import Text
 from todooit.api import Todo
-from todooit.ui.api import DooitAPI, extra_formatter
+from todooit.ui.api import TodooitAPI, extra_formatter
 
 
 def recurrence_icon(icon: str = "󰑖 ", color: Optional[str] = None):
     @extra_formatter
-    def wrapper(value: str, model: Todo, api: DooitAPI):
+    def wrapper(value: str, model: Todo, api: TodooitAPI):
         theme = api.vars.theme
 
         if not model.recurrence:

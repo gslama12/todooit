@@ -1,6 +1,6 @@
 from typing import Optional
 from rich.style import Style
-from todooit.ui.api import DooitAPI
+from todooit.ui.api import TodooitAPI
 from rich.text import Text
 from todooit.ui.api import extra_formatter
 import re
@@ -9,7 +9,7 @@ import re
 
 def description_highlight_link(color: Optional[str] = None):
     @extra_formatter
-    def wrapper(value: str, _, api: DooitAPI):
+    def wrapper(value: str, _, api: TodooitAPI):
         """
         Highlight URLs in the description.
         """

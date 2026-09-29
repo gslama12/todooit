@@ -1,6 +1,6 @@
 from typing import Callable, Optional
-from todooit.ui.api import DooitAPI
-from todooit.api.theme import DooitThemeBase
+from todooit.ui.api import TodooitAPI
+from todooit.api.theme import TodooitThemeBase
 from rich.style import Style, StyleType
 from rich.text import Text, TextType
 from todooit.ui.widgets.bars import StatusBarWidget
@@ -15,7 +15,7 @@ class BarUtilWidgetBase(StatusBarWidget):
         self,
         func: Callable,
         width: Optional[int],
-        api: DooitAPI,
+        api: TodooitAPI,
         fmt: TextType = "{}",
         fg: str = "",
         bg: str = "",
@@ -27,7 +27,7 @@ class BarUtilWidgetBase(StatusBarWidget):
         self.bg = bg
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.vars.theme
 
     def rich_value(self) -> Text:

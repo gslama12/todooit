@@ -1,12 +1,12 @@
 """
 The command line: a whole task typed in one line, over the top of the app
 
-Every other way of adding a task in dooit is a row and a column at a time --
+Every other way of adding a task in todooit is a row and a column at a time --
 open the project, add the todo, name it, then type a date into the column
 beside it. This is the same task said in one breath, from wherever you happen
 to be standing, and it never moves the cursor off what you were looking at.
 
-The line is read by `dooit.utils.quick_add`; what is left here is the panel it
+The line is read by `todooit.utils.quick_add`; what is left here is the panel it
 is typed into, what the panel says about the line as it is being typed, and
 the one place the task is actually written to the database.
 
@@ -28,7 +28,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from todooit.api import Project, Todo
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.inputs._input import Input
 from todooit.utils import blend, day_label
 from todooit.utils.project_complete import Token, find_token
@@ -69,7 +69,7 @@ DATE_ICON = "󰃰"
 CHIP_GAP = "  "
 
 # What is asked when the line names a project nobody has. Worded the way every
-# other y/N in dooit is, so the answer is the one already known. Drawn as text
+# other y/N in todooit is, so the answer is the one already known. Drawn as text
 # rather than as markup, so the brackets need no escaping here.
 CREATE_PROMPT = "No project {} — create it? [y/N]"
 
@@ -159,7 +159,7 @@ class QuickAddScreen(ProjectCompletion, BaseScreen, ModalScreen):
         self._init_completion()
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.vars.theme
 
     @property

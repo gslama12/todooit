@@ -166,7 +166,7 @@ async def test_enter_keeps_the_day():
         assert todo.scheduled.date() == TODAY + timedelta(days=1)
 
         assert isinstance(app.screen, MainScreen)
-        assert app.dooit_mode == "NORMAL"
+        assert app.todooit_mode == "NORMAL"
         assert not visible_todos(app).is_editing
 
 
@@ -419,7 +419,7 @@ async def test_it_reaches_a_column_the_pane_does_not_draw():
         assert todo.scheduled.date() == TODAY + timedelta(days=1)
 
         assert app.bar_switcher.current == "status_bar"
-        assert app.dooit_mode == "NORMAL"
+        assert app.todooit_mode == "NORMAL"
 
 
 async def test_a_picked_day_is_taken_back_like_a_typed_one():

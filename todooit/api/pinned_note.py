@@ -4,7 +4,7 @@ from .manager import manager
 from .model import BaseModel, BaseModelMixin
 
 
-# The pinned note is one note for the whole of dooit rather than one per todo,
+# The pinned note is one note for the whole of todooit rather than one per todo,
 # so the table it lives in holds exactly one row, and this is its id. Fixing it
 # is what makes "the pinned note" something that can be fetched rather than
 # searched for, and what stops a second one from ever being written.

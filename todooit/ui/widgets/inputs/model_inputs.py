@@ -7,7 +7,7 @@ from rich.text import Text
 
 from .simple_input import SimpleInput
 from todooit.api import Todo, Project
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
 
 # Typed into a date field, this asks for the month rather than being a date.
@@ -161,7 +161,7 @@ class DateInput(SimpleInput[Todo, datetime]):
 
         return date
 
-    def render_editing(self, theme: DooitThemeBase) -> Text:
+    def render_editing(self, theme: TodooitThemeBase) -> Text:
         """
         The buffer, plus what the text currently in it resolves to
         """

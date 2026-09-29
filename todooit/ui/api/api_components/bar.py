@@ -3,11 +3,11 @@ from todooit.ui.widgets.bars import StatusBarWidget
 from ._base import ApiComponent
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.tui import DooitAPI
+    from todooit.ui.tui import TodooitAPI
 
 
 class BarManager(ApiComponent):
-    def __init__(self, api: "DooitAPI") -> None:
+    def __init__(self, api: "TodooitAPI") -> None:
         super().__init__()
         self.api = api
 

@@ -1,7 +1,7 @@
 """
 Throwing work away, and getting it back
 
-Nothing in dooit is deleted by accident. A todo that is dropped goes to the
+Nothing in todooit is deleted by accident. A todo that is dropped goes to the
 Bin, where it stays, whole, until it is either restored or deleted for good;
 the only things that actually remove a row are the keys that ask first — the
 one that deletes what the cursor is on, and the one that empties the Bin out.

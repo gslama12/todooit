@@ -3,8 +3,8 @@ from textual.app import events
 from textual.screen import Screen
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..api import DooitAPI
-    from ..tui import Dooit
+    from ..api import TodooitAPI
+    from ..tui import Todooit
 
 
 class BaseScreen(Screen, inherit_bindings=False):
@@ -18,16 +18,16 @@ class BaseScreen(Screen, inherit_bindings=False):
     )
 
     @property
-    def app(self) -> "Dooit":
-        from ..tui import Dooit
+    def app(self) -> "Todooit":
+        from ..tui import Todooit
 
         app = super().app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         return app
 
     @property
-    def api(self) -> "DooitAPI":
+    def api(self) -> "TodooitAPI":
         return self.app.api
 
     def resolve_key(self, event: events.Key) -> str:

@@ -1,4 +1,4 @@
-from todooit.ui.api import DooitAPI, subscribe, events
+from todooit.ui.api import TodooitAPI, subscribe, events
 from rich.text import TextType
 from ._base import BarUtilWidgetBase
 
@@ -14,7 +14,7 @@ def text_wrapper(text: TextType):
 class TextBox(BarUtilWidgetBase):
     def __init__(
         self,
-        api: DooitAPI,
+        api: TodooitAPI,
         text: TextType,
         fmt: str = "{}",
         fg: str = "",

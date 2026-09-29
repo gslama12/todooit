@@ -1,4 +1,4 @@
-from .dooit_api import DooitAPI
+from .todooit_api import TodooitAPI
 from .plug import PluginManager
 from .event_handlers import subscribe, timer
 from .api_components.formatters import extra_formatter
@@ -11,7 +11,7 @@ from .api_components import (
 )
 
 __all__ = [
-    "DooitAPI",
+    "TodooitAPI",
     "PluginManager",
     "KeyManager",
     "KeyBindType",

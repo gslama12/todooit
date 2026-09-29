@@ -8,7 +8,7 @@ class BinTodosTree(FixedTodosTree):
     A row here is a whole task: one binned todo, with the steps that went in
     with it drawn underneath it the way its own project drew them. It is the
     same pane the completion log is, read the same way — newest at the top,
-    each row saying which project it came out of — and the one place in dooit
+    each row saying which project it came out of — and the one place in todooit
     where a row can be brought back rather than only worked on.
 
     Nothing is ticked off in here. A task in the Bin is not work that is being

@@ -1,5 +1,5 @@
 """
-The pinned note: one scratchpad for the whole of dooit
+The pinned note: one scratchpad for the whole of todooit
 """
 
 from todooit.api import PinnedNote

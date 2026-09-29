@@ -2,13 +2,13 @@ from typing import List, Optional, Union
 from sqlalchemy import ForeignKey, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from ..api.todo import Todo
-from .model import DooitModel
+from .model import TodooitModel
 from .manager import manager
 
 ModelType = Union["Project", "Todo"]
 
 
-class Project(DooitModel):
+class Project(TodooitModel):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
     description: Mapped[str] = mapped_column(default="")

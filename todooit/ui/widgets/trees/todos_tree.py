@@ -237,7 +237,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         super().shift_down()
 
     def _heading_id(self, index: int) -> str:
-        return f"dooit-todo-group-{index}"
+        return f"todooit-todo-group-{index}"
 
     def _make_heading(self, label: str, space_above: bool) -> GroupHeading:
         theme = self.api.vars.theme
@@ -347,7 +347,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         it is showing.
         """
 
-        return f"dooit-todo-context-{group}-{todo.id}"
+        return f"todooit-todo-context-{group}-{todo.id}"
 
     def _make_context(self, uuid: str) -> RenderableType:
         """

@@ -1,4 +1,4 @@
-from todooit.ui.api import DooitAPI
+from todooit.ui.api import TodooitAPI
 from .text_box import TextBox
 from typing_extensions import Self
 
@@ -6,7 +6,7 @@ from typing_extensions import Self
 class Powerline(TextBox):
     def __init__(
         self,
-        api: DooitAPI,
+        api: TodooitAPI,
         text: str = "",
         fmt: str = "{}",
         fg: str = "",
@@ -16,5 +16,5 @@ class Powerline(TextBox):
         super().__init__(api, text, fmt, fg, bg)
 
     @classmethod
-    def left_rounded(cls, api: DooitAPI, fg: str = "", bg: str = "") -> Self:
+    def left_rounded(cls, api: TodooitAPI, fg: str = "", bg: str = "") -> Self:
         return cls(api, "", fg=fg, bg=bg)

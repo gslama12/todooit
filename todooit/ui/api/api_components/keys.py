@@ -6,7 +6,7 @@ from typing import Callable, List, Literal, Optional, Tuple, Union
 from ._base import ApiComponent
 from todooit.ui.api.events import ModeType
 
-KeyBindType = defaultdict[str, defaultdict[str, Optional["DooitFunction"]]]
+KeyBindType = defaultdict[str, defaultdict[str, Optional["TodooitFunction"]]]
 KeyType = Union[str, List[str]]
 
 # Which pane a binding is meant for. A binding with no scope works over either
@@ -17,7 +17,7 @@ KeyScopeType = Literal["projects", "todos"]
 
 
 @dataclass
-class DooitFunction:
+class TodooitFunction:
     callback: Callable
     description: str = ""
     group: str = ""
@@ -46,7 +46,7 @@ class KeyMatchType(Enum):
 @dataclass
 class KeyMatch:
     match_type: KeyMatchType
-    function: Optional[DooitFunction] = None
+    function: Optional[TodooitFunction] = None
 
     @staticmethod
     def no_match():
@@ -57,7 +57,7 @@ class KeyMatch:
         return KeyMatch(match_type=KeyMatchType.MultipleMatchFound)
 
     @staticmethod
-    def match_found(func: DooitFunction):
+    def match_found(func: TodooitFunction):
         return KeyMatch(match_type=KeyMatchType.MatchFound, function=func)
 
 
@@ -79,7 +79,7 @@ class KeyManager(ApiComponent):
 
         return groups
 
-    def get_keybinds_by_group(self, group: str) -> List[Tuple[str, DooitFunction]]:
+    def get_keybinds_by_group(self, group: str) -> List[Tuple[str, TodooitFunction]]:
         return [
             (key, func)
             for key, func in self.keybinds["NORMAL"].items()
@@ -97,7 +97,7 @@ class KeyManager(ApiComponent):
         label: str,
         scope: Optional[KeyScopeType],
     ) -> None:
-        self.keybinds[mode][key] = DooitFunction(
+        self.keybinds[mode][key] = TodooitFunction(
             callback, description or callback.__doc__ or "", group, hidden, label, scope
         )
 
@@ -133,7 +133,7 @@ class KeyManager(ApiComponent):
     def clear_input(self):
         self._inputs.clear()
 
-    def _in_scope(self, func: DooitFunction) -> bool:
+    def _in_scope(self, func: TodooitFunction) -> bool:
         """
         Whether a binding is one the pane under the cursor answers to
 
@@ -145,7 +145,7 @@ class KeyManager(ApiComponent):
 
         return func.scope is None or func.scope == self.get_scope()
 
-    def _find_matched_functions(self) -> List[DooitFunction]:
+    def _find_matched_functions(self) -> List[TodooitFunction]:
         keybinds = self.keybinds[self.get_mode()].items()
         return [
             func
@@ -153,7 +153,7 @@ class KeyManager(ApiComponent):
             if key.startswith(self.input) and func and self._in_scope(func)
         ]
 
-    def _exact_match(self) -> Optional[DooitFunction]:
+    def _exact_match(self) -> Optional[TodooitFunction]:
         """
         The binding for exactly what has been typed so far, if the pane has one
         """

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Optional
 from textual import on
 from textual.app import App
-from todooit.ui.api.events import ModeChanged, DooitEvent, ModeType, Startup, QuitApp
+from todooit.ui.api.events import ModeChanged, TodooitEvent, ModeType, Startup, QuitApp
 from todooit.ui.api.events.events import ShutDown
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
@@ -10,11 +10,11 @@ from todooit.ui.widgets.trees import ProjectsTree
 from todooit.ui.screens import MainScreen
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from todooit.utils import CssManager, open_url
-from .api import DooitAPI
+from .api import TodooitAPI
 from ..api import manager, drop_blank_models
 
 
-class Dooit(App):
+class Todooit(App):
     CSS_PATH = CssManager().css_file
     ENABLE_COMMAND_PALETTE = False
 
@@ -24,13 +24,13 @@ class Dooit(App):
         config: Optional[Path] = None,
     ):
         super().__init__(watch_css=True)
-        self.dooit_mode: ModeType = "NORMAL"
+        self.todooit_mode: ModeType = "NORMAL"
         self.config = config
         manager.connect(db_path)
 
     async def base_setup(self):
         drop_blank_models()
-        self.api = DooitAPI(self)
+        self.api = TodooitAPI(self)
 
         # After the blank rows have been swept up, so that a row left behind
         # by a session that quit mid-edit is not the first thing ctrl+z offers
@@ -42,7 +42,7 @@ class Dooit(App):
         self.push_screen(MainScreen())
 
     async def setup_poller(self):
-        self.set_interval(1, self.poll_dooit_db)
+        self.set_interval(1, self.poll_todooit_db)
 
     async def on_mount(self):
         await self.base_setup()
@@ -65,10 +65,10 @@ class Dooit(App):
     def bar_switcher(self) -> BarSwitcher:
         return self.screen.query_one(BarSwitcher)
 
-    def get_dooit_mode(self) -> ModeType:
-        return self.dooit_mode
+    def get_todooit_mode(self) -> ModeType:
+        return self.todooit_mode
 
-    async def poll_dooit_db(self):  # pragma: no cover
+    async def poll_todooit_db(self):  # pragma: no cover
         def refresh_all_trees():
             trees = self.screen.query(ModelTree)
             for tree in trees:
@@ -81,8 +81,8 @@ class Dooit(App):
             self.api.history.resync()
             refresh_all_trees()
 
-    @on(DooitEvent)
-    def global_message(self, event: DooitEvent):
+    @on(TodooitEvent)
+    def global_message(self, event: TodooitEvent):
         if isinstance(self.screen, MainScreen):
             self.api.trigger_event(event)
             self.bar.refresh()
@@ -93,7 +93,7 @@ class Dooit(App):
 
     @on(ModeChanged)
     def change_status(self, event: ModeChanged):
-        self.dooit_mode = event.mode
+        self.todooit_mode = event.mode
         if event.mode == "NORMAL":
             self.project_tree.refresh_options()
             todos_tree = self.api.vars.todos_tree
@@ -105,11 +105,11 @@ class Dooit(App):
         await self.action_quit()
 
     async def action_open_url(self, url: str) -> None:  # pragma: no cover
-        # dooit's own opener rather than textual's: `App.open_url` goes
+        # todooit's own opener rather than textual's: `App.open_url` goes
         # through `webbrowser`, which finds nothing at all under WSL - the
         # same reason the "o" key does not go through it either
         open_url(url)
 
 
 if __name__ == "__main__":  # pragma: no cover
-    Dooit().run()
+    Todooit().run()

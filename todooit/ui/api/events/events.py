@@ -15,7 +15,7 @@ NotificationType = Literal["info", "warning", "error"]
 # Super event
 
 
-class DooitEvent(Message, bubble=True):
+class TodooitEvent(Message, bubble=True):
     """
     Base class for all events
     """
@@ -24,7 +24,7 @@ class DooitEvent(Message, bubble=True):
 # Base events
 
 
-class ProjectEvent(DooitEvent):
+class ProjectEvent(TodooitEvent):
     """
     Base class for all project events
     """
@@ -34,7 +34,7 @@ class ProjectEvent(DooitEvent):
         self.project = project
 
 
-class TodoEvent(DooitEvent):
+class TodoEvent(TodooitEvent):
     """
     Base class for all todo events
     """
@@ -67,31 +67,31 @@ class TodoChanged(TodoEvent):
 # Events
 
 
-class Startup(DooitEvent):
+class Startup(TodooitEvent):
     """
     Emitted when the app starts
     """
 
 
-class ShutDown(DooitEvent):
+class ShutDown(TodooitEvent):
     """
     Emitted when user presses the exit app keybind
     """
 
 
-class SpawnHelp(DooitEvent):
+class SpawnHelp(TodooitEvent):
     """
     Emitted when user presses `?` in NORMAL mode
     """
 
 
-class SpawnQuickAdd(DooitEvent):
+class SpawnQuickAdd(TodooitEvent):
     """
     Emitted when the user wants to type a whole task in one line
     """
 
 
-class SpawnNote(DooitEvent):
+class SpawnNote(TodooitEvent):
     """
     Emitted when user wants to see and edit the note of a todo
     """
@@ -101,7 +101,7 @@ class SpawnNote(DooitEvent):
         self.todo = todo
 
 
-class SpawnMove(DooitEvent):
+class SpawnMove(TodooitEvent):
     """
     Emitted when the user wants to file a task under another project
     """
@@ -111,7 +111,7 @@ class SpawnMove(DooitEvent):
         self.todo = todo
 
 
-class SpawnCalendar(DooitEvent):
+class SpawnCalendar(TodooitEvent):
     """
     Emitted when a date is to be picked off a month rather than typed
 
@@ -127,7 +127,7 @@ class SpawnCalendar(DooitEvent):
         self.initial = initial
 
 
-class ModeChanged(DooitEvent):
+class ModeChanged(TodooitEvent):
     """
     Emitted when there is a change in the `status`
     """
@@ -137,13 +137,13 @@ class ModeChanged(DooitEvent):
         self.mode: ModeType = mode
 
 
-class SpawnSearch(DooitEvent):
+class SpawnSearch(TodooitEvent):
     """
     Emitted when user wants to find a task anywhere in the tree
     """
 
 
-class GotoFixedProject(DooitEvent):
+class GotoFixedProject(TodooitEvent):
     """
     Emitted when user wants to jump straight into a fixed project
 
@@ -156,7 +156,7 @@ class GotoFixedProject(DooitEvent):
         self.key = key
 
 
-class ShowConfirm(DooitEvent):
+class ShowConfirm(TodooitEvent):
     """
     Emitted when confirmation from user is required
 
@@ -341,7 +341,7 @@ class TodoPriorityChanged(TodoChanged):
         self.new = new
 
 
-class BarNotification(DooitEvent):
+class BarNotification(TodooitEvent):
     """
     Emitted when a notification is to be displayed
     """
@@ -355,7 +355,7 @@ class BarNotification(DooitEvent):
         self.auto_exit = auto_exit
 
 
-class StartFieldEdit(DooitEvent):
+class StartFieldEdit(TodooitEvent):
     """
     Emitted when an edit is started on a column the pane does not draw
 
@@ -369,7 +369,7 @@ class StartFieldEdit(DooitEvent):
         self.column = column
 
 
-class HistoryStep(DooitEvent):
+class HistoryStep(TodooitEvent):
     """
     Emitted when the user wants the last change taken back, or put back
 
@@ -383,7 +383,7 @@ class HistoryStep(DooitEvent):
         self.forward = forward
 
 
-class QuitApp(DooitEvent):
+class QuitApp(TodooitEvent):
     """
     Internally used Quit Event
     """

@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING, Callable, List, Optional, Type
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 
-from todooit.ui.api.event_handlers import DOOIT_EVENT_ATTR, DOOIT_TIMER_ATTR
-from todooit.ui.api.events import DooitEvent
+from todooit.ui.api.event_handlers import TODOOIT_EVENT_ATTR, TODOOIT_TIMER_ATTR
+from todooit.ui.api.events import TodooitEvent
 from todooit.paths import config_file
 from .loader import load_file
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 if getattr(sys, "frozen", False):
@@ -29,9 +29,9 @@ def is_running_under_pytest() -> bool:
 
 
 class PluginManager:
-    def __init__(self, api: "DooitAPI", config: Optional[Path] = None) -> None:
+    def __init__(self, api: "TodooitAPI", config: Optional[Path] = None) -> None:
         self.config = config or config_file()
-        self.events: defaultdict[Type[DooitEvent], List[Callable]] = defaultdict(list)
+        self.events: defaultdict[Type[TodooitEvent], List[Callable]] = defaultdict(list)
         self.api = api
         self.app = api.app
 
@@ -43,9 +43,9 @@ class PluginManager:
 
             load_file(self, self.config)
 
-    def _update_dooit_value(self, obj, *params):
+    def _update_todooit_value(self, obj, *params):
         res = obj(self.api, *params)
-        setattr(obj, "__dooit_value", res)
+        setattr(obj, "__todooit_value", res)
 
         # A bar widget on a timer goes on ticking whatever else is happening,
         # and at both ends of the app's life there is no bar for it to redraw:
@@ -60,7 +60,7 @@ class PluginManager:
         except (NoMatches, ScreenStackError):
             pass
 
-    def on_event(self, event: DooitEvent):
+    def on_event(self, event: TodooitEvent):
         matched_events = [
             e for e in self.events.keys() if issubclass(event.__class__, e)
         ]
@@ -72,21 +72,21 @@ class PluginManager:
         with self.api.batch_formatter_refresh():
             for e in matched_events:
                 for obj in self.events[e]:
-                    self._update_dooit_value(obj, event)
+                    self._update_todooit_value(obj, event)
 
-    def _register_events(self, events: List[Type[DooitEvent]], obj: Callable):
+    def _register_events(self, events: List[Type[TodooitEvent]], obj: Callable):
         for event in events:
             self.events[event].append(obj)
 
     def _register_timer(self, obj: Callable):
-        if interval := getattr(obj, DOOIT_TIMER_ATTR, None):
-            func = partial(self._update_dooit_value, obj)
+        if interval := getattr(obj, TODOOIT_TIMER_ATTR, None):
+            func = partial(self._update_todooit_value, obj)
             func()
             self.api.app.set_interval(interval, func)
 
     def register(self, obj):
-        if event := getattr(obj, DOOIT_EVENT_ATTR, None):
+        if event := getattr(obj, TODOOIT_EVENT_ATTR, None):
             return self._register_events(event, obj)
 
-        if getattr(obj, DOOIT_TIMER_ATTR, None):
+        if getattr(obj, TODOOIT_TIMER_ATTR, None):
             return self._register_timer(obj)

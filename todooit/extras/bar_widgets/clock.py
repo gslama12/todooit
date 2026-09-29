@@ -1,5 +1,5 @@
 from datetime import datetime
-from todooit.ui.api import DooitAPI, timer
+from todooit.ui.api import TodooitAPI, timer
 from .text_poller import Custom
 
 
@@ -14,7 +14,7 @@ def get_clock_wrapper(format: str):
 class Clock(Custom):
     def __init__(
         self,
-        api: DooitAPI,
+        api: TodooitAPI,
         fmt: str = " {} ",
         format: str = "%H:%M:%S",
         fg: str = "",

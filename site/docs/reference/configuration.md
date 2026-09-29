@@ -27,11 +27,11 @@ manager. Only functions carrying one of two decorators are hooked up to
 anything.
 
 ```python
-from todooit.ui.api import DooitAPI, subscribe, timer
+from todooit.ui.api import TodooitAPI, subscribe, timer
 from todooit.ui.api.events import Startup
 
 @subscribe(Startup)
-def setup(api: DooitAPI, event):
+def setup(api: TodooitAPI, event):
     api.vars.row_shading = True
 ```
 
@@ -53,7 +53,7 @@ api.keys.set("x", api.remove_node, group="Editing")
 | Argument | Meaning |
 | --- | --- |
 | `keys` | One key, a chord like `"gg"`, `"<ctrl+z>"`, or a list of them |
-| `callback` | Usually a `DooitAPI` method |
+| `callback` | Usually a `TodooitAPI` method |
 | `description` | The help screen text; defaults to the callback's docstring |
 | `group` | The help screen section. Sections appear in the order they are first used |
 | `hidden` | Keep it working but leave it out of the help screen |
@@ -153,17 +153,17 @@ that is what decides when the widget is recomputed.
 What the tasks pane shows when no project is selected.
 
 ```python
-api.dashboard.set(["Welcome to Dooit!", "", "If you're stuck, press '?' for help."])
+api.dashboard.set(["Welcome to Todooit!", "", "If you're stuck, press '?' for help."])
 ```
 
 ## Theme
 
-One theme ships: `TokyoNight`. Subclass `DooitThemeBase` to make another.
+One theme ships: `TokyoNight`. Subclass `TodooitThemeBase` to make another.
 
 ```python
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 
-class MyTheme(DooitThemeBase):
+class MyTheme(TodooitThemeBase):
     _name = "mine"
     background1 = "#101010"
     primary = "#89b4fa"

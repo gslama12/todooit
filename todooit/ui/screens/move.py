@@ -25,7 +25,7 @@ from textual.widgets import Static
 
 from todooit.api import Project, Todo
 from todooit.api.fixed_projects import owning_project, project_path
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.inputs._input import Input
 from todooit.utils import blend
 from todooit.utils.project_complete import Token
@@ -101,7 +101,7 @@ class MoveScreen(ProjectCompletion, BaseScreen, ModalScreen):
         self._init_completion()
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.vars.theme
 
     @property

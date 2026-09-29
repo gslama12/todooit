@@ -10,7 +10,7 @@ PINNED_TITLE = "Pinned Note"
 
 class PinnedNoteScreen(NoteScreenBase):
     """
-    The scratchpad: one note for the whole of dooit, in the note window
+    The scratchpad: one note for the whole of todooit, in the note window
 
     The same editor a todo's note is written in, pointed at the note that
     belongs to nothing: what is jotted down here needs no task to hang off,

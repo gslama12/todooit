@@ -1,8 +1,8 @@
 """
 The change detection the db poller runs on
 
-Dooit polls the database file's mtime once a second and refreshes every pane
-when it moves — that is how an edit made in a second dooit (or straight in
+Todooit polls the database file's mtime once a second and refreshes every pane
+when it moves — that is how an edit made in a second todooit (or straight in
 the database) shows up in a running one.
 """
 
@@ -47,7 +47,7 @@ def test_has_changed_notices_an_outside_write():
 
 
 def _index_names(db: Path) -> set:
-    """The indexes dooit laid down, as the database itself reports them"""
+    """The indexes todooit laid down, as the database itself reports them"""
 
     connection = sqlite3.connect(db)
 

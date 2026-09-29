@@ -5,7 +5,7 @@ The help overlay: the keybinds of the config, grouped the way it groups them
 from textual.screen import ModalScreen
 
 from todooit.ui.screens import HelpScreen, MainScreen
-from todooit.ui.screens.help import DooitKeyTable
+from todooit.ui.screens.help import TodooitKeyTable
 from tests.test_ui.ui_base import boot, run_pilot
 
 
@@ -34,7 +34,7 @@ async def test_help_is_an_overlay_like_the_others():
         assert isinstance(first, HelpScreen)
         assert isinstance(first, ModalScreen)
         assert first.panel.border_title == "Key Bindings"
-        assert "Z" in dict(first.query_one(DooitKeyTable)._rows("test"))
+        assert "Z" in dict(first.query_one(TodooitKeyTable)._rows("test"))
 
         # The panes stay behind it, dimmed rather than gone
         assert isinstance(app.screen_stack[-2], MainScreen)
@@ -68,7 +68,7 @@ async def test_help_swallows_every_other_key():
         await pilot.press("escape")
         await pilot.pause()
         assert app.screen is main
-        assert app.dooit_mode == "NORMAL"
+        assert app.todooit_mode == "NORMAL"
 
 
 async def test_help_lists_the_config_groups_in_order():
@@ -89,7 +89,7 @@ async def test_every_visible_keybind_has_a_row():
 
         await pilot.press("?")
         await pilot.pause()
-        table = app.screen.query_one(DooitKeyTable)
+        table = app.screen.query_one(TodooitKeyTable)
 
         rows = {
             label: description
@@ -123,7 +123,7 @@ async def test_hidden_keybinds_stay_out_of_the_help():
 
         await pilot.press("?")
         await pilot.pause()
-        table = app.screen.query_one(DooitKeyTable)
+        table = app.screen.query_one(TodooitKeyTable)
 
         labels = [
             label

@@ -1,5 +1,5 @@
 from .events import (
-    DooitEvent,
+    TodooitEvent,
     Startup,
     SpawnSearch,
     StartFieldEdit,
@@ -38,7 +38,7 @@ from .events import (
 )
 
 __all__ = [
-    "DooitEvent",
+    "TodooitEvent",
     "Startup",
     "SpawnSearch",
     "StartFieldEdit",

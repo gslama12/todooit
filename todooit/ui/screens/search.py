@@ -36,7 +36,7 @@ from textual.widgets import Static
 
 from todooit.api import BIN, COMPLETED, Todo, manager
 from todooit.api.fixed_projects import owning_project, project_path
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.inputs._input import Input
 from todooit.ui.widgets.trees.model_tree import GroupHeading
 from todooit.utils import blend, day_label
@@ -464,7 +464,7 @@ class SearchScreen(BaseScreen, ModalScreen):
         self._offset = 0
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.vars.theme
 
     @property

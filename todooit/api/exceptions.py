@@ -1,22 +1,22 @@
-class DooitError(Exception):
+class TodooitError(Exception):
     """
     Base class for all exceptions raised by the API.
     """
 
 
-class NoParentError(DooitError):
+class NoParentError(TodooitError):
     """
     Raised when user tries to add a Todo object without a parent
     """
 
 
-class MultipleParentError(DooitError):
+class MultipleParentError(TodooitError):
     """
     Raised when user tries to add a Todo object with both a project and a todo parent
     """
 
 
-class NoNodeError(DooitError):
+class NoNodeError(TodooitError):
     """
     Raised when user tried to perform an operation that requires a node, but no node is selected
     """

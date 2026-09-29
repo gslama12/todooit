@@ -12,7 +12,7 @@ from todooit.api import (
     empty_bin,
 )
 from .events import (
-    DooitEvent,
+    TodooitEvent,
     GotoFixedProject,
     HistoryStep,
     ShowConfirm,
@@ -37,7 +37,7 @@ from .api_components import (
 )
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ..tui import Dooit
+    from ..tui import Todooit
 
 
 # What each order is called where it is announced. The field names are what
@@ -50,10 +50,10 @@ SORT_LABELS = {
 }
 
 
-class DooitAPI:
+class TodooitAPI:
     def __init__(
         self,
-        app: "Dooit",
+        app: "Todooit",
     ) -> None:
         self.app = app
 
@@ -64,7 +64,7 @@ class DooitAPI:
 
         self.plugin_manager = PluginManager(self, app.config)
         self.css = CssManager()
-        self.keys = KeyManager(self.app.get_dooit_mode, self.key_scope)
+        self.keys = KeyManager(self.app.get_todooit_mode, self.key_scope)
         self.layouts = LayoutManager(self.app)
         self.formatter = Formatter(self)
         self.bar = BarManager(self)
@@ -108,7 +108,7 @@ class DooitAPI:
         pass
 
     def quit(self):
-        """Quit dooit"""
+        """Quit todooit"""
         self.app.post_message(QuitApp())
 
     def notify(self, message: str, level: NotificationType = "info") -> None:
@@ -152,7 +152,7 @@ class DooitAPI:
                 BarNotification(str(e), "error")
             )
 
-    def trigger_event(self, event: DooitEvent):
+    def trigger_event(self, event: TodooitEvent):
         self.plugin_manager.on_event(event)
 
     # -----------------------------------------
@@ -495,7 +495,7 @@ class DooitAPI:
             self.notify("No link on this row", "warning")
             return
 
-        # Nothing about opening a link shows up inside dooit - the browser
+        # Nothing about opening a link shows up inside todooit - the browser
         # comes up somewhere else entirely, or nothing does - so the bar is
         # what says the key landed, and says which link it landed on
         if open_url(link.url):

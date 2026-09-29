@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import List
 from sqlalchemy import ForeignKey, Index, select, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
-from .model import DooitModel
+from .model import TodooitModel
 from .manager import manager
 
 
@@ -96,7 +96,7 @@ def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
     return sorted(todos, key=key)
 
 
-class Todo(DooitModel):
+class Todo(TodooitModel):
     # The two ways a pane asks for todos that a foreign key does not already
     # cover: the day panes read pending work by the day it is planned for, and
     # the Bin reads the rows that have one at all. The Bin index is partial

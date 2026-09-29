@@ -7,7 +7,7 @@ from textual import events, on
 from ._decorators import require_highlighted_node
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ....ui.tui import Dooit, DooitAPI
+    from ....ui.tui import Todooit, TodooitAPI
 
 
 class BaseTree(OptionList, can_focus=True, inherit_bindings=False):
@@ -19,14 +19,14 @@ class BaseTree(OptionList, can_focus=True, inherit_bindings=False):
     expanded_nodes = defaultdict(lambda: True)
 
     @property
-    def api(self) -> "DooitAPI":
+    def api(self) -> "TodooitAPI":
         return self.tui.api
 
     @property
-    def tui(self) -> "Dooit":
-        from ....ui.tui import Dooit
+    def tui(self) -> "Todooit":
+        from ....ui.tui import Todooit
 
-        assert isinstance(self.app, Dooit)
+        assert isinstance(self.app, Todooit)
         return self.app
 
     @property

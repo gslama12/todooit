@@ -24,7 +24,7 @@ from textual.widgets import Static, TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from todooit.api import Todo
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.utils import (
     Opened,
     blend,
@@ -184,7 +184,7 @@ QUOTE_RE = re.compile(rf"^(?P<indent>[ \t]*)(?P<marker>{QUOTE_GLYPH})")
 # on purpose rather than as a stray character
 RULE_RE = re.compile(rf"^{RULE}{{3,}}[ \t]*$")
 
-THEME_NAME = "dooit-note"
+THEME_NAME = "todooit-note"
 
 # How long the editor has to sit still before the note is written back
 SAVE_DEBOUNCE = 0.4
@@ -201,7 +201,7 @@ TITLE_MAX = 60
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
 
-# The motions NORMAL mode answers to. The four movement keys are dooit's own
+# The motions NORMAL mode answers to. The four movement keys are todooit's own
 # rather than vim's - `j`/`ö` step left and right, `k`/`l` up and down - so the
 # note is walked with the same fingers as the trees behind it.
 #
@@ -227,7 +227,7 @@ INSERT_ENTRY = "i"
 
 # The two keys that move the note rather than the cursor, on vim's own letters
 # this time: `u` and `d` are what a reader's fingers already reach for, and
-# there is no dooit motion on either of them to get in the way. Bare, not
+# there is no todooit motion on either of them to get in the way. Bare, not
 # behind `ctrl`, because NORMAL here is a mode for reading and the plain
 # letters are free
 HALF_PAGE_UP = "u"
@@ -956,9 +956,9 @@ class HangingNavigator(DocumentNavigator):
         )
 
 
-def build_theme(theme: DooitThemeBase) -> TextAreaTheme:
+def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
     """
-    The editor painted in the dooit theme rather than a TextArea default
+    The editor painted in the todooit theme rather than a TextArea default
     """
 
     # One color per level of nesting, walking away from the accent as the list
@@ -1022,7 +1022,7 @@ class NoteEditor(TextArea):
     """
     A plain text editor that styles emphasis, quotes and bullets as typed
 
-    Two modes, the way the rest of dooit has two. NORMAL is where the letters
+    Two modes, the way the rest of todooit has two. NORMAL is where the letters
     move the cursor about and nothing typed reaches the note, and `i` drops
     into INSERT, where they land in it. `escape` climbs back out one step at a
     time: INSERT to NORMAL, NORMAL to the todo the note is on.
@@ -1408,7 +1408,7 @@ class NoteEditor(TextArea):
         Drop the clipboard in at the cursor
 
         Overrides the TextArea binding, which pastes textual's own clipboard:
-        that only ever holds what was copied inside dooit, and the point of
+        that only ever holds what was copied inside todooit, and the point of
         the key here is to bring text in from somewhere else.
 
         A paste is an edit, so it takes the note into INSERT rather than being
@@ -1964,7 +1964,7 @@ class AttachmentStrip(Static):
 
         return self.paths[self.picked]
 
-    def show(self, paths, theme: DooitThemeBase) -> None:
+    def show(self, paths, theme: TodooitThemeBase) -> None:
         """
         Draw the strip, and take it off the page when there is nothing on it
         """
@@ -2014,7 +2014,7 @@ class AttachmentStrip(Static):
 
         return rows
 
-    def _drawn(self, theme: DooitThemeBase) -> Text:
+    def _drawn(self, theme: TodooitThemeBase) -> Text:
         """
         The strip as it is painted, row by row, the picked one lit
 
@@ -2228,7 +2228,7 @@ class NoteScreenBase(BaseScreen):
     FILES_HINT = "jö/kl pick    enter open    xx detach    esc back to the note"
 
     # Worded and escaped the way the confirm bar words a deletion elsewhere in
-    # dooit, so the answer is the one the user already knows
+    # todooit, so the answer is the one the user already knows
     CLEAR_PROMPT = r"Clear the whole note? \[y/N]"
 
     # The other thing a note has to ask about. A file that has been moved or
@@ -2385,7 +2385,7 @@ class NoteScreenBase(BaseScreen):
         """
         Say something in the hint line, and put the hints back afterwards
 
-        The bar dooit talks through is on the screen underneath this one, so
+        The bar todooit talks through is on the screen underneath this one, so
         a note has to do its own talking - and the line the hints are written
         on is already there for it.
         """
@@ -2633,7 +2633,7 @@ class NoteScreenBase(BaseScreen):
 
         # `dismiss`, not `pop_screen`: popping throws the callback the screen
         # was pushed with away without running it, and that callback is what
-        # redraws the row - so the note icon would not turn up until dooit was
+        # redraws the row - so the note icon would not turn up until todooit was
         # restarted
         self.dismiss()
 

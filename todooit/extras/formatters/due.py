@@ -1,12 +1,12 @@
 from typing import Callable, Optional
 from rich.style import Style
 from todooit.api.todo import datetime, Todo
-from todooit.ui.api import DooitAPI
+from todooit.ui.api import TodooitAPI
 from rich.text import Text
 
 
 def due_danger_today(fmt: str = "{}") -> Callable:
-    def wrapper(due: Optional[datetime], _: Todo, api: DooitAPI) -> Optional[str]:
+    def wrapper(due: Optional[datetime], _: Todo, api: TodooitAPI) -> Optional[str]:
         """
         If the due date is today, show a bold red "Today" text.
         """

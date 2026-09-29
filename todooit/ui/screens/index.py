@@ -16,9 +16,9 @@ from todooit.api import (
     Project,
     fixed_project_from_key,
 )
-from todooit.api.model import DooitModel
+from todooit.api.model import TodooitModel
 from todooit.ui.api.events import (
-    DooitEvent,
+    TodooitEvent,
     ModeChanged,
     ShowConfirm,
     StartFieldEdit,
@@ -99,8 +99,8 @@ class MainScreen(BaseScreen):
             with ContentSwitcher(id="project_switcher", initial=projects_tree.id):
                 yield projects_tree
 
-            with ContentSwitcher(initial="dooit-dashboard", id="todo_switcher"):
-                yield Dashboard(id="dooit-dashboard")
+            with ContentSwitcher(initial="todooit-dashboard", id="todo_switcher"):
+                yield Dashboard(id="todooit-dashboard")
 
         yield BarSwitcher()
 
@@ -109,7 +109,7 @@ class MainScreen(BaseScreen):
         if self.app.screen != self:
             return True
 
-        # Every key on this screen is dooit's own. Stopping it here is what
+        # Every key on this screen is todooit's own. Stopping it here is what
         # keeps it away from the bindings textual keeps at the app level --
         # ctrl+c among them, which is bound to a "press ctrl+q to quit" notice
         # that would otherwise turn up on top of the copy it just did
@@ -531,7 +531,7 @@ class MainScreen(BaseScreen):
 
         pane = panes.first()
         if switcher.current == pane.id:
-            switcher.current = "dooit-dashboard"
+            switcher.current = "todooit-dashboard"
 
         await pane.remove()
 
@@ -586,7 +586,7 @@ class MainScreen(BaseScreen):
 
     @on(TodoChanged)
     @on(ProjectChanged)
-    def model_changed(self, _: DooitEvent) -> None:
+    def model_changed(self, _: TodooitEvent) -> None:
         """
         Redraws every pane once something has actually changed
 
@@ -608,7 +608,7 @@ class MainScreen(BaseScreen):
     # SQLAlchemy event listeners
 
     def _track_field(
-        self, table: Type[DooitModel], field: str, event: Type[DooitEvent]
+        self, table: Type[TodooitModel], field: str, event: Type[TodooitEvent]
     ) -> None:
         def track(_mapper, _connection, target: Todo):
             history = get_history(target, field)
@@ -624,7 +624,7 @@ class MainScreen(BaseScreen):
         listen(table, "after_update", track)
 
     def on_mount(self):
-        # Dooit opens on the day's work: the tasks scheduled for today, with
+        # Todooit opens on the day's work: the tasks scheduled for today, with
         # the cursor already on the first of them. Left until after the first
         # refresh, so that the config has had its say about the panes first.
         self.call_after_refresh(

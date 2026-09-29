@@ -3,17 +3,17 @@ from typing import TYPE_CHECKING, Optional
 from textual.widgets import ContentSwitcher
 
 from todooit.api import Project, TodoSortModeType
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from ._base import ApiComponent
 
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 class VarManager(ApiComponent):
-    def __init__(self, api: "DooitAPI") -> None:
+    def __init__(self, api: "TodooitAPI") -> None:
         super().__init__()
         self.api = api
         self._show_confirm = True
@@ -82,10 +82,10 @@ class VarManager(ApiComponent):
 
     @property
     def mode(self) -> str:
-        return self.api.app.dooit_mode
+        return self.api.app.todooit_mode
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.css.theme
 
     @property

@@ -1,20 +1,20 @@
 from typing import Callable, Type
-from todooit.ui.api.events import DooitEvent
+from todooit.ui.api.events import TodooitEvent
 
-DOOIT_EVENT_ATTR = "__dooit_event"
-DOOIT_TIMER_ATTR = "__dooit_timer"
+TODOOIT_EVENT_ATTR = "__todooit_event"
+TODOOIT_TIMER_ATTR = "__todooit_timer"
 
 
-def subscribe(*events: Type[DooitEvent]):
+def subscribe(*events: Type[TodooitEvent]):
     """
     Subscribe decorator for event handlers
     """
 
     def decorator(func: Callable):
-        attrs = getattr(func, DOOIT_EVENT_ATTR, [])
+        attrs = getattr(func, TODOOIT_EVENT_ATTR, [])
         attrs.extend(events)
 
-        setattr(func, DOOIT_EVENT_ATTR, attrs)
+        setattr(func, TODOOIT_EVENT_ATTR, attrs)
         return func
 
     return decorator
@@ -26,7 +26,7 @@ def timer(interval: float):
     """
 
     def decorator(func: Callable):
-        setattr(func, DOOIT_TIMER_ATTR, interval)
+        setattr(func, TODOOIT_TIMER_ATTR, interval)
         return func
 
     return decorator

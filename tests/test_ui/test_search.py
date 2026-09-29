@@ -18,7 +18,7 @@ from todooit.ui.screens.search import (
     SearchScreen,
     snippet,
 )
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.todos_tree import TodosTree
 from tests.test_ui.ui_base import run_pilot
 
@@ -35,7 +35,7 @@ async def seed(pilot: Pilot) -> Project:
     """
 
     app = pilot.app
-    assert isinstance(app, Dooit)
+    assert isinstance(app, Todooit)
 
     # Filed under the root the pane itself was built with, rather than under
     # one looked up again: the pane draws what hangs off the object it holds
@@ -54,7 +54,7 @@ async def seed(pilot: Pilot) -> Project:
     return project
 
 
-def visible_todos(app: Dooit) -> TodosTree:
+def visible_todos(app: Todooit) -> TodosTree:
     tree = app.screen.query_one(
         "#todo_switcher", expect_type=ContentSwitcher
     ).visible_content
@@ -120,7 +120,7 @@ async def test_search_jumps_to_the_task():
         await pilot.pause()
 
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         assert not isinstance(app.screen, SearchScreen)
 
         todos = visible_todos(app)
@@ -170,7 +170,7 @@ async def test_search_jumps_to_the_pane_a_finished_task_moved_to():
         await pilot.pause()
 
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         todos = visible_todos(app)
         assert todos.model is COMPLETED
@@ -377,7 +377,7 @@ async def test_picking_a_note_match_opens_the_note_on_its_line():
         await pilot.pause()
 
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         screen = app.screen
         assert isinstance(screen, NoteScreen)

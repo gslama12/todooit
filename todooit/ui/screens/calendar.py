@@ -29,7 +29,7 @@ from textual.app import ComposeResult
 from textual.screen import ModalScreen
 from textual.widgets import Static
 
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.utils import WEEKDAY_NAMES, blend, day_label, holiday_name
 
 from .base import BaseScreen
@@ -179,7 +179,7 @@ class CalendarScreen(BaseScreen, ModalScreen):
         self._selected = initial or date.today()
 
     @property
-    def theme(self) -> DooitThemeBase:
+    def theme(self) -> TodooitThemeBase:
         return self.api.vars.theme
 
     @property

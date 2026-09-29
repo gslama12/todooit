@@ -7,7 +7,7 @@ from todooit.api.project import ModelType
 from todooit.ui.api.api_components.formatters._decorators import MUTLIPLE_FORMATTER_ATTR
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 @dataclass
@@ -27,7 +27,7 @@ def trigger_refresh(func: Callable) -> Callable:
 
 
 class FormatterStore:
-    def __init__(self, trigger: Callable, api: "DooitAPI") -> None:
+    def __init__(self, trigger: Callable, api: "TodooitAPI") -> None:
         self.formatters = dict()
         self.trigger = trigger
         self.api = api
