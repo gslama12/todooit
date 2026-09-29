@@ -63,7 +63,7 @@ async def boot(pilot: Pilot) -> Todooit:
 
 
 def visible_todos_or_none(app: Todooit) -> Optional[TodosTree]:
-    """The tasks pane in front, or None while the dashboard is showing"""
+    """The tasks pane in front, or None while the empty pane is showing"""
 
     content = app.screen.query_one(
         "#todo_switcher", expect_type=ContentSwitcher

@@ -34,14 +34,9 @@ class FormatterStore:
 
     def _fire(self) -> None:
         """
-        Redraws what the formatters are drawn into, or leaves it to the batch
-
-        Every formatter registered redraws the panes, which is right for one
-        added by hand while the app is running and wrong for the run of them
-        the config lays down at startup: there a pane is rebuilt once per
-        formatter, and the only draw anybody sees is the last of them. Inside
-        a batch the trigger is written down instead, and each distinct one is
-        run once when the batch closes.
+        Redraws the panes, or records the trigger for a batch to run once at
+        close — needed so config startup registering ~40 formatters doesn't
+        rebuild the panes 40 times.
         """
 
         batch = getattr(self.api, "_formatter_batch", None)

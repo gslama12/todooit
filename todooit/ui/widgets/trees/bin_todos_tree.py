@@ -3,35 +3,18 @@ from .fixed_todos_tree import FixedTodosTree
 
 class BinTodosTree(FixedTodosTree):
     """
-    The pane of a fixed project whose rows are the tasks that were thrown away
+    The Bin: fixed pane of discarded tasks, newest first, each row showing its origin project.
 
-    A row here is a whole task: one binned todo, with the steps that went in
-    with it drawn underneath it the way its own project drew them. It is the
-    same pane the completion log is, read the same way — newest at the top,
-    each row saying which project it came out of — and the one place in todooit
-    where a row can be brought back rather than only worked on.
-
-    Nothing is ticked off in here. A task in the Bin is not work that is being
-    done or not done any more; the two things there are to do with it are put
-    it back and be rid of it, and both are keys of their own.
+    Nothing here can be ticked off — only restored or deleted for good.
     """
 
     shows_binned = True
 
-    # Nothing in here is being got on with, so there is nothing in here to
-    # break into steps either: a task in the Bin is waiting to be put back or
-    # be rid of, and a step written into one would be work nobody can reach
-    # without restoring it first
+    # A binned task can't be worked on, so it can't be broken into new steps either
     takes_new_steps = False
 
     def goto_item(self) -> None:
-        """
-        There is nowhere else to go: the Bin is where a thrown away task is
-
-        The project it came out of no longer draws it, and may not even be
-        there any more. Restoring it is what puts it back in one, and that
-        already takes the cursor with it.
-        """
+        """Can't go to the source project — it may no longer exist; restoring is what takes the cursor there."""
 
         self._not_here(
             "Tasks can't be gone to",

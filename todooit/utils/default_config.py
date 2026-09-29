@@ -878,14 +878,3 @@ def bar_setup(api: TodooitAPI, _):
         date_widget(api, fg=theme.background1, bg=theme.primary),
     ]
     api.bar.set(bar_widgets)
-
-
-@subscribe(Startup)
-def dashboard_setup(api: TodooitAPI, _):
-    api.dashboard.set(
-        [
-            "Welcome to Todooit!",
-            "",
-            "If you're stuck, press '?' for help.",
-        ]
-    )

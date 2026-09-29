@@ -8,7 +8,7 @@
 | `todooit/api/` | The models and the operations on them |
 | `todooit/ui/` | Screens, trees, renderers and the config API |
 | `todooit/extras/` | Formatter and status-bar widget library, merged in from dooit-extras |
-| `todooit/utils/default_config.py` | The configuration: keybinds, formatters, bar, dashboard, colors |
+| `todooit/utils/default_config.py` | The configuration: keybinds, formatters, bar, colors |
 | `tests/` | The test suite |
 | `site/` | This documentation site |
 

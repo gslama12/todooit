@@ -4,8 +4,7 @@ from textual.message import Message
 
 from todooit.api import FixedProject, Project, Todo
 
-# A pane can be showing a stored project or one of the fixed ones, and every
-# event about "the current project" carries whichever it is
+# A pane can show a stored project or a fixed one; events carry whichever it is.
 ProjectType = Union[Project, FixedProject]
 
 ModeType = Literal["NORMAL", "INSERT", "CONFIRM"]
@@ -16,18 +15,14 @@ NotificationType = Literal["info", "warning", "error"]
 
 
 class TodooitEvent(Message, bubble=True):
-    """
-    Base class for all events
-    """
+    """Base class for all events."""
 
 
 # Base events
 
 
 class ProjectEvent(TodooitEvent):
-    """
-    Base class for all project events
-    """
+    """Base class for all project events."""
 
     def __init__(self, project: ProjectType) -> None:
         super().__init__()
@@ -35,9 +30,7 @@ class ProjectEvent(TodooitEvent):
 
 
 class TodoEvent(TodooitEvent):
-    """
-    Base class for all todo events
-    """
+    """Base class for all todo events."""
 
     def __init__(self, todo: Todo) -> None:
         super().__init__()
@@ -45,56 +38,34 @@ class TodoEvent(TodooitEvent):
 
 
 class ProjectChanged(ProjectEvent):
-    """
-    Base class for the events that leave a project different from how it was
-
-    An event that only says where the cursor is stays out of here: this is what
-    the panes listen to when they have to be redrawn, and redrawing on a mere
-    selection would mean a rebuild per keystroke.
-    """
+    """Base for events that leave a project different than before; excludes mere cursor/selection changes, so panes don't redraw per keystroke."""
 
 
 class TodoChanged(TodoEvent):
-    """
-    Base class for the events that leave a todo different from how it was
-
-    The same todo can be on screen in more than one pane at a time — the
-    project it is filed under, and every fixed project that gathered it up — so
-    what changes it has to reach further than the row it was changed in.
-    """
+    """Base for events that leave a todo different than before; a todo can be shown in more than one pane, so this has to reach beyond its own row."""
 
 
 # Events
 
 
 class Startup(TodooitEvent):
-    """
-    Emitted when the app starts
-    """
+    """Emitted when the app starts."""
 
 
 class ShutDown(TodooitEvent):
-    """
-    Emitted when user presses the exit app keybind
-    """
+    """Emitted when user presses the exit app keybind."""
 
 
 class SpawnHelp(TodooitEvent):
-    """
-    Emitted when user presses `?` in NORMAL mode
-    """
+    """Emitted when user presses `?` in NORMAL mode."""
 
 
 class SpawnQuickAdd(TodooitEvent):
-    """
-    Emitted when the user wants to type a whole task in one line
-    """
+    """Emitted when the user wants to type a whole task in one line."""
 
 
 class SpawnNote(TodooitEvent):
-    """
-    Emitted when user wants to see and edit the note of a todo
-    """
+    """Emitted when user wants to see and edit the note of a todo."""
 
     def __init__(self, todo: Todo) -> None:
         super().__init__()
@@ -102,9 +73,7 @@ class SpawnNote(TodooitEvent):
 
 
 class SpawnMove(TodooitEvent):
-    """
-    Emitted when the user wants to file a task under another project
-    """
+    """Emitted when the user wants to file a task under another project."""
 
     def __init__(self, todo: Todo) -> None:
         super().__init__()
@@ -112,13 +81,7 @@ class SpawnMove(TodooitEvent):
 
 
 class SpawnCalendar(TodooitEvent):
-    """
-    Emitted when a date is to be picked off a month rather than typed
-
-    Carries the tree the edit is happening in rather than the field itself:
-    the window is pushed by the screen, and what it hands back has to find its
-    way into the buffer the keystrokes were going to.
-    """
+    """Emitted to pick a date from a calendar; carries the tree being edited, not the field, since the screen pushes the window and routes the result back."""
 
     def __init__(self, tree: Any, column: str, initial: Optional[date]) -> None:
         super().__init__()
@@ -128,9 +91,7 @@ class SpawnCalendar(TodooitEvent):
 
 
 class ModeChanged(TodooitEvent):
-    """
-    Emitted when there is a change in the `status`
-    """
+    """Emitted when there is a change in the `status`."""
 
     def __init__(self, mode: ModeType) -> None:
         super().__init__()
@@ -138,18 +99,11 @@ class ModeChanged(TodooitEvent):
 
 
 class SpawnSearch(TodooitEvent):
-    """
-    Emitted when user wants to find a task anywhere in the tree
-    """
+    """Emitted when user wants to find a task anywhere in the tree."""
 
 
 class GotoFixedProject(TodooitEvent):
-    """
-    Emitted when user wants to jump straight into a fixed project
-
-    The projects pane moves onto the project and the tasks pane takes over the
-    focus, so that the todos can be walked through without another keystroke.
-    """
+    """Emitted to jump straight into a fixed project; moves the projects pane there and hands focus to the tasks pane."""
 
     def __init__(self, key: str) -> None:
         super().__init__()
@@ -157,15 +111,7 @@ class GotoFixedProject(TodooitEvent):
 
 
 class ShowConfirm(TodooitEvent):
-    """
-    Emitted when confirmation from user is required
-
-    The question and both of its answers are spelled out by whatever asks it.
-    A bar that only says "Are you sure?" is asking about a keypress rather than
-    about an edit: the bar is the one place the thing being deleted is ever
-    named, and by the time the question is answered the row can be off screen
-    or gone. So the asker names it, and names what became of it either way.
-    """
+    """Emitted when confirmation is required; the asker spells out the question and both outcome messages, since the row may be gone or off screen by the time it's answered."""
 
     def __init__(
         self,
@@ -185,27 +131,21 @@ class ShowConfirm(TodooitEvent):
 
 
 class ProjectSelected(ProjectEvent):
-    """
-    Emitted when user selects a project
-    """
+    """Emitted when user selects a project."""
 
     def __init__(self, project: ProjectType) -> None:
         super().__init__(project)
 
 
 class ProjectRemoved(ProjectChanged):
-    """
-    Emitted when user removes a project
-    """
+    """Emitted when user removes a project."""
 
     def __init__(self, project: Project) -> None:
         super().__init__(project)
 
 
 class ProjectDescriptionChanged(ProjectChanged):
-    """
-    Emitted when user changes the description of a project
-    """
+    """Emitted when user changes the description of a project."""
 
     def __init__(self, old: str, new: str, project: Project) -> None:
         super().__init__(project)
@@ -217,40 +157,25 @@ class ProjectDescriptionChanged(ProjectChanged):
 
 
 class TodoSelected(TodoEvent):
-    """
-    Emitted when user selects a todo
-    """
+    """Emitted when user selects a todo."""
 
     def __init__(self, todo: Todo) -> None:
         super().__init__(todo)
 
 
 class RevealTodo(TodoEvent):
-    """
-    Emitted when a task has to be shown wherever it now lives
-
-    A task that leaves the pane it was being read in — unticked in the
-    completion log, taken back out of the Bin — is gone from the rows in front
-    the moment the key lands, and there is nothing left on screen to say where
-    it went. So the app goes with it: the pane it moved into is opened, the
-    cursor is put on the row, and the row flashes, exactly the way the finder
-    arrives at a task picked out of the whole tree.
-    """
+    """Emitted when a task leaves its current pane (e.g. unticked, restored from Bin) and has to be shown wherever it now lives: its pane opens, cursor moves there, row flashes."""
 
 
 class TodoRemoved(TodoChanged):
-    """
-    Emitted when user removes a todo
-    """
+    """Emitted when user removes a todo."""
 
     def __init__(self, todo: Todo) -> None:
         super().__init__(todo)
 
 
 class TodoDescriptionChanged(TodoChanged):
-    """
-    Emitted when user changes the description of a todo
-    """
+    """Emitted when user changes the description of a todo."""
 
     def __init__(self, old: str, new: str, todo: Todo) -> None:
         super().__init__(todo)
@@ -259,9 +184,7 @@ class TodoDescriptionChanged(TodoChanged):
 
 
 class TodoDueChanged(TodoChanged):
-    """
-    Emitted when user changes the due of a todo
-    """
+    """Emitted when user changes the due of a todo."""
 
     def __init__(
         self, old: Optional[datetime], new: Optional[datetime], todo: Todo
@@ -272,9 +195,7 @@ class TodoDueChanged(TodoChanged):
 
 
 class TodoScheduledChanged(TodoChanged):
-    """
-    Emitted when user changes the scheduled date of a todo
-    """
+    """Emitted when user changes the scheduled date of a todo."""
 
     def __init__(
         self, old: Optional[datetime], new: Optional[datetime], todo: Todo
@@ -285,9 +206,7 @@ class TodoScheduledChanged(TodoChanged):
 
 
 class TodoStatusChanged(TodoChanged):
-    """
-    Emitted when user changes the status of a todo
-    """
+    """Emitted when user changes the status of a todo."""
 
     def __init__(self, old: str, new: str, todo: Todo) -> None:
         super().__init__(todo)
@@ -296,9 +215,7 @@ class TodoStatusChanged(TodoChanged):
 
 
 class TodoAgentChanged(TodoChanged):
-    """
-    Emitted when a todo is handed to an AI, or taken back off one
-    """
+    """Emitted when a todo is handed to an AI, or taken back off one."""
 
     def __init__(self, old: bool, new: bool, todo: Todo) -> None:
         super().__init__(todo)
@@ -307,9 +224,7 @@ class TodoAgentChanged(TodoChanged):
 
 
 class TodoRecurrenceChanged(TodoChanged):
-    """
-    Emitted when user changes the recurrence of a todo
-    """
+    """Emitted when user changes the recurrence of a todo."""
 
     def __init__(
         self, old: Optional[timedelta], new: Optional[timedelta], todo: Todo
@@ -320,9 +235,7 @@ class TodoRecurrenceChanged(TodoChanged):
 
 
 class TodoNoteChanged(TodoChanged):
-    """
-    Emitted when user changes the note of a todo
-    """
+    """Emitted when user changes the note of a todo."""
 
     def __init__(self, old: str, new: str, todo: Todo) -> None:
         super().__init__(todo)
@@ -331,9 +244,7 @@ class TodoNoteChanged(TodoChanged):
 
 
 class TodoPriorityChanged(TodoChanged):
-    """
-    Emitted when user changes the priority of a todo
-    """
+    """Emitted when user changes the priority of a todo."""
 
     def __init__(self, old: int, new: int, todo: Todo) -> None:
         super().__init__(todo)
@@ -342,9 +253,7 @@ class TodoPriorityChanged(TodoChanged):
 
 
 class BarNotification(TodooitEvent):
-    """
-    Emitted when a notification is to be displayed
-    """
+    """Emitted when a notification is to be displayed."""
 
     def __init__(
         self, message: str, level: NotificationType, auto_exit: bool = True
@@ -356,12 +265,7 @@ class BarNotification(TodooitEvent):
 
 
 class StartFieldEdit(TodooitEvent):
-    """
-    Emitted when an edit is started on a column the pane does not draw
-
-    There is nowhere in the row to put the buffer, so the bar takes it: the
-    tree carries on with the edit, and the bar is only where it is drawn.
-    """
+    """Emitted when editing starts on a column the pane doesn't draw, so the bar shows the buffer instead (the tree still owns the edit)."""
 
     def __init__(self, tree: Any, column: str) -> None:
         super().__init__()
@@ -370,13 +274,7 @@ class StartFieldEdit(TodooitEvent):
 
 
 class HistoryStep(TodooitEvent):
-    """
-    Emitted when the user wants the last change taken back, or put back
-
-    The step itself is not taken here: a change can drop the project a pane is
-    built around, and only the screen that holds the panes can let go of one.
-    So the key says which way to walk and the screen does the walking.
-    """
+    """Emitted to undo/redo; the screen performs the actual step since it owns the panes and a step can drop one's project."""
 
     def __init__(self, forward: bool) -> None:
         super().__init__()
@@ -384,6 +282,4 @@ class HistoryStep(TodooitEvent):
 
 
 class QuitApp(TodooitEvent):
-    """
-    Internally used Quit Event
-    """
+    """Internally used Quit Event."""

@@ -10,10 +10,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 @contextmanager
 def temporary_sys_path(path: Path):
-    """Context manager to temporarily add a directory to sys.path."""
-
-    # Temporarily add the parent directory to the path
-    # to allow imports from other files in the same directory
+    """Temporarily add `path`'s parent directory to sys.path."""
 
     parent_path = str(path.parent.absolute())
     if parent_path not in sys.path:

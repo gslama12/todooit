@@ -9,10 +9,8 @@ from todooit.ui.api.events import ModeType
 KeyBindType = defaultdict[str, defaultdict[str, Optional["TodooitFunction"]]]
 KeyType = Union[str, List[str]]
 
-# Which pane a binding is meant for. A binding with no scope works over either
-# of them; a scoped one is invisible everywhere else, which is what lets the
-# same key be a key of its own over one pane and the opening of a chord over
-# the other.
+# Which pane a binding applies to. Unscoped works over both; a scoped binding
+# is invisible elsewhere, letting the same key mean different things per pane.
 KeyScopeType = Literal["projects", "todos"]
 
 
@@ -21,14 +19,11 @@ class TodooitFunction:
     callback: Callable
     description: str = ""
     group: str = ""
-    # Bindings obvious enough that a row in the help screen is just noise.
-    # They still work; they are only left out of the listing, and a group
-    # whose every binding is hidden drops out of the help screen entirely.
+    # Still works, just left out of the help screen listing (as noise); a
+    # group with every binding hidden drops out entirely.
     hidden: bool = False
-    # What the help screen writes in the key column instead of the key itself.
-    # A run of keys that only differ in the digit at the end — p1, p2, p3 —
-    # is a scale rather than four bindings, and reads as one row saying so;
-    # every binding sharing a label and a description is listed once.
+    # Key column text shown instead of the key itself, e.g. so p1/p2/p3 can
+    # be listed as one row ("label") instead of three.
     label: str = ""
     # The pane the binding belongs to, or None for one that works over both
     scope: Optional[KeyScopeType] = None
@@ -70,8 +65,7 @@ class KeyManager(ApiComponent):
 
     @property
     def groups(self) -> List[str]:
-        # Registration order, not alphabetical: the help screen shows the
-        # groups in the order the config defines them
+        # Registration order, not alphabetical, to match the config's order.
         groups = []
         for func in self.keybinds["NORMAL"].values():
             if func and not func.hidden and func.group not in groups:
@@ -135,12 +129,9 @@ class KeyManager(ApiComponent):
 
     def _in_scope(self, func: TodooitFunction) -> bool:
         """
-        Whether a binding is one the pane under the cursor answers to
-
-        A binding that names no pane answers everywhere. A pane that is not one
-        of the two -- nothing focused yet, or something that is not a tree --
-        hears only those, since a chord that is being typed over nothing has no
-        pane to be told apart from.
+        Whether a binding applies to the currently focused pane. Unscoped
+        bindings always match; with nothing (or a non-tree) focused, only
+        those match.
         """
 
         return func.scope is None or func.scope == self.get_scope()
@@ -154,9 +145,7 @@ class KeyManager(ApiComponent):
         ]
 
     def _exact_match(self) -> Optional[TodooitFunction]:
-        """
-        The binding for exactly what has been typed so far, if the pane has one
-        """
+        """The binding for exactly what has been typed so far, if any."""
 
         func = self.keybinds[self.get_mode()].get(self.input)
 
@@ -173,8 +162,7 @@ class KeyManager(ApiComponent):
 
         exact = self._exact_match()
 
-        # Something longer than what was typed still matches, so the chord is
-        # not finished: what has been typed waits for the key that ends it
+        # A longer binding still matches, so the chord isn't finished yet.
         if len(matched) > 1 or exact is None:
             return KeyMatch.multiple_match()
 

@@ -23,19 +23,11 @@ class VarManager(ApiComponent):
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
         """
-        The order the todos of a stored project are read in
-
-        Priority to start with: a project is a pile of work, and what is asked
-        of it first is what to do next. An order picked instead of it belongs
-        to the pane rather than to the project that was open at the time, and
-        holds until it is switched again.
-
-        None means no order is being worked out over the rows at all and they
-        are read in the order they are filed in — which is where moving a row
-        by hand puts the pane, since a row dragged up a sorted pane would
-        otherwise drop straight back where the sort wants it.
-
-        Fixed projects order their own rows and are left alone by this.
+        Sort order for a stored project's todos; defaults to priority. Belongs
+        to the pane, not the project, and persists across projects until
+        changed. None means filed order (needed so manually dragging a row
+        doesn't have it snap back under an active sort). Fixed projects order
+        themselves and ignore this.
         """
 
         return self._todo_sort
@@ -86,8 +78,7 @@ class VarManager(ApiComponent):
     def theme(self) -> TodooitThemeBase:
         return self.api.css.theme
 
-    # The panes are looked up by the app; these hand them on to the config,
-    # which is given the api and never the app itself
+    # Panes are looked up via the app and handed on; config only ever sees the api.
 
     @property
     def projects_tree(self) -> ProjectsTree:

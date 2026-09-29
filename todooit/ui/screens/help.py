@@ -10,6 +10,7 @@ from textual.widgets import Static
 
 from todooit.ui.api.api_components.keys import KeyManager
 from .base import BaseScreen
+from .panel import HINT_GAP
 
 
 class TodooitKeyTable(Static):
@@ -32,17 +33,13 @@ class TodooitKeyTable(Static):
         super().__init__()
         self.keybinds = keybinds
 
-    # Keys that arrive as a character nobody can see, and so have to be named
+    # Keys with no visible character need an explicit name
     KEY_LABELS = {" ": "space"}
 
     def _rows(self, group: str) -> List[Tuple[str, str]]:
-        """
-        The rows a section lists, as the key it names and what it does
+        """Rows for a section: (key or label, description).
 
-        A binding carrying a label of its own is written under that instead of
-        under its key, and the whole run of bindings sharing one collapses to
-        the single row they all read as: a scale is one thing to learn, and
-        four rows of it is four times the screen saying so.
+        Bindings sharing a label collapse into one row instead of repeating it.
         """
 
         rows: List[Tuple[str, str]] = []
@@ -63,9 +60,7 @@ class TodooitKeyTable(Static):
         if keybind in cls.KEY_LABELS:
             return cls.KEY_LABELS[keybind]
 
-        # A named key is written `<ctrl+q>` so that it can be told apart from
-        # the four characters it would otherwise be, which is a distinction
-        # only the key input cares about: the table reads it as a key
+        # Strip the `<...>` markup used to distinguish a named key from literal characters
         if keybind.startswith("<") and keybind.endswith(">"):
             return keybind[1:-1]
 
@@ -73,8 +68,7 @@ class TodooitKeyTable(Static):
 
     def _render_group(self, group: str, key_width: int) -> RenderableType:
         t = Table.grid(expand=True, padding=(0, 1))
-        # A fixed key column keeps the arrows lined up across every section;
-        # the description soaks up whatever width is left over
+        # Fixed key column keeps arrows aligned across sections; description fills the rest
         t.add_column("key", width=key_width)
         t.add_column("arrow", width=2)
         t.add_column("description", ratio=1)
@@ -109,10 +103,7 @@ class TodooitKeyTable(Static):
         renderables = []
 
         for group in self.keybinds.groups:
-            # A blank line above the rule and the section title straight under
-            # it. The gap the sections were once given on either side is worth
-            # less than the whole listing being on screen at once: a screen of
-            # blank lines is what pushes the last section off the bottom of it.
+            # Kept tight (blank line + rule, no gap below) so the whole listing fits on screen
             if renderables:
                 renderables += [Text(""), separator]
 
@@ -126,28 +117,18 @@ class TodooitKeyTable(Static):
         return Group(*renderables)
 
 
-# What the panel is titled, in the border, the way every other overlay is
+# Panel border title
 PANEL_TITLE = "Key Bindings"
 
-HINT_GAP = "  "
 
-# Only the ways around the listing and out of it: the listing itself is the
-# rest of the keys
+# Hint bar: just navigation/exit, not the keybind listing itself
 HINT = HINT_GAP.join(("k/l scroll", "gg/G top/end", "esc close"))
 
 
 class HelpScreen(BaseScreen, ModalScreen):
-    """
-    The key bindings, in a panel over a dimmed copy of the app
+    """Key bindings panel over a dimmed app; spawned fresh, not kept as a named screen."""
 
-    An overlay like the note, the finder and the calendar: the panes stay
-    visible behind it, and it is spawned fresh each time rather than kept
-    around as a named screen.
-    """
-
-    # The listing is taller than the panel on anything but a big terminal, so
-    # it moves under the same navigation cluster as everything else: `k`/`l`
-    # up and down, `j`/`ö` left and right, with the arrows alongside them
+    # Listing usually overflows the panel, so it scrolls: k/l up/down, j/ö left/right
     SCROLLS = {
         "k": "scroll_up",
         "l": "scroll_down",
@@ -168,8 +149,7 @@ class HelpScreen(BaseScreen, ModalScreen):
         return self.query_one("#help-panel", VerticalScroll)
 
     def compose(self) -> ComposeResult:
-        # Not focusable: a focused scroll view has arrow bindings of its own,
-        # and every key is the screen's to route
+        # can_focus=False: a focused scroll view has its own arrow bindings, which would steal keys from the screen
         with VerticalScroll(id="help-panel", can_focus=False):
             yield TodooitKeyTable(self.api.keys)
 
@@ -179,8 +159,7 @@ class HelpScreen(BaseScreen, ModalScreen):
         self.panel.border_title = PANEL_TITLE
 
     async def handle_key(self, event: events.Key) -> bool:
-        # Every key belongs to the window: the app's own bindings are about
-        # the panes behind it, and none of them can be reached from here
+        # Modal owns every key; the app's bindings are for the panes behind it
         event.stop()
 
         key = self.resolve_key(event)
@@ -189,8 +168,7 @@ class HelpScreen(BaseScreen, ModalScreen):
             self.dismiss()
             return True
 
-        # Only the key straight after a `g` can be its second half, so the
-        # flag is read and dropped in one go
+        # Only the key immediately after a `g` can complete `gg`
         pending_g, self._pending_g = self._pending_g, False
 
         if key == "g":

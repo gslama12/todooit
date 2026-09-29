@@ -38,8 +38,7 @@ class ProjectRenderDict(RenderDict[ProjectRender]):
     """
 
     def from_id(self, _id: str) -> ProjectRender:
-        # A fixed project is never in the database, so it is looked up in the
-        # registry first; anything else is a row the database put there
+        # Fixed projects aren't in the database; check the registry first
         project = fixed_project_from_id(_id) or Project.from_id(_id)
         return ProjectRender(project, self.tree)
 

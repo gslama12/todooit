@@ -31,7 +31,7 @@ _KEEP_BELOW = 0.2
 def _no_wall_clock_waits(monkeypatch):
     from textual.message_pump import MessagePump
 
-    from todooit.ui.screens import note
+    from todooit.ui.screens.note import screen as note_screen
     from todooit.ui.tui import Todooit
     from todooit.ui.widgets.trees.model_tree import ModelTree
 
@@ -53,6 +53,6 @@ def _no_wall_clock_waits(monkeypatch):
     monkeypatch.setattr(Todooit, "set_timer", stretch(MessagePump.set_timer))
 
     # These hang off the note screen and the trees, not off the app
-    monkeypatch.setattr(note, "SAVE_DEBOUNCE", _FOREVER)
-    monkeypatch.setattr(note, "REPORT_TIMEOUT", _FOREVER)
+    monkeypatch.setattr(note_screen, "SAVE_DEBOUNCE", _FOREVER)
+    monkeypatch.setattr(note_screen, "REPORT_TIMEOUT", _FOREVER)
     monkeypatch.setattr(ModelTree, "FLASH_INTERVAL", _FOREVER)

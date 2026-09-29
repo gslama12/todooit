@@ -23,7 +23,7 @@ async def test_startup():
 async def test_pane_lookups():
     """
     The app finds the panes, and the config's `api.vars` hands on the same
-    ones: the tasks pane in front, or None once the dashboard is back up
+    ones: the tasks pane in front, or None once the empty pane is back up
     """
 
     async with run_pilot() as pilot:
@@ -37,7 +37,7 @@ async def test_pane_lookups():
         assert app.api.vars.todos_tree is today
 
         switcher = app.screen.query_one("#todo_switcher", expect_type=ContentSwitcher)
-        switcher.current = "todooit-dashboard"
+        switcher.current = "empty-pane"
         await pilot.pause()
 
         assert app.todos_tree is None

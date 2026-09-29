@@ -32,9 +32,8 @@ class Todooit(App):
         drop_blank_models()
         self.api = TodooitAPI(self)
 
-        # After the blank rows have been swept up, so that a row left behind
-        # by a session that quit mid-edit is not the first thing ctrl+z offers
-        # to bring back
+        # Start history after sweeping blank rows, so a row left by a mid-edit
+        # quit isn't the first thing ctrl+z offers back.
         self.api.history.start()
         self.api.config_manager.scan()
         self.post_message(Startup())
@@ -55,11 +54,9 @@ class Todooit(App):
 
     @property
     def todos_tree(self) -> Optional[TodosTree]:
-        """
-        The tasks pane on show, or None while the dashboard is up
+        """The visible tasks pane, or None while the empty pane is shown.
 
-        One pane is kept per project that has been opened, so there is no
-        single one to query for: the switcher knows which is in front.
+        One pane exists per opened project; the switcher tracks which is front.
         """
 
         switcher = self.screen.query_one("#todo_switcher", expect_type=ContentSwitcher)

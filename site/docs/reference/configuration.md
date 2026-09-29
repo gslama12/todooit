@@ -148,14 +148,6 @@ api.bar.set([
 `Custom` takes a `function` that must itself carry `@timer` or `@subscribe` —
 that is what decides when the widget is recomputed.
 
-## Dashboard
-
-What the tasks pane shows when no project is selected.
-
-```python
-api.dashboard.set(["Welcome to Todooit!", "", "If you're stuck, press '?' for help."])
-```
-
 ## Theme
 
 One theme ships: `TokyoNight`. Subclass `TodooitThemeBase` to make another.

@@ -8,9 +8,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class BaseScreen(Screen, inherit_bindings=False):
-    """
-    Base screen with function to resolve `Key` event to str
-    """
+    """Base screen with a helper to resolve a `Key` event to a str."""
 
     SPACE_CHARACTERS = (
         "\u0020\u00a0\u1680\u202f\u205f\u3000"

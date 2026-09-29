@@ -8,9 +8,7 @@ ModelValue = TypeVar("ModelValue", bound=Any)
 
 
 class SimpleInput(Input, Generic[ModelType, ModelValue]):
-    """
-    A simple single line Text Input widget
-    """
+    """A simple single line Text Input widget."""
 
     def __init__(self, model: ModelType) -> None:
         self.model = model
@@ -38,12 +36,8 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
 
     def start_edit(self) -> None:
         """
-        Begin an edit on what the model holds now, not what it held then
-
-        A row is drawn straight off the model, so a field that was changed
-        without being typed into - pasted in, say - shows the new value while
-        this buffer still holds the one the renderer was built with. Filling
-        it here is what keeps the two the same thing.
+        Refill the buffer from the model before editing, in case the model
+        changed since the renderer was built (e.g. an external update).
         """
 
         self._value = self._get_default_value()
@@ -51,14 +45,7 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
         self.move_cursor_to_end()
 
     def stop_edit(self, cancel: bool = False) -> None:
-        """
-        End the edit, writing the buffer back to the model unless it is thrown
-        away
-
-        A cancelled edit never touches the model: the buffer is refilled from
-        what the model still holds, which is what puts the field back the way
-        it was before the first keystroke.
-        """
+        """End the edit, writing the buffer to the model unless cancelled."""
 
         if cancel:
             self._value = self._get_default_value()

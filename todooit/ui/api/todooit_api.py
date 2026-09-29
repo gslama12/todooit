@@ -33,16 +33,13 @@ from .api_components import (
     Formatter,
     BarManager,
     VarManager,
-    DashboardManager,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..tui import Todooit
 
 
-# What each order is called where it is announced. The field names are what
-# the columns are titled, but "scheduled" on its own reads as an adjective
-# looking for a noun once it is in a sentence.
+# Display labels for sort orders; "scheduled" alone reads oddly in a sentence.
 SORT_LABELS = {
     "priority": "priority",
     "due": "due date",
@@ -57,9 +54,8 @@ class TodooitAPI:
     ) -> None:
         self.app = app
 
-        # Set before anything that holds a formatter store is built: a store
-        # fires as soon as it is written to, and reads this to find out
-        # whether anybody is collecting. None means nobody is
+        # Set before any formatter store is built: a store checks this on
+        # write to see if a batch is collecting. None = no batch.
         self._formatter_batch: Optional[List[Callable]] = None
 
         self.config_manager = ConfigManager(self, app.config)
@@ -69,7 +65,6 @@ class TodooitAPI:
         self.formatter = Formatter(self)
         self.bar = BarManager(self)
         self.vars = VarManager(self)
-        self.dashboard = DashboardManager(self.app)
         self.history = History()
 
         self.css.refresh_css()
@@ -77,16 +72,10 @@ class TodooitAPI:
     @contextmanager
     def batch_formatter_refresh(self) -> Iterator[None]:
         """
-        Collects the redraws the formatters ask for and runs each once
-
-        A run of formatters registered together is one change to how the panes
-        are drawn, not one per formatter. Held open around it, this turns the
-        whole run into a single redraw of each pane the run touched.
-
-        Re-entrant: an inner batch is the outer one, which keeps whoever opens
-        it from having to know whether anybody already has. The flush is in a
-        `finally`, so a handler that raises still leaves the batch closed and
-        the panes drawn rather than wedging every later formatter open.
+        Collects redraws requested by formatters and runs each once, instead
+        of once per formatter. Re-entrant (an inner batch joins the outer
+        one). Flush happens in `finally`, so a raising handler still closes
+        the batch and redraws instead of leaving it stuck open.
         """
 
         if self._formatter_batch is not None:
@@ -116,12 +105,9 @@ class TodooitAPI:
 
     def key_scope(self) -> Optional[KeyScopeType]:
         """
-        The pane a key is being pressed over, for the bindings that are one
-        pane's alone
-
-        Anything that is not one of the two trees -- a bar being typed into,
-        or nothing focused at all -- belongs to neither, and only the bindings
-        that name no pane answer there.
+        The pane a key is being pressed over, for pane-scoped bindings.
+        Anything else focused (a bar, or nothing) has no scope, so only
+        unscoped bindings apply.
         """
 
         focused = self.app.focused
@@ -204,8 +190,7 @@ class TodooitAPI:
         if self.app.bar_switcher.is_focused:
             return
 
-        # Posted at the screen rather than at the app: it is the screen that
-        # owns both panes, and so the only place that can move between them
+        # Posted at the screen, which owns both panes and can move between them.
         self.app.screen.post_message(GotoFixedProject(key))
 
     def goto_today(self):
@@ -310,8 +295,7 @@ class TodooitAPI:
         if self.app.bar_switcher.is_focused:
             return
 
-        # Posted at the screen: the overlay goes over the panes, and the
-        # screen is what knows which project they were opened on
+        # Posted at the screen: the overlay covers both panes.
         self.app.screen.post_message(SpawnQuickAdd())
 
     def toggle_expand(self):
@@ -346,16 +330,14 @@ class TodooitAPI:
 
         tasks = len(binned_tasks())
 
-        # Said rather than asked: a key that stops to ask about nothing is a
-        # key that has to be answered before the app moves on again
+        # Notify rather than confirm on an empty Bin, so there's nothing to
+        # dismiss for no reason.
         if not tasks:
             self.notify("The Bin is already empty")
             return
 
-        # The one edit that takes more with it than the row under the cursor,
-        # and the cursor need not be anywhere near the Bin when it is pressed
-        # — so the question counts what is about to go instead of asking, like
-        # every other delete does, whether this is really meant
+        # Unlike other deletes, this isn't tied to the cursor's row, so the
+        # confirmation counts what's about to go instead of pointing at it.
         label = "task" if tasks == 1 else "tasks"
         message = rf"Delete {tasks} {label} in the Bin for good? \[y/N]"
         confirmed = f"Bin emptied — {tasks} {label} deleted"
@@ -372,11 +354,8 @@ class TodooitAPI:
 
     def _empty_bin(self) -> None:
         """
-        Empties the Bin out and redraws everything that was drawn from it
-
-        Every pane, not only the Bin: a todo thrown away is a row the project
-        it came out of drew once too, and what a pane keeps about a row it has
-        drawn outlives the row moving elsewhere.
+        Empties the Bin and refreshes every pane, not just the Bin's own,
+        since a binned todo's original project pane still remembers it too.
         """
 
         gone = empty_bin()
@@ -397,11 +376,9 @@ class TodooitAPI:
 
     def _step_history(self, forward: bool) -> None:
         """
-        Asks the screen to walk one step through the history
-
-        Nothing is written from here. A step can drop the project a pane was
-        built around, and the panes are the screen's — so the key says which
-        way, and the screen does it and then puts itself back together.
+        Asks the screen to step through history. Nothing is written here: a
+        step can drop the project a pane was built around, and the panes
+        belong to the screen, not this API.
         """
 
         if self.app.bar_switcher.is_focused:
@@ -415,9 +392,8 @@ class TodooitAPI:
         if self.app.bar_switcher.is_focused:
             return
 
-        # Posted at the screen the same way quick add is: the overlay goes
-        # over the panes, and the screen is what walks the cursor to whatever
-        # was picked in it
+        # Posted at the screen like quick add: it walks the cursor to whatever
+        # gets picked.
         self.app.screen.post_message(SpawnSearch())
 
     def toggle_complete(self):
@@ -445,19 +421,16 @@ class TodooitAPI:
 
         tree = self.vars.todos_tree
 
-        # The projects pane can be the focused one, and the order still belongs
-        # to the todos beside it: there is only ever one pane of them on screen
+        # Sort applies to the one todos pane on screen even if projects is focused.
         if tree is None:
             return
 
-        # A fixed project turns the order down and says so itself, so there is
-        # nothing left for this to announce
+        # A fixed project rejects the sort and announces that itself.
         if not tree.sort_by(mode):
             return
 
-        # The order is not written anywhere on the pane, and the rows of a
-        # project that has no dates on it do not move when it changes, so the
-        # bar is what says the key landed
+        # Nothing on screen shows the sort order, and rows may not visibly
+        # move, so confirm via the bar.
         self.notify(f"Todos sorted by [b]{SORT_LABELS[mode]}[/b]")
 
     def toggle_row_shading(self):
@@ -465,8 +438,7 @@ class TodooitAPI:
 
         self.vars.row_shading = not self.vars.row_shading
 
-        # Every todos pane redraws, not just the focused one: the switcher
-        # keeps one per project, and they all share the setting
+        # Every todos pane redraws, not just the focused one: it's a shared setting.
         self.app.screen.query(TodosTree).refresh()
 
     def show_note(self):
@@ -495,9 +467,8 @@ class TodooitAPI:
             self.notify("No link on this row", "warning")
             return
 
-        # Nothing about opening a link shows up inside todooit - the browser
-        # comes up somewhere else entirely, or nothing does - so the bar is
-        # what says the key landed, and says which link it landed on
+        # The browser opens outside todooit (or fails silently), so the bar
+        # confirms which link was opened.
         if open_url(link.url):
             self.notify(f"Opening {link_label(link.url)}")
         else:
@@ -506,6 +477,5 @@ class TodooitAPI:
     def show_help(self):
         """Show the key bindings in an overlay"""
 
-        # Posted at the screen like every other overlay, rather than pushed
-        # from the pane that happened to have the key
+        # Posted at the screen like every other overlay.
         self.app.screen.post_message(SpawnHelp())

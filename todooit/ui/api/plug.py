@@ -47,13 +47,10 @@ class ConfigManager:
         res = obj(self.api, *params)
         setattr(obj, "__todooit_value", res)
 
-        # A bar widget on a timer goes on ticking whatever else is happening,
-        # and at both ends of the app's life there is no bar for it to redraw:
-        # on the way up no screen has been pushed yet, and on the way down the
-        # last one has already been popped. Neither is worth reporting -- the
-        # value has been worked out and kept either way, and whatever draws it
-        # next reads it from there -- so the tick is let go quietly rather than
-        # being allowed to take the app down with it.
+        # A timer-driven bar widget keeps ticking even when there's no bar to
+        # redraw yet/anymore (before first screen push, after last pop). The
+        # value is still computed and stored, so swallow the tick instead of
+        # crashing the app over it.
         try:
             if bar := getattr(self.app, "bar", None):
                 bar.refresh()
@@ -65,10 +62,8 @@ class ConfigManager:
             e for e in self.events.keys() if issubclass(event.__class__, e)
         ]
 
-        # One event is one change as far as the panes are concerned, however
-        # many handlers answer it. The formatters the startup handlers lay
-        # down are the case that matters -- there are forty-odd of them, and
-        # without this each one rebuilds every pane on its own
+        # Batch so one event triggers one pane redraw regardless of how many
+        # handlers answer it (startup alone registers ~40 formatters).
         with self.api.batch_formatter_refresh():
             for e in matched_events:
                 for obj in self.events[e]:

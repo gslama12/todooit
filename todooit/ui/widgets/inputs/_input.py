@@ -5,15 +5,10 @@ from rich.text import Text
 
 from todooit.utils.clipboard import copy_text, paste_text, running_app
 
-# Keys that throw a selected value away rather than editing it: what was there
-# is gone either way, so the delete itself has nothing left to act on.
-# `ctrl+l` is not among them: it empties the whole buffer regardless, so it is
-# left to fall through and do that instead of stopping at the selection
+# Keys that discard the selection instead of editing it (`ctrl+l` excluded: it always clears the whole buffer).
 SELECTION_DELETE_KEYS = frozenset({"backspace", "delete", "ctrl+w", "ctrl+delete"})
 
-# Keys that grow or shrink a selection instead of settling it: the anchor stays
-# where it was, and the cursor moves out from under it exactly as far as the
-# same key without shift would have moved it
+# Keys that grow/shrink a selection: anchor stays put, cursor moves as it would without shift.
 SELECTION_EXTEND_KEYS = frozenset(
     {
         "shift+left",
@@ -25,36 +20,23 @@ SELECTION_EXTEND_KEYS = frozenset(
     }
 )
 
-# The cell just past the last character, kept at the end of every buffer that
-# is being edited. It is where the cursor sits once it has run off the end of
-# the text, and reserving it even while the cursor is elsewhere is what keeps
-# the field one constant width: without it the field would grow and shrink by
-# a column each time the cursor arrived at the end and left it again.
+# Reserved cell past the last character, so the field doesn't grow/shrink by a column as the cursor arrives/leaves.
 CURSOR_REST = " "
 
 
 class Input:
-    """
-    A simple single line Text Input
-    """
+    """A simple single line Text Input."""
 
     is_editing = False
 
-    # Where a selection was started from; the cursor is its other end, so the
-    # two together are the selected span. `None` is no selection at all, and
-    # an anchor sitting on the cursor is an empty one, which is the same thing
+    # Selection start; cursor is the other end. None, or anchor==cursor, means no selection.
     _selection_anchor: Optional[int] = None
 
     # Inputs that only show a derived value refuse to be edited
     editable: bool = True
 
     def asks_for_calendar(self) -> bool:
-        """
-        Whether what has been typed is a request for the calendar
-
-        Only a field holding a date has a month behind it to open, so every
-        other field reads the word as the word it is and puts it in the buffer.
-        """
+        """Whether the typed text is a request to open the calendar (date fields only)."""
 
         return False
 
@@ -72,13 +54,7 @@ class Input:
         return self._cursor_position
 
     def replace(self, start: int, end: int, text: str) -> None:
-        """
-        Swap a span of the buffer for something else, cursor left after it
-
-        What a completion does to the line: the span is worked out from the
-        value rather than from where the cursor happens to be, so the caller
-        says outright which characters it means to spend.
-        """
+        """Swap a span of the buffer for `text`, cursor left after it (used by completion)."""
 
         self._value = self._value[:start] + text + self._value[end:]
         self._cursor_position = start + len(text)
@@ -86,9 +62,7 @@ class Input:
 
     @property
     def selection(self) -> Optional[Tuple[int, int]]:
-        """
-        The selected span as (start, end), or None when nothing is selected
-        """
+        """The selected span as (start, end), or None when nothing is selected."""
 
         if self._selection_anchor is None:
             return None
@@ -111,40 +85,22 @@ class Input:
 
     def render_editing(self, theme) -> Text:
         """
-        What to draw while this field is being edited
-
-        Formatters are bypassed during an edit, so a field that can say
-        something useful about the half-typed buffer -- what a due date
-        expression resolves to, say -- overrides this to add it.
-
-        Selected text is drawn as a highlighted block with no cursor in it,
-        which is what says that typing replaces it instead of adding to it.
-        The cursor sits at one end of the highlight either way, so the block
-        already shows where the next keystroke lands.
+        What to draw while this field is being edited. Bypasses formatters, so
+        subclasses override to show something useful about the half-typed
+        buffer (e.g. what a due-date expression resolves to). Selection is
+        drawn as a highlighted block with no separate cursor glyph.
         """
 
-        # The buffer rather than `value`: a field that derives what it shows
-        # from the model (an unset priority, say) still has the buffer the
-        # keystrokes land in, and that is what is up for replacement.
-        #
-        # Drawn verbatim, with no strip: while a field is being typed into,
-        # the spaces at either end of it are as much of what was typed as the
-        # letters are, and dropping them would slide the whole line sideways
-        # the moment the cursor moved off them.
+        # Buffer, not `value`, and unstripped: leading/trailing spaces are live content while editing.
         text = Text(self._value + CURSOR_REST)
 
         span = self.selection
 
         if span is not None:
-            # spanned rather than styled as a whole, so that a subclass which
-            # appends to this -- a due date's preview, say -- stays outside
-            # the highlight instead of being drawn as part of the selection
+            # Stylize the span, not the whole Text, so an appended preview (e.g. due-date) stays outside the highlight.
             text.stylize(self.selection_style(theme), *span)
         else:
-            # Styled onto the character the cursor stands on rather than
-            # written into the buffer as a glyph of its own: nothing is
-            # inserted, so the letters either side of it keep their columns as
-            # the cursor travels over them
+            # Style the character under the cursor instead of inserting a glyph, so columns don't shift.
             text.stylize(
                 self.cursor_style(theme),
                 self._cursor_position,
@@ -155,27 +111,20 @@ class Input:
 
     @staticmethod
     def selection_style(theme) -> Style:
-        """
-        The inverted pill the bar already wears while a field is typed into
-        """
+        """The inverted pill style the bar wears while a field is being edited."""
 
         return Style(color=theme.background1, bgcolor=theme.secondary)
 
     @staticmethod
     def cursor_style(theme) -> Style:
-        """
-        What a terminal draws its own cursor as: a block filling the whole
-        cell, with the character standing in it punched back out
-        """
+        """A terminal-style block cursor with the character punched back out."""
 
         return Style(color=theme.background1, bgcolor=theme.primary)
 
     def start_edit(self) -> None:
         self.is_editing = True
 
-        # An edit that starts on a field which already holds something starts
-        # with the whole of it selected, so that replacing it is just typing,
-        # with no clearing out of the old value first
+        # Start with the value fully selected, so typing replaces it directly.
         self._cursor_position = len(self._value)
         self._selection_anchor = 0
 
@@ -184,9 +133,7 @@ class Input:
         self._selection_anchor = None
 
     def _is_text_key(self, key: str) -> bool:
-        """
-        Whether this keypress puts something into the buffer
-        """
+        """Whether this keypress puts something into the buffer."""
 
         return (
             key in ("space", "tab", "ctrl+v")
@@ -195,13 +142,7 @@ class Input:
         )
 
     def _settle_selection(self, key: str, span: Tuple[int, int]) -> None:
-        """
-        Spend the selection on the key that just arrived
-
-        Anything that writes into the buffer, and anything that deletes out of
-        it, takes the selected text with it. Everything else -- a cursor move,
-        most of all -- only drops the selection and leaves the value alone.
-        """
+        """Delete the selection if `key` writes or deletes; otherwise leave the value alone."""
 
         if key in SELECTION_DELETE_KEYS or self._is_text_key(key):
             start, end = span
@@ -209,20 +150,13 @@ class Input:
             self._cursor_position = start
 
     def select_all(self) -> None:
-        """
-        Take the whole buffer into the selection
-        """
+        """Select the whole buffer."""
 
         self._selection_anchor = 0
         self.move_cursor_to_end()
 
     def _extend_selection(self, key: str) -> None:
-        """
-        Move the cursor while leaving the anchor behind, growing the selection
-
-        A first shift-move drops the anchor where the cursor stands, so the
-        span starts out empty and is only what the move itself covers.
-        """
+        """Move the cursor, leaving the anchor behind to grow the selection."""
 
         if self._selection_anchor is None:
             self._selection_anchor = self._cursor_position
@@ -246,10 +180,7 @@ class Input:
             self.move_cursor_to_end()
 
     def copy_selection(self) -> None:
-        """
-        Put the selection on the clipboard, or the whole field when there is
-        none -- the way ctrl+c reads on a field nobody has selected in
-        """
+        """Copy the selection, or the whole field if nothing is selected."""
 
         text = self.selected_text or self._value
 
@@ -259,12 +190,7 @@ class Input:
         copy_text(running_app(), text)
 
     def paste_from_clipboard(self) -> None:
-        """
-        Drop what is on the clipboard in at the cursor
-
-        This is one line, so a multi-line clipboard is squeezed onto one
-        rather than being handed to a renderer that can only draw the first.
-        """
+        """Insert clipboard text at the cursor, joining multiple lines into one."""
 
         text = " ".join(paste_text(running_app()).splitlines())
 
@@ -272,9 +198,7 @@ class Input:
             self._insert_text(text)
 
     def _insert_text(self, text: str) -> None:
-        """
-        Inserts text where the cursor is
-        """
+        """Inserts text where the cursor is."""
 
         self._value = (
             self._value[: self._cursor_position]
@@ -285,11 +209,7 @@ class Input:
         self._cursor_position += len(text)
 
     def _move_cursor_backward(self, word=False, delete=False) -> None:
-        """
-        Moves the cursor backwards..
-        Optionally jumps over a word when pressed ctrl+left
-        Optionally deletes the letter in case of backspace
-        """
+        """Move the cursor backward; `word` jumps a word, `delete` removes it."""
 
         prev = self._cursor_position
 
@@ -310,11 +230,7 @@ class Input:
             self._value = self._value[: self._cursor_position] + self._value[prev:]
 
     def _move_cursor_forward(self, word=False, delete=False) -> None:
-        """
-        Moves the cursor forward..
-        Optionally jumps over a word when pressed ctrl+right
-        Optionally deletes the letter in case of del or ctrl+del
-        """
+        """Move the cursor forward; `word` jumps a word, `delete` removes it."""
 
         prev = self._cursor_position
 
@@ -347,8 +263,7 @@ class Input:
         self._cursor_position = len(self._value)
 
     def keypress(self, key: str) -> None:
-        # Selecting, which is the one thing that leaves an existing selection
-        # standing: these keys are what builds it up in the first place
+        # These keys extend a selection rather than settling it.
         if key in SELECTION_EXTEND_KEYS:
             self._extend_selection(key)
             return
@@ -357,8 +272,7 @@ class Input:
             self.select_all()
             return
 
-        # A copy leaves the selection where it is: what was just copied is
-        # usually about to be replaced, or moved away from
+        # Copy leaves the selection standing, since it's usually about to be replaced.
         if key == "ctrl+c":
             self.copy_selection()
             return
@@ -369,8 +283,7 @@ class Input:
         if span is not None:
             self._settle_selection(key, span)
 
-            # The selected text is already gone; a delete on top of that
-            # would eat into what is left either side of it
+            # Selected text is already gone; don't delete further into what's left.
             if key in SELECTION_DELETE_KEYS:
                 return
 
@@ -381,7 +294,7 @@ class Input:
         elif key == "ctrl+left":
             self._move_cursor_backward(word=True)
 
-        elif key == "backspace":  # Backspace
+        elif key == "backspace":
             self._move_cursor_backward(delete=True)
 
         elif key == "ctrl+w":

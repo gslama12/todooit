@@ -199,7 +199,7 @@ def link_title(url: str) -> str:
 
 
 # What a note delimits an emphasised phrase with: one zero-width mark either
-# side of the words. The character is chosen in `ui/screens/note.py`, which is
+# side of the words. The character is chosen in `ui/screens/note/`, which is
 # what puts it there and what draws what it means; it is named here because
 # this is the module that says what a line looks like on the page, and what a
 # mark looks like on the page is nothing at all.

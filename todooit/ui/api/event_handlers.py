@@ -6,9 +6,7 @@ TODOOIT_TIMER_ATTR = "__todooit_timer"
 
 
 def subscribe(*events: Type[TodooitEvent]):
-    """
-    Subscribe decorator for event handlers
-    """
+    """Subscribe decorator for event handlers."""
 
     def decorator(func: Callable):
         attrs = getattr(func, TODOOIT_EVENT_ATTR, [])
@@ -21,9 +19,7 @@ def subscribe(*events: Type[TodooitEvent]):
 
 
 def timer(interval: float):
-    """
-    Timer decorator for event handlers
-    """
+    """Timer decorator for event handlers."""
 
     def decorator(func: Callable):
         setattr(func, TODOOIT_TIMER_ATTR, interval)

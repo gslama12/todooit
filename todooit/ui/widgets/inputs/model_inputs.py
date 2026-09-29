@@ -10,11 +10,9 @@ from todooit.api import Todo, Project
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
 
-# Typed into a date field, this asks for the month rather than being a date.
-# A word rather than a key of its own: every letter mid-edit is a letter, so
-# the field is where the question has to be asked, and modified keys are not
-# to be relied on to survive the terminal in one piece anyway. No date
-# expression starts with these three, so nothing meant as one is swallowed.
+# Typed into a date field, opens the calendar instead of being parsed as a
+# date (no date expression starts with "cal"). A plain word rather than a
+# bound key, since modified keys aren't reliable in a terminal.
 CALENDAR_WORD = "cal"
 
 
@@ -31,9 +29,7 @@ class ProjectDescription(SimpleInput[Project, str]):
 
 
 class ProjectTasks(SimpleInput[Project, int]):
-    """
-    How many todos are nested under the project; derived, so never editable
-    """
+    """How many todos are nested under the project; derived, so never editable."""
 
     editable = False
 
@@ -43,7 +39,7 @@ class ProjectTasks(SimpleInput[Project, int]):
 
     @property
     def value(self) -> str:
-        # Counted on every render: todos come and go while the renderer stays
+        # Recounted each render since todos come and go.
         count = self.model_value
 
         if not count:
@@ -54,10 +50,8 @@ class ProjectTasks(SimpleInput[Project, int]):
 
 class Note(SimpleInput[Todo, str]):
     """
-    The free text hanging off a todo
-
-    It is edited in a window of its own, never in the row, so the column is
-    read-only and its buffer is kept empty: `_get_attr_width` measures that
+    The free text hanging off a todo, edited in its own window, never inline.
+    Column is read-only with an empty buffer: `_get_attr_width` measures the
     buffer, and a real note would stretch the column to its longest line.
     """
 
@@ -68,26 +62,16 @@ class Note(SimpleInput[Todo, str]):
 
 
 class DateInput(SimpleInput[Todo, datetime]):
-    """
-    A column holding a single date: the deadline, or the day planned for it
-    """
+    """A column holding a single date: the deadline, or the day planned for it."""
 
-    # Day first, to match both the column's German rendering and the way the
-    # parser reads an ambiguous `5.9`, so what is shown can be typed back in
+    # Day-first, to match the column's rendering and how the parser reads an ambiguous "5.9".
     EDIT_FORMAT = "%d.%m.%Y"
 
     def asks_for_calendar(self) -> bool:
         return self.value.strip().lower() == CALENDAR_WORD
 
     def take_back_word(self) -> None:
-        """
-        Put the field back the way it was before the word was typed into it
-
-        The word is a question, not a value: once it has been asked there is
-        nothing left to keep, and what the field held before it is what the
-        month is about to be opened on. Leaving it in would mean an escaped
-        calendar handing the field back holding three letters that are no date.
-        """
+        """Restore the field to how it was before "cal" was typed, so escaping the calendar doesn't leave it behind."""
 
         self.start_edit()
 
@@ -104,26 +88,14 @@ class DateInput(SimpleInput[Todo, datetime]):
         return parsed if ok else None
 
     def calendar_day(self) -> Optional[date]:
-        """
-        The day the calendar opens on, or None for today
-
-        Whatever is half-typed wins over what the model holds: the buffer is
-        what the field is saying, and a month opened out of it opens where
-        that says rather than where the todo has got to so far.
-        """
+        """Day the calendar opens on: the half-typed buffer wins over the model's value."""
 
         parsed = self._parsed()
 
         return parsed.date() if parsed else None
 
     def set_day(self, day: date) -> None:
-        """
-        Write a day picked off the calendar into the buffer
-
-        A time already typed is kept: a day is all the calendar has to say,
-        and dropping the hour along with it would lose something nothing asked
-        to have changed.
-        """
+        """Write a day picked off the calendar into the buffer, keeping any time already typed."""
 
         parsed = self._parsed()
         clock = parsed.time() if parsed else time()
@@ -155,16 +127,13 @@ class DateInput(SimpleInput[Todo, datetime]):
 
         date, ok = parse(value)
         if not ok:
-            # Raised rather than swallowed, so that the tree turns it into a
-            # notification instead of silently dropping what was typed
+            # Raised, not swallowed, so the tree turns it into a notification.
             raise ValueError(f'Could not understand {self._property} date: "{value}"')
 
         return date
 
     def render_editing(self, theme: TodooitThemeBase) -> Text:
-        """
-        The buffer, plus what the text currently in it resolves to
-        """
+        """The buffer, plus what the text currently in it resolves to."""
 
         text = super().render_editing(theme)
 
@@ -185,11 +154,9 @@ class DateInput(SimpleInput[Todo, datetime]):
 
 class Due(DateInput):
     """
-    The date the todo has to be done by
-
-    A recurring todo has none: what repeats is never owed by a date, only
-    planned for the next one. Typing a deadline into one is turned away here
-    rather than silently dropped by the hook that keeps the column clear.
+    The date the todo has to be done by. A recurring todo has none (it's
+    planned via its scheduled date instead), so setting one here is rejected
+    rather than silently dropped.
     """
 
     def _typecast_value(self, value: str) -> Any:
@@ -210,12 +177,7 @@ class Scheduled(DateInput):
 
 
 class Completed(DateInput):
-    """
-    The date the todo was ticked off
-
-    Written by the app rather than by hand: a todo is completed by ticking it,
-    which is what dates it, so there is nothing here to type into.
-    """
+    """The date the todo was ticked off; set by the app, not typed."""
 
     editable = False
 
@@ -225,12 +187,7 @@ class Completed(DateInput):
 
 
 class Binned(DateInput):
-    """
-    The date the todo was thrown away
-
-    Written by the app rather than by hand, the way the completion date is: a
-    todo lands in the Bin by being dropped, which is what dates it.
-    """
+    """The date the todo was thrown away; set by the app, not typed."""
 
     editable = False
 
@@ -258,11 +215,8 @@ class Priority(SimpleInput[Todo, int]):
 
 class Agent(SimpleInput[Todo, bool]):
     """
-    Whether an AI has been handed the todo and is off working on it
-
-    A flag rather than a field: it is turned on and off with a key, never
-    typed into, so the column is read-only and its buffer is kept empty the
-    way the note column's is -- there is no text behind it to measure.
+    Whether an AI has been handed the todo. A toggled flag, never typed into,
+    so the column is read-only with an empty buffer (like Note).
     """
 
     editable = False
