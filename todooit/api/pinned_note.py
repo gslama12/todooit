@@ -21,8 +21,7 @@ class PinnedNote(BaseModel, BaseModelMixin):
     copied database would go missing exactly when it mattered.
 
     The table is created by `metadata.create_all` on the way in like every
-    other one, so a database that predates the note grows it on first launch
-    with nothing to migrate - there is no old column to carry over.
+    other one.
     """
 
     id: Mapped[int] = mapped_column(primary_key=True, default=PINNED_NOTE_ID)

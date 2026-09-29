@@ -7,10 +7,6 @@ there when the color was picked, made afterwards, or built back out of a
 binned todo's path.
 """
 
-from sqlalchemy import text
-
-from todooit.api import manager
-from todooit.utils.database import sync_project_colors
 from tests.test_core.core_base import *  # noqa
 
 
@@ -136,35 +132,3 @@ def test_color_root_is_the_top_of_the_tree(create_project):
     assert top.color_root is top
     assert child.color_root is top
     assert grandchild.color_root is top
-
-
-def test_a_database_written_before_the_rule_is_brought_into_line(create_project):
-    """
-    A sub project painted a color of its own by an older version is put back
-    in its parent's slot on the way in, once, rather than staying odd
-    """
-
-    top = create_project("work")
-    child = top.add_project()
-    grandchild = child.add_project()
-    other = create_project("personal")
-
-    top.set_color(3)
-    other.set_color(9)
-
-    # Straight past the model, the way an older version left it behind
-    manager.session.execute(
-        text("UPDATE project SET color = 8 WHERE id = :id"), {"id": child.id}
-    )
-    manager.session.execute(
-        text("UPDATE project SET color = NULL WHERE id = :id"), {"id": grandchild.id}
-    )
-    manager.commit()
-
-    sync_project_colors(manager.engine)
-    manager.session.expire_all()
-
-    assert child.color == 3
-    assert grandchild.color == 3
-    assert top.color == 3
-    assert other.color == 9

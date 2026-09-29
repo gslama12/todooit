@@ -92,8 +92,8 @@ todooit's data is separate from any dooit install (paths resolved in
 - CSS cache: `~/.cache/todooit`
 - config dir: `~/.config/todooit` (unused, see above)
 
-Seeded 2026-09-09 from the old dooit database; the two have diverged since.
-Nothing here touches `~/.local/share/dooit/`.
+todooit uses a different database schema than dooit and is therefore not
+compatible with a dooit database.
 
 **Dev instance:** `TODOOIT_HOME=<dir>` relocates DB/cache/config into one
 self-contained directory, so development never touches the live data. Unset,

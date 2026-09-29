@@ -27,17 +27,6 @@ class Manager:
         """
 
         from todooit.api import BaseModel
-        from todooit.utils.database import (
-            add_agent_column,
-            add_attachments_column,
-            add_bin_columns,
-            add_completed_at_column,
-            add_indexes,
-            add_note_column,
-            add_project_color_column,
-            add_scheduled_column,
-            sync_project_colors,
-        )
 
         path = str(path or database_file())
         path = os.path.expanduser(path)
@@ -50,20 +39,10 @@ class Manager:
         self.engine = create_engine(connection_string)
         self.session = Session(self.engine)
 
-        add_scheduled_column(self.engine)
-        add_note_column(self.engine)
-        add_attachments_column(self.engine)
-        add_completed_at_column(self.engine)
-        add_bin_columns(self.engine)
-        add_project_color_column(self.engine)
-        add_agent_column(self.engine)
-        sync_project_colors(self.engine)
+        # Creates whatever tables are missing, indexes included, straight from
+        # the models. A table that already exists is never altered, so the
+        # database is expected to match the current schema
         BaseModel.metadata.create_all(bind=self.engine)
-
-        # After `create_all`, not beside the migrations above: an index needs a
-        # table to be laid on, and `create_all` is what makes one on a database
-        # that had none
-        add_indexes(self.engine)
 
         self._db_last_modified = self._get_db_last_modified()
 

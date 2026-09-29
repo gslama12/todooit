@@ -102,8 +102,7 @@ class Todo(TodooitModel):
     # the Bin reads the rows that have one at all. The Bin index is partial
     # because that is exactly the question `binned_tasks` asks -- the rows
     # with no bin date are the overwhelming majority and are never looked up
-    # through it. The names match `todooit/utils/database.py`, which is what
-    # puts the same indexes on a database written before they existed.
+    # through it.
     __table_args__ = (
         Index("ix_todo_pending_scheduled", "pending", "scheduled"),
         Index(
