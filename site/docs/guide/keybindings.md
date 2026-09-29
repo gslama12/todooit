@@ -7,6 +7,10 @@ Hold `?` in the app for the same list, grouped the same way.
 The **Pane** column says where a binding works. Bindings with no pane of their
 own work over both.
 
+On a Mac, every `ctrl` binding below also works with `cmd`, once the terminal
+passes `cmd` on. See [Cmd shortcuts on macOS](/guide/installation#cmd-shortcuts-on-macos)
+for the WezTerm setup.
+
 ## Navigation
 
 | Key | What it does | Pane |
