@@ -55,6 +55,7 @@ FEATURE_BY_MODULE = {
     "test_calendar": "dates",
     "test_clipboard_links": "links",
     "test_input_cursor": "editing",
+    "test_karabiner_keys": "editing",
     "test_key_resolve": "config",
     "test_loader": "config",
 }

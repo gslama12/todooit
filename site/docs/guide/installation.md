@@ -86,6 +86,28 @@ task as a new row and attach a copied file in a note. With a mouse selection,
 `cmd+c` still copies inside todooit: it copies the task's description, not the
 selected text.
 
+If your config sends `cmd+left` / `cmd+right` as `^A` / `^E` (start / end of
+line at a shell prompt), send Home / End to todooit instead: in todooit `^A`
+is `ctrl+a`, the same key as `cmd+a`, so it selects all.
+
+```lua
+{ key = 'LeftArrow',  mods = 'CMD', action = wezterm.action_callback(function(window, pane)
+    pane:send_text(is_todooit(pane) and '\x1b[H' or '\x01')
+  end) },
+{ key = 'RightArrow', mods = 'CMD', action = wezterm.action_callback(function(window, pane)
+    pane:send_text(is_todooit(pane) and '\x1b[F' or '\x05')
+  end) },
+```
+
+Likewise `cmd+up` / `cmd+down` (top / bottom of the document) only scroll
+WezTerm's scrollback, which a full-screen program never sees. Send todooit
+`ctrl+home` / `ctrl+end` (`'\x1b[1;5H'` / `'\x1b[1;5F'`) the same way, and
+anywhere else fall back to `act.ScrollToTop` / `act.ScrollToBottom`.
+
+The other terminal spellings of the Mac editing chords work as they are:
+`opt+left/right` (`ESC b` / `ESC f`), `opt+backspace`, `opt+delete` (`ESC d`),
+`shift+opt+left/right`, and `cmd+backspace` (`^U`, clears the line).
+
 ## From source
 
 Each of these installs the app editable, so editing the source edits the

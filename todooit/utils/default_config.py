@@ -524,6 +524,10 @@ def key_setup(api: TodooitAPI, _):
     # project row is already standing in its own pane
     api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
+    # The desktop's top/bottom of a document too (a Mac's cmd+up/down,
+    # passed on by the terminal); hidden, as gg/G already say it in help
+    api.keys.set("<ctrl+home>", api.go_to_top, group=NAVIGATION, hidden=True)
+    api.keys.set("<ctrl+end>", api.go_to_bottom, group=NAVIGATION, hidden=True)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
     api.keys.set("i", api.edit_description, group=EDITING)

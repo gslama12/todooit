@@ -52,6 +52,13 @@ class BaseScreen(Screen, inherit_bindings=False):
         if (key := cmd_as_ctrl(event.key)) != event.key:
             return key
 
+        # Same for a Meta chord (ESC d, the terminal's opt+delete arrives as
+        # `alt+d` with a `d` attached). A composed Option character comes
+        # through as the character itself, never as an `alt+` key.
+        *modifiers, name = event.key.split("+")
+        if "alt" in modifiers and event.character == name:
+            return event.key
+
         if not event.character:
             return event.key
 

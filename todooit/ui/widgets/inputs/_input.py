@@ -6,7 +6,9 @@ from rich.text import Text
 from todooit.utils.clipboard import copy_text, paste_text, running_app
 
 # Keys that discard the selection instead of editing it (`ctrl+l` excluded: it always clears the whole buffer).
-SELECTION_DELETE_KEYS = frozenset({"backspace", "delete", "ctrl+w", "ctrl+delete"})
+SELECTION_DELETE_KEYS = frozenset(
+    {"backspace", "delete", "ctrl+w", "ctrl+delete", "alt+d"}
+)
 
 # Keys that grow/shrink a selection: anchor stays put, cursor moves as it would without shift.
 SELECTION_EXTEND_KEYS = frozenset(
@@ -15,6 +17,8 @@ SELECTION_EXTEND_KEYS = frozenset(
         "shift+right",
         "ctrl+shift+left",
         "ctrl+shift+right",
+        "alt+shift+left",
+        "alt+shift+right",
         "shift+home",
         "shift+end",
     }
@@ -167,10 +171,10 @@ class Input:
         elif key == "shift+right":
             self._move_cursor_forward()
 
-        elif key == "ctrl+shift+left":
+        elif key in ("ctrl+shift+left", "alt+shift+left"):
             self._move_cursor_backward(word=True)
 
-        elif key == "ctrl+shift+right":
+        elif key in ("ctrl+shift+right", "alt+shift+right"):
             self._move_cursor_forward(word=True)
 
         elif key == "shift+home":
@@ -310,18 +314,20 @@ class Input:
         elif key == "delete":
             self._move_cursor_forward(delete=True)
 
-        elif key == "ctrl+delete":
+        # alt+d: readline's (and a Mac's opt+delete through the terminal)
+        elif key in ("ctrl+delete", "alt+d"):
             self._move_cursor_forward(word=True, delete=True)
 
-        # clear all input
-        elif key == "ctrl+l":
+        # clear all input; ctrl+u is what the terminal sends for cmd+backspace
+        elif key in ("ctrl+l", "ctrl+u"):
             self.clear_input()
 
         # EXTRAS
-        elif key == "home":
+        # A single line's top/bottom are its start/end
+        elif key in ("home", "ctrl+home"):
             self._cursor_position = 0
 
-        elif key == "end":
+        elif key in ("end", "ctrl+end"):
             self.move_cursor_to_end()
 
         elif key == "tab":

@@ -163,6 +163,16 @@ class NoteEditor(TextArea):
         Binding("ctrl+a,super+a", "select_all", "Select all", show=False),
         # TextArea already takes Cmd for cut/copy/undo/redo, but not paste.
         Binding("super+v", "paste", "Paste", show=False),
+        # What a Mac's opt/cmd editing chords arrive as through the terminal:
+        # opt+delete, shift+opt+arrows, and cmd+backspace (^U).
+        Binding("alt+d", "delete_word_right", "Delete word right", show=False),
+        Binding("alt+shift+left", "cursor_word_left(True)", show=False),
+        Binding("alt+shift+right", "cursor_word_right(True)", show=False),
+        # Overrides TextArea's delete-to-line-start: the whole line, as zsh does.
+        Binding("ctrl+u", "clear_line", "Clear the line", show=False),
+        # Top / bottom of the note (cmd+up/down, sent on by the terminal).
+        Binding("ctrl+home", "note_start", "Top of the note", show=False),
+        Binding("ctrl+end", "note_end", "Bottom of the note", show=False),
     ]
 
     def __init__(self, text: str) -> None:
@@ -467,6 +477,23 @@ class NoteEditor(TextArea):
 
         copy_text(self.app, removed)
 
+    def action_note_start(self) -> None:
+        self.move_cursor((0, 0))
+
+    def action_note_end(self) -> None:
+        self.move_cursor(self.document.end)
+
+    def action_clear_line(self) -> None:
+        """
+        Empty the cursor's line, keeping the line itself (INSERT only, like every edit).
+        """
+
+        if self.read_only:
+            return
+
+        row, _ = self.cursor_location
+        self._delete_via_keyboard((row, 0), (row, len(self.document[row])))
+
     @property
     def note_screen(self) -> "NoteScreenBase":
         screen = self.screen
@@ -611,6 +638,12 @@ class NoteEditor(TextArea):
             event.stop()
             event.prevent_default()
             self.enter_normal()
+            return
+
+        # A Meta chord (`alt+d`) carries its letter, which TextArea would type;
+        # skip that so the key reaches its binding instead.
+        if key != event.character and key.startswith("alt+"):
+            event.prevent_default()
             return
 
         if event.key == "enter":
