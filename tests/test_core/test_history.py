@@ -216,16 +216,6 @@ def test_a_new_change_closes_off_the_way_forward(create_project):
     assert not history.can_redo
 
 
-def test_rows_written_from_outside_are_not_a_change_to_take_back(create_project):
-    history = started_history()
-
-    create_project("arrived from elsewhere")
-    history.resync()
-
-    assert not history.record()
-    assert not history.can_undo
-
-
 def test_only_so_many_changes_are_kept(create_project):
     history = started_history()
 

@@ -749,9 +749,8 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         there was still an edit to write into is what comes back, so the
         screen knows whether that enter has anything left to settle.
 
-        The edit can be gone by the time the window closes -- the row dropped
-        out from under it by the poller, say -- and then the day has nowhere
-        to land and is let go.
+        The edit can be gone by the time the window closes, and then the day
+        has nowhere to land and is let go.
         """
 
         if not self.is_editing or self.current.editing != column:

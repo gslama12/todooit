@@ -363,19 +363,6 @@ class History:
         self._redo.clear()
         self._sync()
 
-    def resync(self) -> None:
-        """
-        Take whatever the database holds now as what the next key changes
-
-        Something outside the app wrote to it — another copy of todooit, or the
-        file itself — and rows that arrived that way are not a change made here
-        to be taken back. They become the state the next key is measured
-        against instead of being folded into whatever it does.
-        """
-
-        if self.started:
-            self._sync()
-
     def _sync(self) -> None:
         self._baseline = _capture()
         self._revision = manager.revision

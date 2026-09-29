@@ -8,7 +8,6 @@ from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree
 from todooit.ui.screens import MainScreen
-from todooit.ui.widgets.trees.model_tree import ModelTree
 from todooit.utils import CssManager, open_url
 from .api import TodooitAPI
 from ..api import manager, drop_blank_models
@@ -41,12 +40,8 @@ class Todooit(App):
         self.post_message(ModeChanged("NORMAL"))
         self.push_screen(MainScreen())
 
-    def setup_poller(self):
-        self.set_interval(1, self.poll_todooit_db)
-
     def on_mount(self):
         self.base_setup()
-        self.setup_poller()
 
     async def action_quit(self) -> None:
         drop_blank_models()
@@ -67,19 +62,6 @@ class Todooit(App):
 
     def get_todooit_mode(self) -> ModeType:
         return self.todooit_mode
-
-    def poll_todooit_db(self):  # pragma: no cover
-        def refresh_all_trees():
-            trees = self.screen.query(ModelTree)
-            for tree in trees:
-                tree.force_refresh()
-
-        if manager.has_changed():
-            # Rows that arrived from somewhere else are not a change made here
-            # to be taken back, so they become what the next key is measured
-            # against instead of being folded into whatever it does
-            self.api.history.resync()
-            refresh_all_trees()
 
     @on(TodooitEvent)
     def global_message(self, event: TodooitEvent):

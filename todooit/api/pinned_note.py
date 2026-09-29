@@ -73,9 +73,8 @@ class PinnedNote(BaseModel, BaseModelMixin):
         Write the note back, and only when there is something to write
 
         The editor saves on a debounce and again on the way out, so the same
-        text arrives here more than once for every one time it changes; a
-        commit per keystroke would leave the trees refreshing themselves off
-        the database poller for as long as the note was being typed in.
+        text arrives here more than once for every one time it changes, and
+        each of those would otherwise be a commit that changes nothing.
         """
 
         row = cls.instance()

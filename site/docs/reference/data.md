@@ -42,10 +42,10 @@ SQLite through SQLAlchemy. The schema, indexes included, is created from the
 models on first connect. Existing tables are never altered, so there are no
 migrations: a database has to match the current schema.
 
-::: tip Two todooits on one database
-The app polls the database file's modification time once a second. A write
-from somewhere else is picked up and every pane redrawn. Those rows are not
-treated as a change made here, so `ctrl+z` will not take them back.
+::: tip Writing to the database from outside
+The app reads the database when it starts and does not watch it afterwards.
+Rows written by another process while it is running (a script using
+`todooit.api`, a second todooit) show up after a restart.
 :::
 
 ## Backing up
