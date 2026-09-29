@@ -41,7 +41,7 @@ class ConfirmBar(BarBase):
         if not cancel:
             self.callback()
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         cancel = key.lower() != "y"
         self.dismiss(cancel)
 

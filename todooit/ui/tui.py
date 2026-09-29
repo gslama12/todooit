@@ -28,7 +28,7 @@ class Todooit(App):
         self.config = config
         manager.connect(db_path)
 
-    async def base_setup(self):
+    def base_setup(self):
         drop_blank_models()
         self.api = TodooitAPI(self)
 
@@ -41,12 +41,12 @@ class Todooit(App):
         self.post_message(ModeChanged("NORMAL"))
         self.push_screen(MainScreen())
 
-    async def setup_poller(self):
+    def setup_poller(self):
         self.set_interval(1, self.poll_todooit_db)
 
-    async def on_mount(self):
-        await self.base_setup()
-        await self.setup_poller()
+    def on_mount(self):
+        self.base_setup()
+        self.setup_poller()
 
     async def action_quit(self) -> None:
         drop_blank_models()
@@ -68,7 +68,7 @@ class Todooit(App):
     def get_todooit_mode(self) -> ModeType:
         return self.todooit_mode
 
-    async def poll_todooit_db(self):  # pragma: no cover
+    def poll_todooit_db(self):  # pragma: no cover
         def refresh_all_trees():
             trees = self.screen.query(ModelTree)
             for tree in trees:
@@ -104,7 +104,7 @@ class Todooit(App):
     async def quit_app(self):
         await self.action_quit()
 
-    async def action_open_url(self, url: str) -> None:  # pragma: no cover
+    def action_open_url(self, url: str) -> None:  # pragma: no cover
         # todooit's own opener rather than textual's: `App.open_url` goes
         # through `webbrowser`, which finds nothing at all under WSL - the
         # same reason the "o" key does not go through it either

@@ -39,7 +39,7 @@ class BarSwitcher(ContentSwitcher):
 
         return super().add_content(widget, id=id, set_current=set_current)
 
-    async def on_mount(self):
+    def on_mount(self):
         self.status_bar = StatusBar()
         self.add_content(
             widget=self.status_bar,
@@ -76,6 +76,6 @@ class BarSwitcher(ContentSwitcher):
             set_current=True,
         )
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         if self.current != "status_bar":
-            await self.visible_content.handle_keypress(key)
+            self.visible_content.handle_keypress(key)

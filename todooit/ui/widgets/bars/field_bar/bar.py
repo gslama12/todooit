@@ -41,8 +41,8 @@ class FieldBar(BarBase):
         # edit has already been settled by the time this runs
         return
 
-    async def handle_keypress(self, key: str) -> None:
-        await self._tree.handle_keypress(key)
+    def handle_keypress(self, key: str) -> None:
+        self._tree.handle_keypress(key)
 
         if self._tree.is_editing:
             self.refresh()
@@ -50,7 +50,7 @@ class FieldBar(BarBase):
 
         self.dismiss(cancel=False)
 
-    async def on_unmount(self):
+    def on_unmount(self):
         self.post_message(ModeChanged("NORMAL"))
 
         # The edit may have raised a notification on its way out, which has

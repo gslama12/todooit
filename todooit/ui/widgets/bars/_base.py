@@ -44,7 +44,7 @@ class BarBase(Static):
         assert isinstance(parent, BarSwitcher)
         return parent
 
-    async def on_unmount(self):
+    def on_unmount(self):
         self.post_message(ModeChanged("NORMAL"))
         self.switcher.current = "status_bar"
 
@@ -56,5 +56,5 @@ class BarBase(Static):
         self.app.post_message(ModeChanged("NORMAL"))
         self.remove()
 
-    async def handle_keypress(self, key: str) -> None:  # pragma: no cover
+    def handle_keypress(self, key: str) -> None:  # pragma: no cover
         return

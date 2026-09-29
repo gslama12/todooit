@@ -762,7 +762,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return True
 
-    async def handle_keypress(self, key: str) -> bool:
+    def handle_keypress(self, key: str) -> bool:
         if self.is_editing:
             if key in ["escape", "enter"]:
                 # enter keeps what was typed; escape throws it away and puts

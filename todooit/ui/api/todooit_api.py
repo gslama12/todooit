@@ -134,11 +134,11 @@ class TodooitAPI:
 
         return None
 
-    async def handle_key(self, key: str) -> None:
+    def handle_key(self, key: str) -> None:
         keymatch = self.keys.register_key(key)
 
         if keymatch.match_type == KeyMatchType.NoMatchFound:
-            await self.focused.handle_keypress(key)
+            self.focused.handle_keypress(key)
             return
 
         if keymatch.match_type == KeyMatchType.MultipleMatchFound:

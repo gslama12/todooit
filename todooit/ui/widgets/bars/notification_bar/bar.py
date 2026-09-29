@@ -33,7 +33,7 @@ class NotificationBar(BarBase):
         if self.auto_exit:
             self.app.set_interval(1, self.remove)
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         self.remove()
 
     def render(self) -> RenderableType:

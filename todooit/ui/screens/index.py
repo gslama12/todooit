@@ -115,10 +115,10 @@ class MainScreen(BaseScreen):
         # that would otherwise turn up on top of the copy it just did
         event.stop()
 
-        await self.route_key(self.resolve_key(event))
+        self.route_key(self.resolve_key(event))
         return True
 
-    async def route_key(self, key: str) -> None:
+    def route_key(self, key: str) -> None:
         """
         Hand a key to whatever is taking keys right now, and write down what
         it left different
@@ -133,9 +133,9 @@ class MainScreen(BaseScreen):
         # Resolved on the way in rather than per bar: a bar that is typed into
         # wants the character that was pressed, not the name of the key
         if self.app.bar_switcher.is_focused:
-            await self.app.bar_switcher.handle_keypress(key)
+            self.app.bar_switcher.handle_keypress(key)
         else:
-            await self.api.handle_key(key)
+            self.api.handle_key(key)
 
         self.record_change()
 
@@ -236,7 +236,7 @@ class MainScreen(BaseScreen):
         self.app.bar_switcher.switch_to_notification(event)
 
     @on(SpawnHelp)
-    async def spawn_help(self, _: SpawnHelp) -> None:
+    def spawn_help(self, _: SpawnHelp) -> None:
         self.app.push_screen(HelpScreen())
 
     @on(SpawnNote)
@@ -333,7 +333,7 @@ class MainScreen(BaseScreen):
             partial(self.calendar_done, event.tree, event.column),
         )
 
-    async def calendar_done(
+    def calendar_done(
         self, tree: ModelTree, column: str, day: Optional[date]
     ) -> None:
         """
@@ -349,7 +349,7 @@ class MainScreen(BaseScreen):
             return
 
         if tree.take_picked_day(column, day):
-            await self.route_key("enter")
+            self.route_key("enter")
 
     @on(SpawnMove)
     def spawn_move(self, event: SpawnMove) -> None:
