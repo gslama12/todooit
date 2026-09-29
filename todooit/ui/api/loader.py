@@ -5,7 +5,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .plug import PluginManager
+    from .plug import ConfigManager
 
 
 @contextmanager
@@ -25,7 +25,7 @@ def temporary_sys_path(path: Path):
             sys.path.remove(parent_path)
 
 
-def register(api: "PluginManager", path: Path) -> None:
+def register(api: "ConfigManager", path: Path) -> None:
     module_name = f"dynamic_{path.stem}"
     spec = importlib.util.spec_from_file_location(module_name, path)
 
@@ -40,7 +40,7 @@ def register(api: "PluginManager", path: Path) -> None:
                 api.register(obj)
 
 
-def load_file(api: "PluginManager", path: Path) -> bool:
+def load_file(api: "ConfigManager", path: Path) -> bool:
     if not path.exists():
         return False
 

@@ -12,4 +12,4 @@ async def test_loader():
         temp_folder = Path(tempfile.TemporaryDirectory().name)
 
         incorrect_path = temp_folder / "incorrect_path"
-        assert not loader.load_file(app.api.plugin_manager, incorrect_path)
+        assert not loader.load_file(app.api.config_manager, incorrect_path)

@@ -28,7 +28,7 @@ def is_running_under_pytest() -> bool:
     return "PYTEST_CURRENT_TEST" in os.environ
 
 
-class PluginManager:
+class ConfigManager:
     def __init__(self, api: "TodooitAPI", config: Optional[Path] = None) -> None:
         self.config = config or config_file()
         self.events: defaultdict[Type[TodooitEvent], List[Callable]] = defaultdict(list)

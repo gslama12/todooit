@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
-from todooit.ui.api.plug import PluginManager
+from todooit.ui.api.plug import ConfigManager
 from todooit.api import (
     BIN,
     COMPLETED,
@@ -62,7 +62,7 @@ class TodooitAPI:
         # whether anybody is collecting. None means nobody is
         self._formatter_batch: Optional[List[Callable]] = None
 
-        self.plugin_manager = PluginManager(self, app.config)
+        self.config_manager = ConfigManager(self, app.config)
         self.css = CssManager()
         self.keys = KeyManager(self.app.get_todooit_mode, self.key_scope)
         self.layouts = LayoutManager(self.app)
@@ -153,7 +153,7 @@ class TodooitAPI:
             )
 
     def trigger_event(self, event: TodooitEvent):
-        self.plugin_manager.on_event(event)
+        self.config_manager.on_event(event)
 
     # -----------------------------------------
 

@@ -13,6 +13,6 @@ class BarManager(ApiComponent):
 
     def set(self, widgets: List[StatusBarWidget]):
         for widget in widgets:
-            self.api.plugin_manager.register(widget.func)
+            self.api.config_manager.register(widget.func)
 
         self.api.app.bar.set_widgets(widgets)

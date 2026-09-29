@@ -290,7 +290,7 @@ async def test_a_bar_widget_tick_survives_the_screen_going_away():
         app._screen_stack.clear()
 
         try:
-            app.api.plugin_manager._update_todooit_value(tick)
+            app.api.config_manager._update_todooit_value(tick)
         finally:
             app._screen_stack.extend(stack)
 

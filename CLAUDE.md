@@ -20,7 +20,7 @@ constraint — this is a personal project meant to be customized.
 
 - Config-level changes (keybinds, formatters, layout, bar, colors) →
   `todooit/utils/default_config.py`. There is no `~/.config` file — the
-  plugin manager always loads `default_config.py`, so that file *is* the
+  config manager always loads `default_config.py`, so that file *is* the
   user's config.
 - Structural/rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.

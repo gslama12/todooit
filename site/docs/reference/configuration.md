@@ -22,7 +22,7 @@ the default config stays.
 
 ## Shape of a config file
 
-The file is executed, then every module-level value is offered to the plugin
+The file is executed, then every module-level value is offered to the config
 manager. Only functions carrying one of two decorators are hooked up to
 anything.
 

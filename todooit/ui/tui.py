@@ -36,7 +36,7 @@ class Todooit(App):
         # by a session that quit mid-edit is not the first thing ctrl+z offers
         # to bring back
         self.api.history.start()
-        self.api.plugin_manager.scan()
+        self.api.config_manager.scan()
         self.post_message(Startup())
         self.post_message(ModeChanged("NORMAL"))
         self.push_screen(MainScreen())
