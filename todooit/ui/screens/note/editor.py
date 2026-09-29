@@ -158,9 +158,11 @@ class NoteEditor(TextArea):
         Binding("tab", "indent", "Indent", show=False),
         Binding("shift+tab", "dedent", "Unindent", show=False),
         # Overrides TextArea's delete-right; clears the whole note (after y/N).
-        Binding("ctrl+d", "clear_note", "Clear the note", show=False),
+        Binding("ctrl+d,super+d", "clear_note", "Clear the note", show=False),
         # TextArea binds this to cursor_line_start, already on `home`.
-        Binding("ctrl+a", "select_all", "Select all", show=False),
+        Binding("ctrl+a,super+a", "select_all", "Select all", show=False),
+        # TextArea already takes Cmd for cut/copy/undo/redo, but not paste.
+        Binding("super+v", "paste", "Paste", show=False),
     ]
 
     def __init__(self, text: str) -> None:

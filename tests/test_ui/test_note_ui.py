@@ -368,6 +368,32 @@ async def test_emph_is_drawn_in_its_own_color():
     ]
 
 
+async def test_cmd_keys_in_the_note():
+    """Clear, select all and paste answer to Cmd as they do to ctrl"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        await pilot.press("super+a")
+        await pilot.pause()
+        assert editor.selected_text == "some words"
+
+        set_clipboard("pasted")
+        await pilot.press("super+v")
+        await pilot.pause()
+        assert editor.text == "pasted"
+
+        await pilot.press("escape")
+        await pilot.press("super+d")
+        await pilot.press("y")
+        await pilot.pause()
+        assert editor.text == ""
+
+
 async def test_the_formatting_keys_no_longer_format():
     """
     The markup is typed, not pressed: the four keys that used to write it are
