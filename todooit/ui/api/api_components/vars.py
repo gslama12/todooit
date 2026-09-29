@@ -1,7 +1,5 @@
 from typing import TYPE_CHECKING, Optional
 
-from textual.widgets import ContentSwitcher
-
 from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
@@ -88,13 +86,16 @@ class VarManager(ApiComponent):
     def theme(self) -> TodooitThemeBase:
         return self.api.css.theme
 
+    # The panes are looked up by the app; these hand them on to the config,
+    # which is given the api and never the app itself
+
     @property
     def projects_tree(self) -> ProjectsTree:
-        return self.api.app.screen.query_one(ProjectsTree)
+        return self.api.app.project_tree
 
     @property
     def current_project(self) -> Optional[Project]:
-        tree = self.api.vars.projects_tree
+        tree = self.projects_tree
         if tree.highlighted is None:
             return None
 
@@ -102,10 +103,4 @@ class VarManager(ApiComponent):
 
     @property
     def todos_tree(self) -> Optional[TodosTree]:
-        todo_switcher = self.api.app.screen.query_one(
-            "#todo_switcher", expect_type=ContentSwitcher
-        )
-        if todo_switcher.visible_content and isinstance(
-            todo_switcher.visible_content, TodosTree
-        ):
-            return todo_switcher.visible_content
+        return self.api.app.todos_tree

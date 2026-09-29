@@ -2,11 +2,12 @@ from pathlib import Path
 from typing import Optional
 from textual import on
 from textual.app import App
+from textual.widgets import ContentSwitcher
 from todooit.ui.api.events import ModeChanged, TodooitEvent, ModeType, Startup, QuitApp
 from todooit.ui.api.events.events import ShutDown
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
-from todooit.ui.widgets.trees import ProjectsTree
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.ui.screens import MainScreen
 from todooit.utils import CssManager, open_url
 from .api import TodooitAPI
@@ -53,8 +54,21 @@ class Todooit(App):
         return self.screen.query_one(ProjectsTree)
 
     @property
+    def todos_tree(self) -> Optional[TodosTree]:
+        """
+        The tasks pane on show, or None while the dashboard is up
+
+        One pane is kept per project that has been opened, so there is no
+        single one to query for: the switcher knows which is in front.
+        """
+
+        switcher = self.screen.query_one("#todo_switcher", expect_type=ContentSwitcher)
+        visible = switcher.visible_content
+        return visible if isinstance(visible, TodosTree) else None
+
+    @property
     def bar(self) -> StatusBar:
-        return self.screen.query_one(BarSwitcher).status_bar
+        return self.bar_switcher.status_bar
 
     @property
     def bar_switcher(self) -> BarSwitcher:
@@ -78,7 +92,7 @@ class Todooit(App):
         self.todooit_mode = event.mode
         if event.mode == "NORMAL":
             self.project_tree.refresh_options()
-            todos_tree = self.api.vars.todos_tree
+            todos_tree = self.todos_tree
             if todos_tree:
                 todos_tree.refresh_options()
 

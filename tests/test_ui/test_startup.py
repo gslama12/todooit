@@ -1,7 +1,9 @@
+from textual.widgets import ContentSwitcher
+
 from todooit.api import TODAY
 from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
-from tests.test_ui.ui_base import boot, run_pilot
+from tests.test_ui.ui_base import boot, run_pilot, visible_todos
 
 
 async def test_startup():
@@ -16,6 +18,30 @@ async def test_startup():
         app.project_tree
 
         assert app.get_todooit_mode() == "NORMAL"
+
+
+async def test_pane_lookups():
+    """
+    The app finds the panes, and the config's `api.vars` hands on the same
+    ones: the tasks pane in front, or None once the dashboard is back up
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        assert app.api.vars.projects_tree is app.project_tree
+        assert app.bar is app.bar_switcher.status_bar
+
+        today = visible_todos(app)
+        assert app.todos_tree is today
+        assert app.api.vars.todos_tree is today
+
+        switcher = app.screen.query_one("#todo_switcher", expect_type=ContentSwitcher)
+        switcher.current = "todooit-dashboard"
+        await pilot.pause()
+
+        assert app.todos_tree is None
+        assert app.api.vars.todos_tree is None
 
 
 async def test_mode_follows_editing():
