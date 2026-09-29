@@ -9,7 +9,7 @@ from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.ui.screens import MainScreen
-from todooit.utils import CssManager, open_url
+from todooit.utils import CssManager
 from .api import TodooitAPI
 from ..api import manager, drop_blank_models
 
@@ -99,12 +99,6 @@ class Todooit(App):
     @on(QuitApp)
     async def quit_app(self):
         await self.action_quit()
-
-    def action_open_url(self, url: str) -> None:  # pragma: no cover
-        # todooit's own opener rather than textual's: `App.open_url` goes
-        # through `webbrowser`, which finds nothing at all under WSL - the
-        # same reason the "o" key does not go through it either
-        open_url(url)
 
 
 if __name__ == "__main__":  # pragma: no cover
