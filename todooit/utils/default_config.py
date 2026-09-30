@@ -3,20 +3,14 @@ from functools import partial
 from typing import Callable, Optional, Tuple
 from rich.style import Style
 from todooit.api import Todo, Project
-from todooit.extras.formatters import (
+from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
+from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
+from todooit.ui.api.formatter_presets import (
     agent_icon,
     description_highlight_link,
     due_danger_today,
     recurrence_icon,
 )
-from todooit.extras.bar_widgets import (
-    Clock,
-    Custom,
-    CurrentProject,
-    Powerline,
-    Spacer,
-)
-from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
@@ -802,7 +796,7 @@ def mode_color(api: TodooitAPI, mode: str) -> str:
 
 
 # The mode block takes its color from the mode itself, so the two caps around it
-# have to be repainted whenever it changes. A Powerline widget is fixed at
+# have to be repainted whenever it changes. A `text` widget is fixed at
 # startup and can't follow along, so all three pieces are built here, each one
 # its own widget listening to the same event.
 def mode_widget(render: Callable[[TodooitAPI, str], Text]) -> StatusBarWidget:
@@ -839,12 +833,12 @@ def mode_label(api: TodooitAPI, mode: str) -> Text:
 DATE_TICK = 60
 
 
-def date_widget(api: TodooitAPI, fg: str, bg: str) -> StatusBarWidget:
+def date_widget(fg: str, bg: str) -> StatusBarWidget:
     @timer(DATE_TICK)
     def today(*_) -> str:
         return day_label(date.today())
 
-    return Custom(api, today, fmt="[bold] 󰃭 {} [/]", fg=fg, bg=bg)
+    return StatusBarWidget(today, fmt="[bold] 󰃭 {} [/]", fg=fg, bg=bg)
 
 
 @subscribe(Startup)
@@ -862,23 +856,21 @@ def bar_setup(api: TodooitAPI, _):
         mode_cap(ROUND_OPEN),
         mode_widget(mode_label),
         mode_cap(ROUND_CLOSE),
-        Spacer(api, width=0, bg=bar_background(api)),
-        Powerline.left_rounded(api, fg=theme.background3),
-        CurrentProject(
-            api,
+        spacer(width=0, bg=bar_background(api)),
+        text(ROUND_OPEN, fg=theme.background3, bg=bar_background(api)),
+        current_project(
             fmt=" 󰉋 {} ",
             fg=theme.foreground3,
             bg=theme.background3,
         ),
-        Powerline.left_rounded(api, fg=theme.background1, bg=theme.background3),
-        Clock(
-            api,
+        text(ROUND_OPEN, fg=theme.background1, bg=theme.background3),
+        clock(
             format="%H:%M",
             fmt=" 󰥔 {} ",
             fg=theme.foreground2,
             bg=theme.background1,
         ),
-        Powerline.left_rounded(api, fg=theme.primary, bg=theme.background1),
-        date_widget(api, fg=theme.background1, bg=theme.primary),
+        text(ROUND_OPEN, fg=theme.primary, bg=theme.background1),
+        date_widget(fg=theme.background1, bg=theme.primary),
     ]
     api.bar.set(bar_widgets)

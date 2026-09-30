@@ -113,6 +113,9 @@ default config relies on this — the graying that completed and binned rows get
 is added first so it has the final say.
 :::
 
+Ready-made ones live in `todooit.ui.api.formatter_presets`: `agent_icon`,
+`description_highlight_link`, `due_danger_today` and `recurrence_icon`.
+
 ```python
 from todooit.ui.api import extra_formatter
 
@@ -128,25 +131,27 @@ def flag_urgent(value, todo, api):
 ## Status bar
 
 ```python
-from todooit.extras.bar_widgets import Clock, CurrentProject, Powerline, Spacer, TextBox, Custom
+from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
 
 api.bar.set([
-    CurrentProject(api, fmt=" 󰉋 {} ", fg=theme.foreground3, bg=theme.background3),
-    Clock(api, format="%H:%M", fmt=" 󰥔 {} ", fg=theme.foreground2, bg=theme.background1),
+    spacer(width=0),
+    current_project(fmt=" 󰉋 {} ", fg=theme.foreground3, bg=theme.background3),
+    clock(format="%H:%M", fmt=" 󰥔 {} ", fg=theme.foreground2, bg=theme.background1),
 ])
 ```
 
 | Widget | What it shows |
 | --- | --- |
-| `Clock` | The time, on a `strftime` format |
-| `CurrentProject` | The project the cursor is in |
-| `TextBox` | Fixed text |
-| `Custom` | Whatever a callable of yours returns |
-| `Spacer` | Blank, of a given width |
-| `Powerline` | The cap between two blocks |
+| `clock` | The time, on a `strftime` format |
+| `current_project` | The project the cursor is in |
+| `text` | Fixed text, e.g. a powerline cap glyph |
+| `spacer` | Blank, of a given width (`0` fills what is left) |
+| `StatusBarWidget` | Whatever a callable of yours returns |
 
-`Custom` takes a `function` that must itself carry `@timer` or `@subscribe` —
-that is what decides when the widget is recomputed.
+All of them take `fmt`, `fg` and `bg`. The colors are painted under the
+value, so markup inside it still wins. `StatusBarWidget(func, width, fmt, fg, bg)`
+(from `todooit.ui.widgets.bars`) takes a `func` that must itself carry `@timer`
+or `@subscribe`, since that is what decides when the widget is recomputed.
 
 ## Theme
 
