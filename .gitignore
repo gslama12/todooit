@@ -23,3 +23,5 @@ htmlcov/
 # local scratch / databases
 *.db
 playground/
+.local_planning
+.claude
