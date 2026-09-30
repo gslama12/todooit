@@ -29,6 +29,8 @@ class Change(Enum):
     ENDED = "recurrence ended"
     PULLED = "moved back"
     LOWERED = "due date moved"
+    UNSCHEDULED = "unscheduled"
+    UNDUE = "due date removed"
 
 
 RECURRING_HAS_NO_DUE = (
@@ -121,6 +123,8 @@ _OTHERS: Dict[Change, Callable[[int, Todo], Optional[str]]] = {
     Change.LOWERED: lambda n, t: (
         f"{_count(n, 'step')} now due {day_label(t.due)}" if t.due else None
     ),
+    Change.UNSCHEDULED: lambda n, t: f"{_count(n, 'step')} unscheduled",
+    Change.UNDUE: lambda n, t: f"{_count(n, 'step')} no longer due",
 }
 
 
@@ -156,7 +160,8 @@ def reopen(todo: Todo) -> Outcome:
 
 def schedule(todo: Todo, when: Optional[datetime]) -> Outcome:
     """
-    Plan a todo for a day, or take its day away; its date is a floor for its steps
+    Plan a todo for a day, or take its day away; steps on its old day follow
+    it, and its date is a floor for the rest
     """
 
     outcome = Outcome(todo)
@@ -166,7 +171,7 @@ def schedule(todo: Todo, when: Optional[datetime]) -> Outcome:
     if when is None and parent is not None:
         when = parent.scheduled
 
-    todo.scheduled = when
+    _carry(todo, "scheduled", when, outcome)
     _pull_back_ancestors(todo, outcome)
     _raise_to_floor(todo, outcome)
 
@@ -176,7 +181,8 @@ def schedule(todo: Todo, when: Optional[datetime]) -> Outcome:
 
 def set_due(todo: Todo, when: Optional[datetime]) -> Outcome:
     """
-    Give a todo a deadline, or take it away; its date is a ceiling for its steps
+    Give a todo a deadline, or take it away; steps due with it follow it,
+    and its date is a ceiling for the rest
     """
 
     outcome = Outcome(todo)
@@ -192,7 +198,7 @@ def set_due(todo: Todo, when: Optional[datetime]) -> Outcome:
     elif parent is not None:
         when = parent.due
 
-    todo.due = when
+    _carry(todo, "due", when, outcome)
     _lower_to_ceiling(todo, outcome)
 
     manager.save(todo)
@@ -353,6 +359,35 @@ def _lower_to_ceiling(todo: Todo, outcome: Outcome) -> None:
             outcome.overrides.append(Override(step, Change.LOWERED))
 
         _lower_to_ceiling(step, outcome)
+
+
+def _carry(todo: Todo, attr: str, when: Optional[datetime], outcome: Outcome) -> None:
+    """
+    Give a todo a new date, and every step still on its old one the same:
+    a step with a date of its own stays, and so does everything under it
+    """
+
+    old = getattr(todo, attr)
+    setattr(todo, attr, when)
+
+    if old is None or old == when:
+        return
+
+    what = _CARRIED[attr, when is not None]
+
+    for step in todo.todos:
+        if getattr(step, attr) == old:
+            _carry(step, attr, when, outcome)
+            outcome.overrides.append(Override(step, what))
+
+
+# What following a parent did to a step, by date and by whether it still has one
+_CARRIED = {
+    ("scheduled", True): Change.MOVED,
+    ("scheduled", False): Change.UNSCHEDULED,
+    ("due", True): Change.LOWERED,
+    ("due", False): Change.UNDUE,
+}
 
 
 def _pull_back_ancestors(todo: Todo, outcome: Outcome) -> None:

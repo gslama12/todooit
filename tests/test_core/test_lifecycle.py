@@ -521,13 +521,14 @@ def test_scheduling_a_step_before_its_parent_pulls_the_parent_back(create_projec
     tax = tax_return(create_project())
     lifecycle.schedule(tax, WEDNESDAY)
     steps = steps_of(tax)
+    lifecycle.schedule(steps["Scan receipts"], FRIDAY)
 
     outcome = lifecycle.schedule(steps["Collect receipts"], MONDAY)
 
     assert steps["Collect receipts"].scheduled == MONDAY
     assert tax.scheduled == MONDAY
     assert steps["File online"].scheduled == WEDNESDAY
-    assert steps["Scan receipts"].scheduled == WEDNESDAY
+    assert steps["Scan receipts"].scheduled == FRIDAY
     assert outcome.summary() == "its parent moved back to Mon 5 Oct"
 
 
@@ -559,8 +560,8 @@ def test_pulling_back_stops_at_ancestors_already_earlier(create_project):
     assert tax.scheduled == MONDAY
 
 
-def test_clearing_a_parents_date_leaves_its_steps_alone(create_project):
-    """Clearing a parent's date leaves its steps, story 26"""
+def test_clearing_a_parents_date_clears_the_steps_on_it(create_project):
+    """Clearing a parent's date clears the steps that followed it; dated ones stay"""
 
     tax = tax_return(create_project())
     steps = steps_of(tax)
@@ -570,9 +571,10 @@ def test_clearing_a_parents_date_leaves_its_steps_alone(create_project):
     outcome = lifecycle.schedule(tax, None)
 
     assert tax.scheduled is None
-    assert steps["Collect receipts"].scheduled == MONDAY
+    assert steps["Collect receipts"].scheduled is None
+    assert steps["Scan receipts"].scheduled is None
     assert steps["File online"].scheduled == FRIDAY
-    assert not outcome
+    assert outcome.summary() == "2 steps unscheduled"
 
 
 def test_clearing_a_steps_date_under_a_scheduled_parent_gives_it_the_parents(
@@ -705,8 +707,8 @@ def test_a_refused_change_changes_nothing(create_project):
         assert step.due == FRIDAY, step.description
 
 
-def test_clearing_a_parents_due_date_leaves_its_steps_alone(create_project):
-    """Clearing a parent's deadline leaves its steps, story 32"""
+def test_clearing_a_parents_due_date_clears_the_steps_on_it(create_project):
+    """Clearing a parent's deadline clears the steps that followed it; dated ones stay"""
 
     tax = tax_return(create_project())
     steps = steps_of(tax)
@@ -716,9 +718,10 @@ def test_clearing_a_parents_due_date_leaves_its_steps_alone(create_project):
     outcome = lifecycle.set_due(tax, None)
 
     assert tax.due is None
-    assert steps["Collect receipts"].due == FRIDAY
+    assert steps["Collect receipts"].due is None
+    assert steps["Scan receipts"].due is None
     assert steps["File online"].due == WEDNESDAY
-    assert not outcome
+    assert outcome.summary() == "2 steps no longer due"
 
 
 def test_clearing_a_steps_due_date_under_a_parent_with_one_gives_it_the_parents(
@@ -761,6 +764,103 @@ def test_a_due_date_on_a_recurring_todo_is_refused(create_project):
     )
     assert review.due is None
     assert review.recurrence == timedelta(weeks=1)
+
+
+# ------------------------------------------------------------------
+# A step on its parent's date follows it: changing or clearing a parent's
+# date takes every step holding exactly the old date along; steps with a
+# date of their own stay
+# ------------------------------------------------------------------
+
+
+def test_moving_a_parent_earlier_takes_the_steps_on_its_date_along(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, WEDNESDAY)
+    lifecycle.schedule(steps["File online"], FRIDAY)
+
+    lifecycle.schedule(tax, MONDAY)
+
+    assert steps["Collect receipts"].scheduled == MONDAY
+    assert steps["Scan receipts"].scheduled == MONDAY
+    assert steps["File online"].scheduled == FRIDAY
+
+
+def test_moving_a_parent_reports_the_steps_that_followed(create_project):
+    tax = tax_return(create_project())
+    lifecycle.schedule(tax, WEDNESDAY)
+
+    outcome = lifecycle.schedule(tax, MONDAY)
+
+    assert outcome.summary() == "3 steps moved with it"
+
+
+def test_moving_a_deadline_later_takes_the_steps_due_with_it_along(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.set_due(tax, WEDNESDAY)
+    lifecycle.set_due(steps["File online"], MONDAY)
+
+    outcome = lifecycle.set_due(tax, FRIDAY)
+
+    assert steps["Collect receipts"].due == FRIDAY
+    assert steps["Scan receipts"].due == FRIDAY
+    assert steps["File online"].due == MONDAY
+    assert outcome.summary() == "2 steps now due Fri 9 Oct"
+
+
+def test_a_step_on_the_same_day_at_another_time_keeps_its_date(create_project):
+    """Following matches the exact date and time, not just the day"""
+
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, WEDNESDAY)
+    lifecycle.schedule(steps["File online"], WEDNESDAY + timedelta(hours=5))
+
+    lifecycle.schedule(tax, MONDAY)
+
+    assert steps["Collect receipts"].scheduled == MONDAY
+    assert steps["File online"].scheduled == WEDNESDAY + timedelta(hours=5)
+
+
+def test_clearing_a_steps_date_takes_its_own_steps_to_the_parents(create_project):
+    """An emptied step follows its parent, and the steps that followed it come along"""
+
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.schedule(steps["Collect receipts"], WEDNESDAY)
+
+    outcome = lifecycle.schedule(steps["Collect receipts"], None)
+
+    assert steps["Collect receipts"].scheduled == MONDAY
+    assert steps["Scan receipts"].scheduled == MONDAY
+    assert outcome.summary() == "1 step moved with it"
+
+
+def test_steps_with_their_own_date_still_rise_to_a_later_parent(create_project):
+    """Following never loosens the floor: an earlier step of its own still moves up"""
+
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.schedule(steps["File online"], WEDNESDAY)
+
+    lifecycle.schedule(tax, FRIDAY)
+
+    assert steps["Collect receipts"].scheduled == FRIDAY
+    assert steps["File online"].scheduled == FRIDAY
+
+
+def test_a_followed_date_is_stored(create_project):
+    tax = tax_return(create_project())
+    lifecycle.set_due(tax, WEDNESDAY)
+
+    lifecycle.set_due(tax, None)
+    manager.session.expire_all()
+
+    for step in tax.descendants:
+        assert step.due is None, step.description
 
 
 # Recurrence ownership

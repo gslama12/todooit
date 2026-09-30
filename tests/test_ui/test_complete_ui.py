@@ -91,6 +91,33 @@ async def test_scheduling_a_parent_in_its_column_says_which_steps_moved():
         assert notification_message(pilot.app) == "1 step moved with it"
 
 
+async def test_clearing_a_parents_date_in_its_column_clears_the_steps_on_it():
+    """Steps on the parent's date follow it, down to having none"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "Tax return")
+        tax = tree.current_model
+        assert isinstance(tax, Todo)
+
+        receipts = tax.add_todo()
+        receipts.description = "Collect receipts"
+        receipts.save()
+
+        await pilot.press("s")
+        await commit_line(pilot, "today")
+        assert receipts.scheduled == tax.scheduled
+
+        await pilot.press("s", "ctrl+u")
+        await commit_line(pilot, "")
+
+        assert tax.scheduled is None
+        assert receipts.scheduled is None
+        assert notification_message(pilot.app) == "1 step unscheduled"
+
+
 async def test_setting_a_parents_due_date_in_its_column_says_which_steps_moved():
     """The Due column goes through the lifecycle (the ceiling)"""
 
