@@ -29,6 +29,7 @@ FEATURE_BY_MODULE = {
     "test_holidays": "dates",
     "test_pinned_note": "notes",
     "test_css_manager": "theming",
+    "test_theme_css": "theming",
     "test_paths": "persistence",
     "test_sync": "persistence",
     # tests/test_ui

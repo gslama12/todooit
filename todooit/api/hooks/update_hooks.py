@@ -1,96 +1,48 @@
 from datetime import datetime
-from typing import Iterator, List, Optional
+from typing import List
 from sqlalchemy import event, inspect, update
 from ..todo import Todo
 
 
-def _descendants(todo: Todo) -> Iterator[Todo]:
+def _bulk_update(connection, todos: List[Todo], **values) -> None:
     """
-    Every todo filed under this one, at any depth
-    """
-
-    for child in todo.todos:
-        yield child
-        yield from _descendants(child)
-
-
-def _ancestors(todo: Todo) -> Iterator[Todo]:
-    """
-    The todo this one hangs off, the one that hangs off, and so on up
+    Write `values` straight to the given rows, bypassing the ORM (and these hooks)
     """
 
-    node = todo.parent_todo
+    ids = [todo.id for todo in todos]
 
-    while node is not None:
-        yield node
-        node = node.parent_todo
+    if not ids:
+        return
+
+    connection.execute(update(Todo).where(Todo.id.in_(ids)).values(**values))
 
 
 def _set_pending(connection, todos: List[Todo]) -> None:
-    ids = [todo.id for todo in todos]
-
-    if not ids:
-        return
-
-    query = (
-        update(Todo)
-        .where(Todo.id.in_(ids))
-        .values(pending=True, completed_at=None)
-    )
-    connection.execute(query)
-
-
-def _set_completed(connection, todos: List[Todo], stamp: datetime) -> None:
-    ids = [todo.id for todo in todos]
-
-    if not ids:
-        return
-
-    query = (
-        update(Todo)
-        .where(Todo.id.in_(ids))
-        .values(pending=False, completed_at=stamp)
-    )
-    connection.execute(query)
+    _bulk_update(connection, todos, pending=True, completed_at=None)
 
 
 def _bounce_recurrence(connection, todo: Todo, stamp: datetime) -> None:
     """
-    Moves a repeating todo on an interval and hands it back, pending
-
-    What ticking one off does, done to a todo that is being carried along by
-    another rather than ticked itself, and written straight to the database
-    for the same reason the rest of the cascade is.
+    Move a recurring todo one interval on and set it (and its children) pending
     """
 
     assert todo.recurrence is not None
 
     when = (todo.scheduled or stamp) + todo.recurrence
-    query = (
-        update(Todo)
-        .where(Todo.id == todo.id)
-        .values(pending=True, completed_at=None, scheduled=when)
-    )
-    connection.execute(query)
-
-    # The steps of it were ticked off along with everything else being
-    # carried off, and this todo is not being carried off after all: it comes
-    # round again, and so does every part of it
-    _set_pending(connection, list(_descendants(todo)))
+    _bulk_update(connection, [todo], pending=True, completed_at=None, scheduled=when)
+    _set_pending(connection, todo.descendants)
 
 
 def _complete(connection, todos: List[Todo], stamp: datetime) -> None:
     """
-    Ticks off the ones that can be, and moves the repeating ones on instead
-
-    Nothing that repeats is ever left finished, being carried along by the
-    work around it included: what finishing it means is that it comes round
-    again. It is bounced here, at the moment it was carried off, rather than
-    left sitting completed for the next unrelated edit to notice.
+    Complete the todos; recurring ones are bounced to their next occurrence instead
     """
 
-    _set_completed(
-        connection, [todo for todo in todos if todo.recurrence is None], stamp
+    _bulk_update(
+        connection,
+        [todo for todo in todos if todo.recurrence is None],
+        pending=False,
+        completed_at=stamp,
     )
 
     for todo in todos:
@@ -105,61 +57,47 @@ def _changed(todo: Todo, field: str) -> bool:
 @event.listens_for(Todo, "before_update")
 def update_children_to_pending(_, connection, target: Todo):
     """
-    Unticking a todo unticks everything underneath it
+    Unticking a todo unticks all its descendants
 
-    The whole subtree at once rather than one level of it: what is done is the
-    task, and a task is undone the moment any part of it is.
-
-    Only the untick itself does this, and not every later edit that happens
-    to touch a pending todo: a step written into a task whose steps are all
-    done leaves the task pending exactly as it was, and would otherwise take
-    the finished work down with it.
+    Only on the untick itself, not on any later edit of a pending todo.
     """
 
     if not target.pending or not _changed(target, "pending"):
         return
 
-    _set_pending(connection, list(_descendants(target)))
+    _set_pending(connection, target.descendants)
 
 
 @event.listens_for(Todo, "before_update")
 def update_children_to_completed(_, connection, target: Todo):
     """
-    Ticking a todo ticks everything underneath it, at every depth
+    Ticking a todo ticks all its descendants
     """
 
     if target.pending:
         return
 
     stamp = target.completed_at or datetime.now()
-    _complete(connection, list(_descendants(target)), stamp)
+    _complete(connection, target.descendants, stamp)
 
 
 @event.listens_for(Todo, "before_update")
 def update_parent_to_pending(mapper, connection, target: Todo):
     """
-    Unticking a todo unticks every todo it is filed under
-
-    All the way up rather than one level: a task with anything left to do in
-    it is not finished, however deep in it that thing sits.
+    A pending todo makes all its ancestors pending
     """
 
     if not target.pending or not target.parent_todo:
         return
 
-    _set_pending(connection, list(_ancestors(target)))
+    _set_pending(connection, target.ancestors)
 
 
 @event.listens_for(Todo, "before_insert")
 @event.listens_for(Todo, "before_update")
 def clear_due_for_recurrence(mapper, connection, todo: Todo):
     """
-    A recurring todo carries no deadline, only the day it next comes round
-
-    Nothing that repeats is owed by a date: what it has is the next time it is
-    meant to be done, which is what `scheduled` holds. A deadline it was
-    carrying before the recurrence was set becomes that first occurrence,
-    unless a day was already planned for it, in which case it is dropped.
+    Recurring todos have no due date: it becomes the scheduled date (if unset)
     """
 
     if todo.recurrence is None or todo.due is None:
@@ -174,20 +112,10 @@ def clear_due_for_recurrence(mapper, connection, todo: Todo):
 @event.listens_for(Todo, "before_update")
 def update_scheduled_for_recurrence(mapper, connection, todo: Todo):
     """
-    Bounces a ticked-off recurring todo back to pending, one interval on
+    Ticking a recurring todo moves it one interval on and keeps it pending
 
-    A recurring todo is never finished, only done for now: ticking it off
-    moves the day it is planned for forward by its interval and hands it
-    straight back, pending. The tick never lands and the row never moves,
-    which is why the pane flashes it instead.
-
-    Only the tick moves it on, and only the recurrence being set gives it its
-    first day. Everything else done to a recurring todo -- its priority, its
-    description, its note -- leaves the day it is planned for exactly where it
-    was, which it did not when this ran on every update: one that a cascade
-    had left completed in the database, or one whose day had been given up to
-    a step of its own, had that day walked forward or filled in by the next
-    unrelated edit made to it.
+    Only runs when `pending` or `recurrence` changed, so unrelated edits never
+    move the schedule.
     """
 
     if todo.recurrence is None:
@@ -205,36 +133,16 @@ def update_scheduled_for_recurrence(mapper, connection, todo: Todo):
     todo.pending = True
     todo.scheduled += todo.recurrence
 
-    # Everything under it was ticked off on the way in, by the cascade that
-    # carries a task's steps off with it. The task was not finished though,
-    # only done for now, so its steps are handed back with it rather than
-    # coming round already done -- which is what makes the next occurrence a
-    # fresh one instead of one with nothing left in it to tick.
-    _set_pending(connection, list(_descendants(todo)))
-
-
-def _set_scheduled(
-    connection, todos: List[Todo], when: Optional[datetime]
-) -> None:
-    ids = [todo.id for todo in todos]
-
-    if not ids:
-        return
-
-    query = update(Todo).where(Todo.id.in_(ids)).values(scheduled=when)
-    connection.execute(query)
+    # The completion cascade already ticked the children; hand them back fresh
+    _set_pending(connection, todo.descendants)
 
 
 @event.listens_for(Todo, "before_insert")
 def inherit_scheduled_from_parent(mapper, connection, target: Todo):
     """
-    A step added to a task that is planned for a day is planned for it too
+    A new child inherits its parent's scheduled date
 
-    The day belongs to the whole task, so a step written into one joins it
-    rather than arriving undated inside work that is already spoken for. A
-    step that was given a day of its own on the way in is the other case, and
-    is read the way changing one is: the task can no longer claim a day its
-    parts do not agree on, so it loses the one it had.
+    If it arrives with a different date, its ancestors lose theirs instead.
     """
 
     parent = target.parent_todo
@@ -247,27 +155,17 @@ def inherit_scheduled_from_parent(mapper, connection, target: Todo):
         return
 
     if target.scheduled != parent.scheduled:
-        _set_scheduled(connection, list(_ancestors(target)), None)
+        _bulk_update(connection, target.ancestors, scheduled=None)
 
 
 @event.listens_for(Todo, "before_update")
 def cascade_scheduled(mapper, connection, target: Todo):
     """
-    A day put on a todo is the day of everything under it, and of nothing above
-
-    Planning a task plans the whole of it: every step of it, at any depth, is
-    moved to the day the task was given, since what was planned is the task
-    and not one part of it.
-
-    Planning a single step is the opposite, and says the task no longer
-    happens all at once: the step takes the day, and every task it sits
-    inside gives its own day up, because a task cannot claim a day its parts
-    have stopped agreeing on. Planning the task again puts them all back on
-    the same day, which is what makes the two states the only two there are.
+    Scheduling a todo schedules all its descendants and unschedules its ancestors
     """
 
     if not _changed(target, "scheduled"):
         return
 
-    _set_scheduled(connection, list(_descendants(target)), target.scheduled)
-    _set_scheduled(connection, list(_ancestors(target)), None)
+    _bulk_update(connection, target.descendants, scheduled=target.scheduled)
+    _bulk_update(connection, target.ancestors, scheduled=None)

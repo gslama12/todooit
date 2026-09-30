@@ -23,7 +23,7 @@ def test_nothing_recorded_without_a_write():
     history = started_history()
 
     assert not history.record()
-    assert not history.can_undo
+    assert not history._undo
 
 
 def test_a_write_that_changed_nothing_is_not_a_change(create_project):
@@ -35,7 +35,7 @@ def test_a_write_that_changed_nothing_is_not_a_change(create_project):
     project.save()
 
     assert not history.record()
-    assert not history.can_undo
+    assert not history._undo
 
 
 def test_adding_is_taken_back(create_project):
@@ -43,7 +43,7 @@ def test_adding_is_taken_back(create_project):
     create_project("new")
 
     assert history.record()
-    assert history.can_undo
+    assert history._undo
 
     restored = history.undo()
 
@@ -198,8 +198,8 @@ def test_a_step_is_not_itself_a_change_to_be_recorded(create_project):
     # The undo committed, but where it arrived is the state the next key is
     # measured against rather than a change of its own
     assert not history.record()
-    assert not history.can_undo
-    assert history.can_redo
+    assert not history._undo
+    assert history._redo
 
 
 def test_a_new_change_closes_off_the_way_forward(create_project):
@@ -208,12 +208,12 @@ def test_a_new_change_closes_off_the_way_forward(create_project):
     history.record()
     history.undo()
 
-    assert history.can_redo
+    assert history._redo
 
     create_project("second")
     history.record()
 
-    assert not history.can_redo
+    assert not history._redo
 
 
 def test_only_so_many_changes_are_kept(create_project):
@@ -348,7 +348,7 @@ def test_a_note_edit_is_not_a_change_to_take_back(create_project):
     todo.save()
 
     assert not history.record()
-    assert not history.can_undo
+    assert not history._undo
     assert Todo.all()[0].note == "second"
 
 

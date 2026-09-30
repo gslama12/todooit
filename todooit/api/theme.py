@@ -43,6 +43,7 @@ $green: {cls.green};
 $blue: {cls.blue};
 $purple: {cls.purple};
 $magenta: {cls.magenta};
+$cyan: {cls.cyan};
 
 $primary: {cls.primary};
 $secondary: {cls.secondary};
@@ -53,14 +54,9 @@ $secondary: {cls.secondary};
 
 class TokyoNight(TodooitThemeBase):
     """
-    The "night" variant of Tokyo Night: a deep blue-black ground, text in a
-    washed periwinkle, and a palette that leans blue/purple, with the warm
-    colors held back for the things that carry a meaning (due dates, priority).
+    Tokyo Night ("night" variant)
 
-    The three backgrounds are the ground itself, the raised bar, and the step
-    above it that borders and the highlighted row are drawn in; the three
-    foregrounds run from the gray that dim text fades towards up to the color
-    the rows themselves are written in.
+    Backgrounds: base, bar, borders/highlight. Foregrounds: dim text to row text.
     """
 
     _name = "tokyo-night"

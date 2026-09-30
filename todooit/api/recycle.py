@@ -1,69 +1,35 @@
 """
-Throwing work away, and getting it back
+The Bin: throwing work away and getting it back
 
-Nothing in todooit is deleted by accident. A todo that is dropped goes to the
-Bin, where it stays, whole, until it is either restored or deleted for good;
-the only things that actually remove a row are the keys that ask first — the
-one that deletes what the cursor is on, and the one that empties the Bin out.
-
-Dropping a project is the same thing one level up: everything filed under it
-goes to the Bin carrying the path it came from, and the project row itself is
-the only part that goes. That path is what a todo is put back into when it is
-revived — the project is built again out of its own name if nobody kept it, so
-restoring something never quietly drops it somewhere else.
+Dropping a todo moves it (with its children) to the Bin until it is restored
+or the Bin is emptied. Dropping a project deletes only the project row: its
+todos go to the Bin carrying their `origin_path`, which is used to rebuild the
+project if one of them is restored later.
 """
 
 from datetime import datetime
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
 from .fixed_projects import PATH_SEPARATOR, binned_tasks, project_path
 from .manager import manager
 from .project import Project
 from .todo import Todo
 
-# What a project rebuilt to hold a revived todo is called: its own name, with
-# this in front of it. The project is not the one that was there before — it
-# has none of what was filed in it besides the row that brought it back — and
-# the prefix is what says so without the name having to be typed again.
+# Name prefix for a project rebuilt to hold a restored todo
 REVIVED_PREFIX = "revived - "
 
-# The name a revived project falls back on when the todo carries no path at
-# all: something has to be there to put it in, and an empty name is not a
-# project
+# Fallback project name when a todo has no origin path
 UNKNOWN_PROJECT = "recovered"
-
-
-def _sub_projects(project: Project) -> Iterator[Project]:
-    """
-    Every project nested under this one, at any depth
-    """
-
-    for child in project.projects:
-        yield child
-        yield from _sub_projects(child)
-
-
-def _family(todo: Todo) -> List[Todo]:
-    """
-    The todo and every step filed under it, at any depth
-    """
-
-    return [todo, *todo.descendants]
 
 
 def move_todo_to_bin(todo: Todo) -> None:
     """
-    Throws a todo away, with everything filed under it
-
-    A task goes in whole: its steps are part of it, not rows that happen to be
-    beneath it, and a Bin holding half a task is a Bin nothing can be restored
-    out of. The one stamp over the family is what keeps them together in the
-    pane, which reads by the moment things were thrown away.
+    Bin a todo and all its descendants under one shared timestamp
     """
 
     stamp = datetime.now()
 
-    for node in _family(todo):
+    for node in todo.family:
         node.binned_at = stamp
 
     todo.save()
@@ -71,12 +37,7 @@ def move_todo_to_bin(todo: Todo) -> None:
 
 def binned_root(todo: Todo) -> Todo:
     """
-    The row the Bin offers for a binned todo: the task it went in as
-
-    A task is thrown away whole, so the thing there is to put back is the
-    whole of it: the topmost binned todo of the family, which is the row the
-    Bin draws and the row it counts. A step thrown away on its own has no
-    binned todo above it and is that row itself.
+    The topmost binned ancestor of a binned todo (the row the Bin shows)
     """
 
     node = todo
@@ -89,22 +50,14 @@ def binned_root(todo: Todo) -> Todo:
 
 def restore_todo(todo: Todo) -> List[Project]:
     """
-    Takes a todo back out of the Bin, and says which projects that rebuilt
+    Restore a binned todo's whole task; returns any projects that had to be rebuilt
 
-    The family comes out together, the way it went in, from whichever of its
-    rows the key was pressed on. Half a task is not a thing that can be put
-    back: a step let out on its own is drawn nowhere at all — the Bin has
-    stopped holding it, and the project it belongs to is still hiding the
-    task it hangs off — so it would be gone from the app entirely.
-
-    Anything still to be done needs somewhere to be done in, so a todo that
-    outlived its project gets it back here; one that is already finished has
-    the completion log to live in and is left as it is until it is unticked.
+    Completed tasks stay orphaned (they live in the Completed log) until unticked.
     """
 
     todo = binned_root(todo)
 
-    for node in _family(todo):
+    for node in todo.family:
         node.binned_at = None
 
     todo.save()
@@ -117,15 +70,10 @@ def restore_todo(todo: Todo) -> List[Project]:
 
 def revive_home(todo: Todo) -> List[Project]:
     """
-    Files a todo that outlived its project back into one
+    Put an orphaned todo back into the project named by its origin path
 
-    The path it was carrying is walked from the top of the tree down, and
-    whatever is missing along the way is built: a project that is still there
-    takes the todo straight back, and one that is gone comes back under its
-    own name with `revived - ` in front of it.
-
-    What comes back is the list of projects that had to be made, so that the
-    pane which is about to redraw can point them out.
+    Missing projects along the path are recreated with `REVIVED_PREFIX`;
+    returns the ones created.
     """
 
     if not todo.is_orphan:
@@ -144,7 +92,7 @@ def revive_home(todo: Todo) -> List[Project]:
 
 def _project_from_path(path: str, created: List[Project]) -> Project:
     """
-    The project a path names, building whatever part of it is missing
+    The project a path names, creating whatever part of it is missing
     """
 
     names = [name.strip() for name in path.split(PATH_SEPARATOR) if name.strip()]
@@ -169,11 +117,7 @@ def _project_from_path(path: str, created: List[Project]) -> Project:
 
 def _child_named(parent: Project, name: str) -> Optional[Project]:
     """
-    The project of this name filed under `parent`, revived or not
-
-    A project that was already brought back once answers to the name it was
-    brought back under as well as to its own, so that a second todo out of the
-    same dead project joins the first instead of building it all over again.
+    The child project called `name` (or its revived version), if any
     """
 
     for child in parent.projects:
@@ -185,24 +129,19 @@ def _child_named(parent: Project, name: str) -> Optional[Project]:
 
 def move_project_to_bin(project: Project) -> None:
     """
-    Throws a project away, keeping everything that was filed in it
-
-    The project row is the only thing that actually goes. Every todo under it
-    — its own, and those of the projects nested inside it — is stamped with
-    the path it was filed under and moved to the Bin, so that the work can be
-    looked over, restored one row at a time, or dropped for good later on.
+    Delete a project, moving all todos in it and its sub projects to the Bin
     """
 
     stamp = datetime.now()
 
-    for node in [project, *_sub_projects(project)]:
+    for node in [project, *project.descendants]:
         path = project_path(node)
 
         for todo in list(node.todos):
             todo.origin_path = path
             todo.parent_project = None
 
-            for member in _family(todo):
+            for member in todo.family:
                 member.binned_at = stamp
 
             manager.session.add(todo)
@@ -213,20 +152,13 @@ def move_project_to_bin(project: Project) -> None:
 
 def empty_bin() -> List[str]:
     """
-    Deletes everything in the Bin for good, and says which rows those were
-
-    A task goes out the way it went in: whole, with its steps. What comes back
-    is every row that was deleted, steps included, so that the panes which
-    drew any of them can let go of what they were holding — a row still held
-    on to here is one that gets read back out of the database after it has
-    left it.
+    Permanently delete everything in the Bin; returns the uuids of all deleted rows
     """
 
     tasks = binned_tasks()
-    gone = [node.uuid for todo in tasks for node in _family(todo)]
+    gone = [node.uuid for todo in tasks for node in todo.family]
 
-    # Only the tasks are handed over: the steps under them go with them, the
-    # same way deleting a single task takes its own
+    # Deleting the task cascades to its children
     for todo in tasks:
         manager.session.delete(todo)
 

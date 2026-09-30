@@ -12,28 +12,19 @@ if TYPE_CHECKING:  # pragma: no cover
     from todooit.api.project import Project
 
 
-# Priority runs from 1, the most urgent, down to 3, the least, and 0 means
-# none was set. Written down here so that anything reading a priority off
-# typed text has one place to ask how far the scale goes
+# Priority: 1 = most urgent, 3 = least, 0 = none
 MAX_PRIORITY = 3
 
-# The orders a pane of todos can be read in. Every one of them ends on the
-# order the todos were filed in by hand, so the rows a sort has nothing to say
-# about — the ones nobody prioritized, or put a date on — keep the order they
-# were given rather than being shuffled around by it.
+# Every sort falls back to the manual order for ties
 TodoSortModeType = Literal["priority", "due", "scheduled"]
 
 
-# The most urgent first, and everything unprioritized after the lot of them:
-# priority 1 is the top of the scale and 0 means it was never set, so the rows
-# without one are pushed past the end rather than sorting ahead of p1
+# Most urgent first; unprioritized (0) last
 def priority_key(todo: "Todo") -> tuple:
     return (todo.priority == 0, todo.priority, todo.order_index)
 
 
-# What a date sort does with the rows carrying no date: they go last. A todo
-# nobody put a day on is not due at the beginning of time, it is simply not
-# something the sort can place.
+# Undated todos sort last
 def _date_key(attr: str) -> Callable[["Todo"], tuple]:
     def key(todo: "Todo") -> tuple:
         value = getattr(todo, attr)
@@ -51,18 +42,9 @@ SORT_KEYS: Dict[str, Callable[["Todo"], tuple]] = {
 
 def freeze_sort_order(mode: Optional[str]) -> None:
     """
-    Writes the order a sort reads the todos in back into the filing
+    Write the order of a sort mode into order_index, for every sibling run
 
-    What hands a pane back to the hand that filed it. The rows keep the places
-    they were just drawn in, and from here on they are in those places because
-    that is where they are filed rather than because an order is being worked
-    out over them on every redraw — which is what makes a row moved by hand
-    stay where it was put.
-
-    Every run of siblings in the database is written, not just the one being
-    moved in: the order belongs to the pane rather than to the row, so dropping
-    it for one run while the rest of the pane still read by priority would
-    shuffle the blocks the cursor is nowhere near.
+    Used when leaving a sort, so rows stay where they were drawn.
     """
 
     if SORT_KEYS.get(mode or "") is None:
@@ -82,10 +64,7 @@ def freeze_sort_order(mode: Optional[str]) -> None:
 
 def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
     """
-    A run of todos in the order the pane reads them in
-
-    No mode — or one nothing is known about — hands the list straight back, in
-    the order the todos were filed in.
+    The todos sorted by `mode`, or unchanged if the mode is unknown/None
     """
 
     key = SORT_KEYS.get(mode or "")
@@ -97,12 +76,8 @@ def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
 
 
 class Todo(TodooitModel):
-    # The two ways a pane asks for todos that a foreign key does not already
-    # cover: the day panes read pending work by the day it is planned for, and
-    # the Bin reads the rows that have one at all. The Bin index is partial
-    # because that is exactly the question `binned_tasks` asks -- the rows
-    # with no bin date are the overwhelming majority and are never looked up
-    # through it.
+    # Day panes query pending work by schedule; the Bin queries binned rows
+    # (partial index, since almost no rows are binned)
     __table_args__ = (
         Index("ix_todo_pending_scheduled", "pending", "scheduled"),
         Index(
@@ -112,57 +87,23 @@ class Todo(TodooitModel):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    order_index: Mapped[int] = mapped_column(default=-1)
     description: Mapped[str] = mapped_column(default="")
     due: Mapped[Optional[datetime]] = mapped_column(default=None)
-    # The day the todo is planned to be worked on, as opposed to the deadline
-    # that `due` sets
+    # Planned work day (as opposed to the `due` deadline)
     scheduled: Mapped[Optional[datetime]] = mapped_column(default=None)
-    # Whether the todo has been handed to an AI that is off working on it.
-    # Nothing but a marker: it says the job is out of your hands for the
-    # moment, and says nothing about how far along it is or when it comes back
+    # Marker: the todo has been handed off to an AI agent
     agent: Mapped[bool] = mapped_column(default=False)
     recurrence: Mapped[Optional[timedelta]] = mapped_column(default=None)
     priority: Mapped[int] = mapped_column(default=0)
     pending: Mapped[bool] = mapped_column(default=True)
-    # When the todo was ticked off. Never shown on a row of its own pane: it is
-    # what the Completed project orders its rows by, so that the last thing
-    # finished is the first thing seen there
     completed_at: Mapped[Optional[datetime]] = mapped_column(default=None)
-    # When the todo was moved to the Bin. A binned todo is shown in the Bin
-    # project and nowhere else: not in the project it was filed under, and not
-    # in any of the fixed projects that gather work up from across the tree
     binned_at: Mapped[Optional[datetime]] = mapped_column(default=None)
-    # The path of the project the todo was filed under, written down at the
-    # moment that project stopped existing. It is what a todo outliving its
-    # project is put back into when it is revived, and what says where it came
-    # from while there is nothing left to point at
+    # Project path recorded when the todo's project was deleted; used to revive it
     origin_path: Mapped[str] = mapped_column(default="")
-    # Free text hanging off the todo, edited in a window of its own rather than
-    # in the row: the phone number to call, the steps, the reason it is blocked
-    #
-    # Left behind when a todo is read, and fetched only when something asks for
-    # it. It is the one field with no length to speak of, and nearly everything
-    # that reads todos reads a great many of them to draw a pane -- a query for
-    # a day's work would otherwise carry every note in the database across with
-    # it. The window that edits it asks for one note at a time, which is the
-    # only place the text is actually wanted.
+    # Deferred: panes load many todos at once and never need the note text
     note: Mapped[str] = mapped_column(default="", deferred=True)
-    # The files this todo points at, one path per line, and nothing but the
-    # paths: the file itself is never copied anywhere, so attaching costs
-    # nothing and moving the file breaks only the way back to it.
-    #
-    # Kept beside the note rather than inside it because an attachment is not
-    # something the note *says* - it is something the task has - and a line of
-    # text can be typed over, indented, quoted and deleted by accident.
-    # Deferred for the same reason the note is: nothing that draws a pane
-    # wants it.
+    # Attached file paths, one per line (files are never copied)
     attachments: Mapped[str] = mapped_column(default="", deferred=True)
-
-    # --------------------------------------------------------------
-    # ------------------- Relationships ----------------------------
-    # --------------------------------------------------------------
 
     parent_project_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("project.id"), index=True
@@ -178,23 +119,19 @@ class Todo(TodooitModel):
     parent_todo: Mapped[Optional["Todo"]] = relationship(
         "Todo",
         back_populates="todos",
-        remote_side=[id],
+        remote_side="Todo.id",
     )
 
-    # Deleting the task still takes its steps with it, but a step lifted out
-    # of it is not thereby deleted: `delete-orphan` here made the `U` key —
-    # which takes a step out of the task it is a step of — sometimes delete
-    # the step instead of moving it, since a step on its way to a project is
-    # briefly attached to neither
+    # No delete-orphan: a step briefly has no parent while being moved
     todos: Mapped[List["Todo"]] = relationship(
         "Todo",
         back_populates="parent_todo",
         cascade="all",
-        order_by=order_index,
+        order_by="Todo.order_index",
     )
 
     @validates("recurrence")
-    def validate_pending(self, key, value):
+    def pend_recurring(self, key, value):
         if value is not None:
             self.pending = True
 
@@ -202,23 +139,14 @@ class Todo(TodooitModel):
 
     @validates("pending")
     def stamp_completion(self, key, value):
-        """
-        Dates the todo the moment it is ticked off, and undates it when it is
-        unticked
-
-        Hung off the field itself rather than off `toggle_complete`, so that
-        every way a todo can be finished is stamped: the hooks that carry a
-        parent or a child along with it, and the one that bounces a recurring
-        todo straight back to pending, all go through here.
-        """
-
+        # On the field itself so every path that completes a todo is stamped
         self.completed_at = None if value else datetime.now()
 
         return value
 
     @classmethod
     def from_id(cls, _id: str) -> "Todo":
-        _id = _id.lstrip("Todo_")
+        _id = _id.removeprefix("Todo_")
         query = select(Todo).where(Todo.id == _id)
         res = manager.session.execute(query).scalars().first()
         assert res is not None
@@ -227,11 +155,7 @@ class Todo(TodooitModel):
     @property
     def parent(self) -> Optional[Union["Project", "Todo"]]:
         """
-        Whatever the todo hangs off, or nothing at all
-
-        A todo normally has one or the other. It can have neither: one that
-        outlived the project it was filed under keeps nothing but the path it
-        came from, and hangs off nothing until it is put back into a project.
+        The parent project or todo; None for an orphan (see `is_orphan`)
         """
 
         if self.parent_project:
@@ -242,10 +166,7 @@ class Todo(TodooitModel):
     @property
     def is_orphan(self) -> bool:
         """
-        Whether the project this todo was filed under is gone
-
-        Only a todo nobody is expected to work on right now can be left this
-        way: one in the Bin, or one already done and kept in the log.
+        Whether this todo's project was deleted (only happens to binned or completed todos)
         """
 
         return self.parent_project is None and self.parent_todo is None
@@ -255,9 +176,24 @@ class Todo(TodooitModel):
         return self.binned_at is not None
 
     @property
+    def ancestors(self) -> List["Todo"]:
+        """
+        Every todo this one is nested under, nearest first
+        """
+
+        found: List["Todo"] = []
+        node = self.parent_todo
+
+        while node is not None:
+            found.append(node)
+            node = node.parent_todo
+
+        return found
+
+    @property
     def descendants(self) -> List["Todo"]:
         """
-        Every todo filed under this one, at any depth
+        Every todo nested under this one, at every depth
         """
 
         found: List["Todo"] = []
@@ -269,8 +205,12 @@ class Todo(TodooitModel):
         return found
 
     @property
-    def has_same_parent_kind(self) -> bool:
-        return self.parent_todo is not None
+    def family(self) -> List["Todo"]:
+        """
+        This todo plus all its descendants
+        """
+
+        return [self, *self.descendants]
 
     @property
     def status(self) -> str:
@@ -285,12 +225,7 @@ class Todo(TodooitModel):
     @property
     def total_children(self) -> int:
         """
-        Every todo still to be done under this one, counted at every level
-
-        The steps already done are left out: they are still drawn under this
-        todo, but what the count is for is how much of the task is left, which
-        is what a collapsed row has no other way of saying. A step thrown in
-        the Bin is not work left either — it is not drawn here at all.
+        Pending, unbinned todos under this one, at every depth
         """
 
         return sum(
@@ -314,7 +249,7 @@ class Todo(TodooitModel):
         todo.save()
         return todo
 
-    def _add_sibling(self) -> "Todo":
+    def add_sibling(self) -> "Todo":
         todo = Todo(
             parent_todo=self.parent_todo,
             parent_project=self.parent_project,
@@ -323,18 +258,11 @@ class Todo(TodooitModel):
         todo.save()
         return todo
 
-    # --------------------------------------------------------------
     # ------------------- Moving between levels --------------------
-    # --------------------------------------------------------------
 
     def _renumber(self, todos: List["Todo"]) -> None:
         """
-        Files a run of todos in the order they are handed over
-
-        The whole run is written back rather than just the todo that moved: a
-        run built up by hand can have holes in it, or two todos filed at the
-        same index, and either would leave the moved todo landing somewhere
-        other than where it was put.
+        Renumber a whole run in the given order (fixes gaps and duplicate indexes)
         """
 
         for order, todo in enumerate(todos):
@@ -343,10 +271,6 @@ class Todo(TodooitModel):
 
     @property
     def previous_sibling(self) -> Optional["Todo"]:
-        """
-        The todo filed directly above this one, or None if it opens the run
-        """
-
         if self.is_first_sibling():
             return None
 
@@ -355,20 +279,9 @@ class Todo(TodooitModel):
 
     def indent(self, parent: Optional["Todo"] = None) -> Optional["Todo"]:
         """
-        File this todo under the one above it, as a step of it
+        Make this todo the last child of `parent` (default: the previous sibling)
 
-        It moves under the todo it was sitting beneath, so what it becomes a
-        step of is the row above it. Everything already filed under it comes
-        along — it is the todo that moves, not the family — and it lands at
-        the end of that todo's steps, which is where a step added by hand
-        would have gone.
-
-        Which todo that is can be handed over, since a pane being read in an
-        order of its own draws its rows in an order the filing does not know
-        about; left out, it is the todo filed directly above this one.
-
-        A todo with nothing above it to move under hands back None rather
-        than moving anywhere.
+        Returns the new parent, or None if there is nothing to indent under.
         """
 
         parent = parent or self.previous_sibling
@@ -387,15 +300,9 @@ class Todo(TodooitModel):
 
     def unindent(self) -> Optional[Union["Project", "Todo"]]:
         """
-        Take this todo out of the task it is a step of
+        Move this todo out of its parent todo, placing it right after the parent
 
-        It lands directly beside that task rather than at the end of the run
-        it is joining: a step pulled out of a task belongs with the task it
-        was part of, not at the bottom of the project. Its own steps come
-        along with it.
-
-        A todo filed straight under a project is already at the top of its
-        run, and hands back None.
+        Returns the new parent, or None if already top level.
         """
 
         parent = self.parent_todo
@@ -405,8 +312,7 @@ class Todo(TodooitModel):
 
         grandparent = parent.parent
 
-        # The task this is a step of outlived the project it was filed under,
-        # so there is nothing out here to land beside
+        # The parent is an orphan: nowhere to move to
         if grandparent is None:  # pragma: no cover
             return None
 
@@ -426,21 +332,12 @@ class Todo(TodooitModel):
 
     def move_to(self, project: "Project") -> None:
         """
-        File this todo under another project, at the bottom of what is there
+        Move this todo (with its children) to the end of `project`
 
-        The whole task moves, its steps along with it, and it lands at the end
-        of that project's run — where a task added to it by hand would have
-        gone, and where a task arriving from elsewhere is looked for.
-
-        A step of another task is lifted out of it on the way: what a project
-        holds is tasks, so a step moved into one stops being a step. Nothing
-        else about the todo changes — one in the Bin is still in the Bin
-        afterwards, and comes back out into the project it has just been given.
+        A child todo becomes top level; bin state is left untouched.
         """
 
-        # What the project holds already, this todo left out of it: a step
-        # moved into the project it was already filed somewhere inside is
-        # taken out of the run before being put back on the end of it
+        # Excludes self, in case it's already somewhere inside `project`
         run = [todo for todo in project.todos if todo.id != self.id]
 
         self.parent_todo = None
@@ -449,7 +346,7 @@ class Todo(TodooitModel):
 
         self.save()
 
-    # ----------- HELPER FUNCTIONS --------------
+    # ------------------- Helpers --------------------
 
     def set_priority(self, priority: int) -> None:
         self.priority = priority
@@ -465,7 +362,7 @@ class Todo(TodooitModel):
 
     @property
     def is_completed(self) -> bool:
-        return self.pending == False
+        return not self.pending
 
     @property
     def is_pending(self) -> bool:
@@ -481,18 +378,9 @@ class Todo(TodooitModel):
     @property
     def is_overscheduled(self) -> bool:
         """
-        Whether the day this was planned to be worked on has already gone by
+        Whether this pending todo was scheduled for a day before today
 
-        The other half of `is_overdue`: a deadline that has passed says the
-        work is late, where a planning day that has passed says only that the
-        plan did not survive the day it was made for. That is a day-at-a-time
-        question, so the hour a todo was scheduled at has no say in it: work
-        planned for this morning is still today's work this evening.
-
-        What it is for are the panes work is planned in. They carry what has
-        slipped onto today rather than leaving it behind in a week nobody
-        opens again, and mark it as having slipped, since a day that was
-        missed is a day to be picked again.
+        Compared by date only: something scheduled this morning is not late tonight.
         """
 
         if not self.scheduled:

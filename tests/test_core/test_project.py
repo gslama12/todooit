@@ -22,13 +22,6 @@ def test_sibling_methods(create_project):
     assert index_ids == [0, 1, 2, 3, 4]
 
 
-def test_parent_kind(create_project):
-    project1 = create_project()
-    project2 = create_project(parent_project=project1)
-
-    assert project2.has_same_parent_kind
-
-
 def test_sibling_add(create_project):
     p1 = create_project()
 

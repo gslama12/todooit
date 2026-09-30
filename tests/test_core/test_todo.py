@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from pytest import raises
 from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Todo
+from todooit.api import Project, Todo
 from tests.test_core.core_base import *  # noqa
 
 
@@ -34,14 +34,6 @@ def test_todo_siblings_by_creation(create_project, create_todo):
     p = create_project()
     todo = [create_todo(parent_project=p) for _ in range(5)][0]
     assert len(todo.siblings) == 5
-
-
-def test_parent_kind(create_todo):
-    todo1 = create_todo()
-    assert not todo1.has_same_parent_kind
-
-    todo2 = create_todo(parent_todo=todo1)
-    assert todo2.has_same_parent_kind
 
 
 def test_without_parent():
@@ -442,3 +434,20 @@ def test_move_to_leaves_a_binned_todo_binned(create_project):
 
     assert t.is_binned
     assert t.parent_project == there
+
+
+def test_from_id_accepts_uuid(create_project, create_todo):
+    project = create_project()
+    todo = create_todo(parent_project=project)
+
+    assert Todo.from_id(todo.uuid) is todo
+    assert Project.from_id(project.uuid) is project
+
+
+def test_ancestors_nearest_first(create_todo):
+    task = create_todo()
+    step = create_todo(parent_todo=task)
+    sub_step = create_todo(parent_todo=step)
+
+    assert sub_step.ancestors == [step, task]
+    assert task.family == [task, step, sub_step]
