@@ -1,9 +1,7 @@
 from datetime import date
 from functools import partial
-from typing import Optional, Type
+from typing import Optional
 from rich.markup import escape
-from sqlalchemy.event import listen
-from sqlalchemy.orm.attributes import get_history
 from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher, Static
@@ -11,29 +9,15 @@ from todooit.api import (
     BIN,
     COMPLETED,
     TODAY,
-    Restored,
+    ChangedRows,
     Todo,
     Project,
     fixed_project_from_key,
 )
-from todooit.api.model import TodooitModel
 from todooit.ui.api.events import (
-    TodooitEvent,
     ModeChanged,
     ShowConfirm,
     StartFieldEdit,
-    TodoChanged,
-    TodoDescriptionChanged,
-    TodoDueChanged,
-    TodoNoteChanged,
-    TodoScheduledChanged,
-    TodoAgentChanged,
-    TodoRecurrenceChanged,
-    TodoStatusChanged,
-    TodoPriorityChanged,
-    ProjectChanged,
-    ProjectDescriptionChanged,
-    ProjectRemoved,
     ProjectSelected,
     RevealTodo,
     GotoFixedProject,
@@ -142,20 +126,25 @@ class MainScreen(BaseScreen):
         itself still belongs to the tree.
         """
 
-        # Only panes in front: a hidden one awaiting redraw may hold a row
-        # whose model is already gone
+        # Only panes in front: a hidden one isn't where an edit happens
         return any(tree.is_editing for tree in self.query(ModelTree) if tree.display)
 
     def record_change(self) -> None:
-        """Record what the key just pressed left different, unless mid-edit.
+        """Record what the key just pressed left different, unless mid-edit,
+        and redraw every pane from it.
 
         A new row is written to the DB before it has a name, so recording per
         keystroke would split "add a task" into separate undo steps (`n`, the
         typed name, enter).
         """
 
-        if not self.mid_edit:
-            self.api.history.record()
+        if self.mid_edit:
+            return
+
+        changed = self.api.history.record()
+
+        if changed:
+            self.refresh_panes(changed)
 
     @on(events.ScreenResume)
     def resumed(self, _: events.ScreenResume) -> None:
@@ -168,7 +157,7 @@ class MainScreen(BaseScreen):
         self.record_change()
 
     @on(HistoryStep)
-    async def history_step(self, event: HistoryStep) -> None:
+    def history_step(self, event: HistoryStep) -> None:
         """Walk one step back through the history, or one step forward."""
 
         step = self.api.history.redo if event.forward else self.api.history.undo
@@ -179,25 +168,7 @@ class MainScreen(BaseScreen):
             self.api.notify(f"Nothing left to {way}", "warning")
             return
 
-        await self.rebuild_after(restored)
-
-        done = "Redone" if event.forward else "Undone"
-        self.api.notify(f"{done} — {restored.summary()}")
-
-    async def rebuild_after(self, restored: Restored) -> None:
-        """Rebuild panes after a history step. Order matters: drop rows/panes for
-        gone models first (a renderer outliving its row reads a deleted table
-        row), then redraw.
-        """
-
-        for tree in self.query(ModelTree):
-            tree.forget_rows(restored.gone)
-
-        for uuid in restored.gone:
-            await self.drop_project_pane(uuid)
-
-        for tree in self.query(ModelTree):
-            tree.force_refresh()
+        self.refresh_panes(restored)
 
         # Flash touched rows like a revived project, but only while there are
         # few enough for flashing to mean anything
@@ -207,6 +178,27 @@ class MainScreen(BaseScreen):
             for tree in self.query(ModelTree):
                 for uuid in touched:
                     tree.flash_row_if_shown(uuid)
+
+        done = "Redone" if event.forward else "Undone"
+        self.api.notify(f"{done} — {restored.summary()}")
+
+    def refresh_panes(self, changed: ChangedRows) -> None:
+        """Redraw every pane from the rows one key (or history step) changed.
+
+        The one place panes refresh after a model change: a todo can be shown
+        in several panes at once (its project plus any fixed project gathering
+        it), so all of them redraw, whichever code made the change. Order
+        matters: rows and panes of gone models are dropped first (a renderer
+        outliving its row reads a deleted table row), then the rest redraw.
+        """
+
+        dropped = [self.drop_project_pane(uuid) for uuid in changed.gone]
+
+        for tree in self.query(ModelTree):
+            tree.forget_rows(changed.gone)
+
+            if tree not in dropped:
+                tree.force_refresh()
 
     @on(BarNotification)
     def show_notification(self, event: BarNotification):
@@ -249,7 +241,6 @@ class MainScreen(BaseScreen):
         if result.project_created and project is not None:
             self.reveal_project(project)
 
-        self.post_message(TodoChanged(todo))
         await self.reveal_todo(todo)
 
         what = escape(todo.description)
@@ -321,7 +312,6 @@ class MainScreen(BaseScreen):
 
         todo, project = result
 
-        self.post_message(TodoChanged(todo))
         await self.reveal_todo(todo)
 
         what = escape(todo.description)
@@ -429,28 +419,26 @@ class MainScreen(BaseScreen):
         self.app.bar_switcher.switch_to_confirm(event)
         self.post_message(ModeChanged("CONFIRM"))
 
-    @on(ProjectRemoved)
-    async def project_removed(self, event: ProjectRemoved):
-        await self.drop_project_pane(event.project.uuid)
-
-    async def drop_project_pane(self, uuid: str) -> None:
+    def drop_project_pane(self, uuid: str) -> Optional[TodosTree]:
         """Drop the pane of a deleted project, falling back to the empty pane.
 
-        Takes a uuid, not the project object: by the time a history step
-        removes a project, it's a gone row rather than a live object.
+        Takes a uuid, not the project object: by the time the change signal
+        names a project as gone, it's a gone row rather than a live object.
+        Returns the pane on its way out, if there was one.
         """
 
         switcher = self.query_one("#todo_switcher", expect_type=ContentSwitcher)
         panes = switcher.query(f"#TodosTree_{uuid}")
 
         if not panes:
-            return
+            return None
 
-        pane = panes.first()
+        pane = panes.first(TodosTree)
         if switcher.current == pane.id:
             switcher.current = "empty-pane"
 
-        await pane.remove()
+        pane.remove()
+        return pane
 
     async def show_project(self, project) -> TodosTree:
         """Bring the project's tasks pane to the front, building it if needed."""
@@ -495,56 +483,9 @@ class MainScreen(BaseScreen):
         tree.focus()
         tree.action_first()
 
-    @on(TodoChanged)
-    @on(ProjectChanged)
-    def model_changed(self, _: TodooitEvent) -> None:
-        """Refresh every pane after a model changes.
-
-        A todo can appear in several panes at once (its project plus any fixed
-        project that gathers it), so all panes are refreshed together rather
-        than just the edited one. Only model-write events reach here, not
-        cursor-position ones, or this would fire per keystroke.
-        """
-
-        for tree in self.query(ModelTree):
-            tree.force_refresh()
-
-    # SQLAlchemy event listeners
-
-    def _track_field(
-        self, table: Type[TodooitModel], field: str, event: Type[TodooitEvent]
-    ) -> None:
-        def track(_mapper, _connection, target: Todo):
-            history = get_history(target, field)
-            if history.has_changes():
-                old = history.deleted[0] if history.deleted else ""
-                new = history.added[0] if history.added else ""
-
-                if old or new:
-                    self.post_message(
-                        event(old, new, target),
-                    )
-
-        listen(table, "after_update", track)
-
     def on_mount(self):
         # Opens on today's tasks; deferred until after the first refresh so
         # the config gets to configure the panes first
         self.call_after_refresh(
             lambda: self.post_message(GotoFixedProject(TODAY.key))
         )
-
-        listeners = (
-            (Project, "description", ProjectDescriptionChanged),
-            (Todo, "description", TodoDescriptionChanged),
-            (Todo, "due", TodoDueChanged),
-            (Todo, "scheduled", TodoScheduledChanged),
-            (Todo, "agent", TodoAgentChanged),
-            (Todo, "recurrence", TodoRecurrenceChanged),
-            (Todo, "pending", TodoStatusChanged),
-            (Todo, "priority", TodoPriorityChanged),
-            (Todo, "note", TodoNoteChanged),
-        )
-
-        for table, field, event in listeners:
-            self._track_field(table, field, event)

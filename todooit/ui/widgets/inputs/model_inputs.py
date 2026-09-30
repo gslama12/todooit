@@ -6,7 +6,8 @@ from rich.style import Style
 from rich.text import Text
 
 from .simple_input import SimpleInput
-from todooit.api import Todo, Project
+from todooit.api import Todo, Project, lifecycle
+from todooit.api.lifecycle import Outcome
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
 
@@ -154,26 +155,20 @@ class DateInput(SimpleInput[Todo, datetime]):
 
 class Due(DateInput):
     """
-    The date the todo has to be done by. A recurring todo has none (it's
-    planned via its scheduled date instead), so setting one here is rejected
-    rather than silently dropped.
+    The date the todo has to be done by
     """
 
-    def _typecast_value(self, value: str) -> Any:
-        date = super()._typecast_value(value)
-
-        if date is not None and self.model.recurrence is not None:
-            raise ValueError(
-                "A recurring todo has no due date; set its scheduled date instead"
-            )
-
-        return date
+    def _write(self, value: Optional[datetime]) -> Outcome:
+        return lifecycle.set_due(self.model, value)
 
 
 class Scheduled(DateInput):
     """
     The date the todo is planned to be worked on
     """
+
+    def _write(self, value: Optional[datetime]) -> Outcome:
+        return lifecycle.schedule(self.model, value)
 
 
 class Completed(DateInput):
@@ -269,6 +264,9 @@ class Recurrence(SimpleInput[Todo, timedelta]):
             return None
 
         return self.parse_recurrence(value)
+
+    def _write(self, value: Optional[timedelta]) -> Outcome:
+        return lifecycle.set_recurrence(self.model, value)
 
     @staticmethod
     def timedelta_to_simple_string(td: timedelta):

@@ -1,4 +1,5 @@
-from typing import List, Optional
+from contextlib import contextmanager
+from typing import Callable, List, Optional
 from unittest.mock import patch
 
 from textual.pilot import Pilot
@@ -26,6 +27,24 @@ def set_clipboard(text: str) -> None:
 
 patch("todooit.utils.clipboard.pyperclip.paste", lambda: _clipboard).start()
 patch("todooit.utils.clipboard.pyperclip.copy", lambda text: None).start()
+
+
+async def press_writing(pilot: Pilot, write: Callable[[], object]) -> None:
+    """
+    Presses a key whose only job is `write`, a plain model write
+
+    Bound through the config's key API, the same way any config function
+    reaches the database: nothing on this path asks a pane to redraw, so the
+    panes catch up from the key's change signal alone. A model written
+    outside a key press isn't redrawn until the next one.
+    """
+
+    app = pilot.app
+    assert isinstance(app, Todooit)
+
+    app.api.keys.set("<f9>", write)
+    await pilot.press("f9")
+    await pilot.pause()
 
 
 def run_pilot():
@@ -225,3 +244,24 @@ def notification_message(app: Todooit) -> Optional[str]:
         return None
 
     return app.bar_switcher.visible_content.message
+
+
+@contextmanager
+def flashed():
+    """
+    Every row flashed while the block runs, as (pane, row) pairs
+
+    Read off the calls rather than off the pane: a flash fades on a timer of
+    its own, so a test that looks for it afterwards is reading a race it
+    sometimes loses. What is being checked is that the row was pointed out.
+    """
+
+    seen = []
+    flash_row = ModelTree.flash_row
+
+    def record(self, _id):
+        seen.append((self.id, _id))
+        flash_row(self, _id)
+
+    with patch.object(ModelTree, "flash_row", record):
+        yield seen

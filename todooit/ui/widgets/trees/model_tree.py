@@ -29,6 +29,7 @@ from textual.timer import Timer
 from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
 from todooit.api import Todo, Project
+from todooit.api.lifecycle import Outcome, Refusal
 from todooit.ui.api.events import (
     ModeChanged,
     SpawnCalendar,
@@ -206,6 +207,12 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.flash_row(_id)
         return True
 
+    def tell_outcome(self, outcome: Optional[Outcome]) -> None:
+        """Says in the status bar what a lifecycle change did, if anything worth telling."""
+
+        if outcome:
+            self.post_message(BarNotification(outcome.summary(), "info"))
+
     def _fade_rows(self) -> None:
         """Advances every flashing row one step towards its background, stopping the timer once none are left."""
 
@@ -360,8 +367,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.update_prompt_by_id(option.id)
 
     def update_prompt_by_id(self, _id: str):
-        renderer = self._renderers[_id]
-        self.replace_option_prompt(_id, renderer.prompt)
+        self.replace_option_prompt(_id, self.prompt_for(_id))
 
     def update_current_prompt(self):
         if self.highlighted is not None:
@@ -370,7 +376,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @property
     def is_editing(self) -> bool:
-        return self.highlighted is not None and self.current.editing != ""
+        """
+        Whether the highlighted row is mid-edit. Asked before the panes redraw
+        from a key's change, so the highlighted row may be one that key just
+        deleted: a row with no renderer isn't being edited, and none is built.
+        """
+
+        if self.highlighted is None:
+            return False
+
+        renderer = self._renderers.get(self.node.id)
+        return renderer is not None and renderer.editing != ""
 
     @property
     def model(self) -> ModelType:
@@ -578,9 +594,15 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         edited = self.current.editing
 
         try:
-            self.current.stop_edit(cancel)
+            outcome = self.current.stop_edit(cancel)
+        except Refusal as refusal:
+            # A rule, not a crash: the change was not made
+            self.post_message(BarNotification(str(refusal), "warning"))
         except Exception as e:  # pragma: no cover
             self.post_message(BarNotification(str(e), "error"))
+        else:
+            # What a lifecycle column's change did to other todos
+            self.tell_outcome(outcome)
 
         self.app.post_message(ModeChanged("NORMAL"))
         self.get_column_width.cache_clear()
@@ -772,7 +794,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.highlight_id(node.uuid)
         self.start_edit("description")
 
-    @refresh_tree
     def _describe_node(self, node: ModelType, description: str) -> None:
         node.description = description
         node.save()
@@ -856,13 +877,17 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         )
 
     @require_confirmation
-    @refresh_tree
     def _remove_node(self):
         self._delete_current_model()
 
     @refresh_tree
     def _discard_node(self) -> None:
-        """Drop the highlighted node without asking to confirm."""
+        """Drop the highlighted node without asking to confirm.
+
+        Redraws itself: a node added and discarded within one edit was never
+        in the database between two key presses, so the change signal has no
+        row for it.
+        """
 
         self._delete_current_model()
 
@@ -884,7 +909,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         )
 
     @require_highlighted_node
-    @refresh_tree
     def remove_node(self):
         """
         Bins the highlighted item without confirming (reversible). The row disappearing
@@ -910,7 +934,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self._remove_node()
 
     @require_highlighted_node
-    @refresh_tree
     def restore_node(self):
         """Puts the highlighted item back where it was thrown away from."""
 
@@ -951,11 +974,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return model.swap_with(neighbour)
 
-    @refresh_tree
     def shift_up(self) -> None:
         self._shift(-1)
 
-    @refresh_tree
     def shift_down(self):
         self._shift(1)
 

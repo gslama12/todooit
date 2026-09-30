@@ -40,6 +40,15 @@ they show is gathered from your real projects every time they are drawn.
 Work whose day has already gone by is not dropped: it appears at the top of
 today's block, marked as having slipped.
 
+Today and Upcoming list, per block, exactly the work planned for that day. A
+task shows only its steps planned for the same day, or stands alone if none
+are; a step planned for a later day is listed on that day instead. A step is
+always drawn under its whole family line: an ancestor that is part of the
+same day's work (in Today, one planned for today or slipped) is an ordinary
+row, any other is drawn dimmed, as a context row, just to show where the step
+belongs. A task whose steps are spread over the week is a context row on each
+of those days.
+
 ::: tip Back to where it really lives
 `gi`, over a task in one of these panes, walks the cursor to that task in the
 project it is actually filed under.

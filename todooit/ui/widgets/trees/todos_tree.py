@@ -26,13 +26,11 @@ from todooit.ui.api.events import (
     RevealTodo,
     SpawnMove,
     SpawnNote,
-    TodoChanged,
-    TodoRemoved,
 )
 from todooit.ui.api.events.events import TodoSelected
 from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
-from ._decorators import refresh_tree, require_highlighted_node
+from ._decorators import require_highlighted_node
 from ._render_dict import TodoRenderDict
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -254,7 +252,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
                     options.append(
                         self.static_row(
                             self._context_id(index, todo),
-                            partial(self._make_context, todo.uuid),
+                            partial(self._make_context, index, todo.uuid),
                         )
                     )
                     continue
@@ -275,16 +273,16 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return f"todooit-todo-context-{group}-{todo.id}"
 
-    def _make_context(self, uuid: str) -> RenderableType:
+    def _make_context(self, group: int, uuid: str) -> RenderableType:
         """A dimmed, disabled rendering of a task shown only as context for its own steps below."""
 
         return Styled(self._renderers[uuid].prompt, "dim")
 
     def _group_rows(self, rows: List[TodoRow]) -> List[Tuple[Todo, bool]]:
         """
-        The rows a block draws in order, each flagged as context-only or not. A work
-        row is followed by its expanded children; a context row only by the specific
-        descendants the block picked, not its full subtree.
+        The rows a block draws in order, each flagged as context-only or not. A row
+        that draws its own steps is followed by its expanded children; a row the
+        block picked steps for only by those, and a context row always shows them.
         """
 
         drawn: List[Tuple[Todo, bool]] = []
@@ -292,10 +290,10 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for row in rows:
             drawn.append((row.todo, row.is_context))
 
-            if row.is_context:
-                drawn.extend(self._group_rows(row.under))
-            else:
+            if row.under is None:
                 drawn.extend((todo, False) for todo in self._steps_of(row.todo))
+            elif row.is_context or self.is_node_expaned(row.todo.uuid):
+                drawn.extend(self._group_rows(row.under))
 
         return drawn
 
@@ -338,12 +336,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _create_child_node(self) -> Todo:
         return self.current_model.add_todo()
 
-    def _delete_current_model(self) -> None:
-        assert isinstance(self.current_model, Todo)
-        self.post_message(TodoRemoved(self.current_model))
-
-        return super()._delete_current_model()
-
     def _bin_node(self) -> bool:
         """Bins the highlighted task with everything under it. Reversible, so no confirmation needed."""
 
@@ -355,7 +347,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return False
 
         move_todo_to_bin(todo)
-        self.post_message(TodoChanged(todo))
         return True
 
     def _binned_message(self, subject: str) -> str:
@@ -383,7 +374,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return
 
         revived = restore_todo(todo)
-        self.post_message(TodoChanged(todo))
         self.announce_revived(revived)
 
         # Row is gone from the Bin pane, so go to wherever it landed
@@ -439,41 +429,44 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             )
             return
 
-        todo.indent(parent)
+        outcome = todo.indent(parent)
 
         # Expanding refreshes the pane, placing the row where it now belongs
         self._expand_node(parent.uuid)
-        self.post_message(TodoChanged(todo))
+
+        # Fitted to its new ancestors rather than refused: say what gave way
+        self.tell_outcome(outcome)
 
     @require_highlighted_node
-    @refresh_tree
     def unindent_node(self) -> None:
         """Takes the highlighted task out of the task it's a step of."""
 
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        if todo.unindent() is None:
+        outcome = todo.unindent()
+
+        if outcome is None:
             self.post_message(
                 BarNotification("This task is not a step of anything", "warning")
             )
             return
 
-        self.post_message(TodoChanged(todo))
+        self.tell_outcome(outcome)
 
     def toggle_complete(self):
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        was_scheduled_for = todo.scheduled
-
-        todo.toggle_complete()
+        outcome = todo.toggle_complete()
         self.refresh_options()
 
-        # A recurring todo stays pending with a new date; flash it since the
+        # An advanced todo stays open with a new date; flash it since the
         # row doesn't otherwise move to show something changed
-        if todo.scheduled != was_scheduled_for:
+        if outcome.advanced:
             self.flash_row(todo.uuid)
+
+        self.tell_outcome(outcome)
 
     def set_priority(self, priority: int):
         assert isinstance(self.current_model, Todo)

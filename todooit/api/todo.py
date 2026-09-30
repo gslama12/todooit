@@ -9,6 +9,7 @@ from .manager import manager
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from todooit.api.lifecycle import Outcome
     from todooit.api.project import Project
 
 
@@ -130,10 +131,26 @@ class Todo(TodooitModel):
         order_by="Todo.order_index",
     )
 
+    # No due date on a recurring todo, a data-shape rule of the todo itself:
+    # a recurring todo is planned by its scheduled date and has no due date.
+    # Held the moment either field is set, so no path can write the two together.
+
     @validates("recurrence")
     def pend_recurring(self, key, value):
         if value is not None:
             self.pending = True
+
+            if self.due is not None:
+                self.scheduled = self.scheduled or self.due
+                self.due = None
+
+        return value
+
+    @validates("due")
+    def no_due_while_recurring(self, key, value):
+        if value is not None and self.recurrence is not None:
+            self.scheduled = self.scheduled or value
+            return None
 
         return value
 
@@ -245,17 +262,20 @@ class Todo(TodooitModel):
         return []
 
     def add_todo(self) -> "Todo":
-        todo = Todo(parent_todo=self)
-        todo.save()
+        from . import lifecycle
+
+        todo = Todo()
+        lifecycle.place(todo, self)
         return todo
 
     def add_sibling(self) -> "Todo":
-        todo = Todo(
-            parent_todo=self.parent_todo,
-            parent_project=self.parent_project,
-            order_index=self.order_index + 1,
-        )
-        todo.save()
+        from . import lifecycle
+
+        parent = self.parent
+        assert parent is not None
+
+        todo = Todo(order_index=self.order_index + 1)
+        lifecycle.place(todo, parent)
         return todo
 
     # ------------------- Moving between levels --------------------
@@ -277,33 +297,32 @@ class Todo(TodooitModel):
         siblings = self.siblings
         return siblings[siblings.index(self) - 1]
 
-    def indent(self, parent: Optional["Todo"] = None) -> Optional["Todo"]:
+    def indent(self, parent: Optional["Todo"] = None) -> Optional["Outcome"]:
         """
-        Make this todo the last child of `parent` (default: the previous sibling)
+        Make this todo the last step of `parent` (default: the previous sibling)
 
-        Returns the new parent, or None if there is nothing to indent under.
+        Returns how it was fitted to its new ancestors, or None if there
+        is nothing to indent under.
         """
+
+        from . import lifecycle
 
         parent = parent or self.previous_sibling
 
         if parent is None:
             return None
 
-        steps = list(parent.todos)
+        self._renumber(list(parent.todos) + [self])
+        return lifecycle.place(self, parent)
 
-        self.parent_project = None
-        self.parent_todo = parent
-        self._renumber(steps + [self])
-
-        self.save()
-        return parent
-
-    def unindent(self) -> Optional[Union["Project", "Todo"]]:
+    def unindent(self) -> Optional["Outcome"]:
         """
         Move this todo out of its parent todo, placing it right after the parent
 
-        Returns the new parent, or None if already top level.
+        Returns how it was placed, or None if already top level.
         """
+
+        from . import lifecycle
 
         parent = self.parent_todo
 
@@ -318,33 +337,25 @@ class Todo(TodooitModel):
 
         run = [todo for todo in parent.siblings if todo.id != self.id]
         after = run.index(parent) + 1
-
-        if isinstance(grandparent, Todo):
-            self.parent_todo = grandparent
-        else:
-            self.parent_todo = None
-            self.parent_project = grandparent
-
         self._renumber(run[:after] + [self] + run[after:])
 
-        self.save()
-        return grandparent
+        return lifecycle.place(self, grandparent)
 
-    def move_to(self, project: "Project") -> None:
+    def move_to(self, project: "Project") -> "Outcome":
         """
         Move this todo (with its children) to the end of `project`
 
-        A child todo becomes top level; bin state is left untouched.
+        A child todo becomes top level, keeping its values; bin state is
+        left untouched.
         """
+
+        from . import lifecycle
 
         # Excludes self, in case it's already somewhere inside `project`
         run = [todo for todo in project.todos if todo.id != self.id]
-
-        self.parent_todo = None
-        self.parent_project = project
         self._renumber(run + [self])
 
-        self.save()
+        return lifecycle.place(self, project)
 
     # ------------------- Helpers --------------------
 
@@ -356,9 +367,17 @@ class Todo(TodooitModel):
         self.agent = not self.agent
         self.save()
 
-    def toggle_complete(self) -> None:
-        self.pending = not self.pending
-        self.save()
+    def toggle_complete(self) -> "Outcome":
+        """
+        Complete or reopen, whichever this todo's state calls for
+        """
+
+        from . import lifecycle
+
+        if self.pending:
+            return lifecycle.complete(self)
+
+        return lifecycle.reopen(self)
 
     @property
     def is_completed(self) -> bool:

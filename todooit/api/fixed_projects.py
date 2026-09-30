@@ -30,13 +30,14 @@ class TodoRow:
     """
     One row of a block
 
-    A regular row draws its own children (`under` stays empty). A context row
-    is an unscheduled parent drawn only to show where gathered todos belong;
-    `under` then holds exactly the rows to draw beneath it.
+    `under` is None for a row that draws its own steps, as its project would.
+    A day pane's rows pick what hangs off them instead: `under` then holds
+    exactly the rows to draw beneath it. A context row is an ancestor drawn
+    only to show where the rows under it belong; it isn't that block's work.
     """
 
     todo: Todo
-    under: List["TodoRow"] = field(default_factory=list)
+    under: Optional[List["TodoRow"]] = None
     is_context: bool = False
 
 
@@ -70,41 +71,28 @@ def owning_project(todo: Todo) -> Optional[Project]:
     return node.parent_project
 
 
-def task_roots(todos: List[Todo]) -> List[Todo]:
+def _day_rows(gathered: List[Todo]) -> List[TodoRow]:
     """
-    The todos that have no ancestor in the list
+    A day block's rows: every gathered todo under its full family line
 
-    A gathered child whose parent was gathered too is already drawn under that
-    parent, so it is dropped to avoid showing it twice.
-    """
-
-    gathered = {todo.id for todo in todos}
-
-    return [
-        todo
-        for todo in todos
-        if not any(parent.id in gathered for parent in todo.ancestors)
-    ]
-
-
-def _rows_with_context(gathered: List[Todo]) -> List[TodoRow]:
-    """
-    The gathered todos, each nested under context rows for its ancestors
-
-    An ancestor shared by several gathered todos is drawn once, at the
-    position of the first one.
+    An ancestor gathered in the same block is a regular row, any other one a
+    context row. Each row draws only the rows picked for it here, never its
+    own steps, so a step planned for another day stays on that day. An
+    ancestor shared by several gathered todos is drawn once, at the position
+    of the first one.
     """
 
+    work = {todo.id for todo in gathered}
     rows: Dict[int, TodoRow] = {}
     tops: List[TodoRow] = []
 
-    def row_for(todo: Todo, is_context: bool) -> TodoRow:
+    def row_for(todo: Todo) -> TodoRow:
         row = rows.get(todo.id)
 
         if row is not None:
             return row
 
-        row = TodoRow(todo, is_context=is_context)
+        row = TodoRow(todo, under=[], is_context=todo.id not in work)
         rows[todo.id] = row
 
         parent = todo.parent_todo
@@ -112,12 +100,14 @@ def _rows_with_context(gathered: List[Todo]) -> List[TodoRow]:
         if parent is None:
             tops.append(row)
         else:
-            row_for(parent, True).under.append(row)
+            under = row_for(parent).under
+            assert under is not None
+            under.append(row)
 
         return row
 
     for todo in gathered:
-        row_for(todo, False)
+        row_for(todo)
 
     return tops
 
@@ -129,7 +119,7 @@ def slipped_first(todo: Todo) -> tuple:
 
 def scheduled_group(todos: List[Todo], label: str = "") -> TodoGroup:
     """
-    A block of scheduled task roots, most pressing first
+    A block of the work planned for one day, most pressing first
     """
 
     gathered = sorted(todos, key=slipped_first)
@@ -137,16 +127,15 @@ def scheduled_group(todos: List[Todo], label: str = "") -> TodoGroup:
     return TodoGroup(
         todos=gathered,
         label=label,
-        rows=_rows_with_context(gathered),
+        rows=_day_rows(gathered),
     )
 
 
-def _scheduled_roots(before: Optional[datetime] = None) -> List[Todo]:
+def _scheduled(before: Optional[datetime] = None) -> List[Todo]:
     """
-    Pending, unbinned, scheduled task roots, optionally only those before `before`
+    Pending, unbinned, scheduled todos, optionally only those before `before`
 
-    Roots are taken across the whole result so a child scheduled on another
-    day than its parent is still only drawn inside the parent.
+    Every step counts on its own day, whatever day its parent is planned for.
     """
 
     query = select(Todo).where(
@@ -155,7 +144,7 @@ def _scheduled_roots(before: Optional[datetime] = None) -> List[Todo]:
         Todo.scheduled.is_not(None) if before is None else Todo.scheduled < before,
     )
 
-    return task_roots(list(manager.session.execute(query).scalars().all()))
+    return list(manager.session.execute(query).scalars().all())
 
 
 def project_path(project: Project) -> str:
@@ -302,8 +291,10 @@ class TodayProject(FixedProject):
     """
     Everything scheduled for today or earlier, one block per project
 
-    Scheduling a task brings its children along; scheduling only a child
-    brings just that child. Overscheduled work sits at the top of its block.
+    A task shows only its steps planned for today, or alone if there are
+    none. A step sits under its full family line: an ancestor that is itself
+    today's work (planned today or slipped) is a regular row, an unscheduled
+    one a context row. Overscheduled work sits at the top of its block.
     """
 
     key = "today"
@@ -320,7 +311,7 @@ class TodayProject(FixedProject):
         groups: Dict[int, List[Todo]] = {}
         projects: Dict[int, Project] = {}
 
-        for todo in _scheduled_roots(before=end):
+        for todo in _scheduled(before=end):
             project = owning_project(todo)
 
             if project is None:  # pragma: no cover
@@ -345,7 +336,9 @@ class UpcomingProject(FixedProject):
     Everything scheduled, one block per day starting today
 
     Work scheduled for a past day is shown in today's block, marked as
-    overscheduled.
+    overscheduled. A step planned for a later day than its task is listed on
+    its own day, under its ancestors as context rows; a task whose steps fall
+    on several days is context on each of them.
     """
 
     key = "upcoming"
@@ -362,7 +355,7 @@ class UpcomingProject(FixedProject):
         groups: Dict[date, List[Todo]] = {}
         today = date.today()
 
-        for todo in _scheduled_roots():
+        for todo in _scheduled():
             assert todo.scheduled is not None
 
             day = max(todo.scheduled.date(), today)

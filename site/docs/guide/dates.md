@@ -8,10 +8,11 @@ A task carries two dates:
 
 Both are typed as words and read the same way.
 
-::: tip A scheduled day belongs to the whole task
-Planning a task plans every step under it, and planning a single step makes
-the task give up its own day. Due dates cascade nowhere — see
-[Steps](/guide/tasks#one-day-for-the-whole-task).
+::: tip A task's day is a floor for its steps
+Planning a task moves its unplanned and earlier steps onto that day; steps may
+be planned later, and planning one earlier moves the task back with it. Due
+dates cascade nowhere — see
+[Steps](/guide/tasks#a-tasks-day-is-the-earliest-its-steps-start).
 :::
 
 ## What you can type
@@ -80,5 +81,19 @@ kept.
 
 A recurring task repeats on its **scheduled** date, not its due date. Setting a
 recurrence on a task that had a due date moves that date over to become the
-first occurrence. Ticking the task off moves the scheduled date on by the
-interval and hands the task back, still pending.
+first occurrence (a task with neither date starts today), and giving a
+recurring task a due date is refused with a warning. Ticking the task off moves the scheduled date on by the
+interval and hands the task back, still pending, with every step under it
+un-ticked and moved up to the new date if it was planned earlier. The row
+flashes and the status bar names the new day ("advanced to Tue 7 Oct").
+
+A step can recur on its own inside a task that doesn't; ticking it moves only
+the step on.
+
+Only one task on any line of a family recurs. Giving a task a recurrence ends
+the recurrence of every step under it, and the status bar says so
+("recurrence ended on 2 steps"). Giving one to a step whose parent (or any
+task above it) already recurs, or has a due date, is refused with a warning
+and the step keeps its old value.
+A task filed under such a step or task with `I` isn't refused: it just stops
+repeating (see [Becoming a step](/guide/tasks#becoming-a-step-is-never-refused)).

@@ -457,7 +457,7 @@ async def test_recurrence_change():
         assert todo.recurrence == timedelta(days=1)
 
 
-async def test_completing_a_recurring_todo_bounces_it():
+async def test_completing_a_recurring_todo_advances_it():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
 

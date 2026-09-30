@@ -3,11 +3,10 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
-from contextlib import contextmanager
 from datetime import datetime, timedelta
-from unittest.mock import patch
 
 from rich.style import Style as RichStyle
+from rich.styled import Styled
 from textual.style import Style
 
 from todooit.api import Todo
@@ -19,6 +18,7 @@ from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     descriptions,
+    flashed,
     new_project,
     new_todo,
     notification_message,
@@ -27,27 +27,6 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
-
-
-@contextmanager
-def flashed():
-    """
-    Every row flashed while the block runs, as (pane, row) pairs
-
-    Read off the calls rather than off the pane: a flash fades on a timer of
-    its own, so a test that looks for it afterwards is reading a race it
-    sometimes loses. What is being checked is that the row was pointed out.
-    """
-
-    seen = []
-    flash_row = ModelTree.flash_row
-
-    def record(self, _id):
-        seen.append((self.id, _id))
-        flash_row(self, _id)
-
-    with patch.object(ModelTree, "flash_row", record):
-        yield seen
 
 
 async def settle(pilot):
@@ -286,6 +265,62 @@ async def test_upcoming_repeats_a_task_over_the_days_it_has_work_in():
             upcoming._context_id(0, task),
             upcoming._context_id(1, task),
         ]
+
+
+async def plan_tax_return(pilot):
+    """"Tax return" planned for today, one step today and one tomorrow"""
+
+    await create_and_move_to_todo(pilot)
+    await pilot.press("n")
+    await commit_line(pilot, "Tax return")
+    await schedule(pilot, "today")
+
+    # Each step takes the task's day when it is added
+    await pilot.press("N")
+    await commit_line(pilot, "now")
+
+    await pilot.press("n")
+    await commit_line(pilot, "later")
+    await schedule(pilot, "tomorrow")
+
+    return Todo.from_id("Todo_1")
+
+
+async def test_today_draws_a_task_planned_today_as_work_with_only_todays_step():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        task = await plan_tax_return(pilot)
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["Tax return", "now"]
+        assert context_ids(today) == []
+
+        # A regular row, drawn the way any row is, not dimmed as context
+        prompt = today.prompt_for(task.uuid)
+        assert not (isinstance(prompt, Styled) and prompt.style == "dim")
+
+
+async def test_upcoming_draws_a_later_step_on_its_day_under_a_dimmed_task():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        task = await plan_tax_return(pilot)
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+
+        # Tomorrow's step is not also drawn under the task today
+        assert descriptions(upcoming) == ["Tax return", "now", "later"]
+
+        (context,) = context_ids(upcoming)
+        assert context == upcoming._context_id(1, task)
+
+        prompt = upcoming.prompt_for(context)
+        assert isinstance(prompt, Styled) and prompt.style == "dim"
 
 
 async def test_upcoming_opens_with_today():

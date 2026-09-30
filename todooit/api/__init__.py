@@ -29,9 +29,10 @@ from .recycle import (
     restore_todo,
     revive_home,
 )
-from .history import History, Restored
+from .history import ChangedRows, History
+from . import lifecycle
 from .manager import manager
-from .hooks import fix_hooks, validation_hooks, update_hooks
+from .hooks import fix_hooks, validation_hooks
 
 
 def drop_blank_models() -> None:
@@ -79,11 +80,11 @@ __all__ = [
     "fixed_project_from_key",
     "fixed_projects",
     "binned_tasks",
+    "ChangedRows",
     "History",
-    "Restored",
     "manager",
+    "lifecycle",
     "drop_blank_models",
     "fix_hooks",
     "validation_hooks",
-    "update_hooks",
 ]

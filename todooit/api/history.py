@@ -86,17 +86,23 @@ class Change:
 
 
 @dataclass
-class Restored:
+class ChangedRows:
     """
-    What one undo/redo step did, as row uuids
+    The rows one key press, undo or redo left different, as row uuids
+
+    The one signal the panes refresh from: whatever code made the change,
+    this says which rows to redraw and which to forget.
     """
 
     # removed from the database
     gone: List[str] = field(default_factory=list)
-    # re-inserted after being absent
+    # present now after being absent (new, or put back)
     back: List[str] = field(default_factory=list)
     # present both times, contents changed
     changed: List[str] = field(default_factory=list)
+
+    def __bool__(self) -> bool:
+        return bool(self.gone or self.back or self.changed)
 
     @property
     def touched(self) -> List[str]:
@@ -118,6 +124,25 @@ class Restored:
         )
 
         return ", ".join(rows(len(group), what) for group, what in counted if group)
+
+
+def _classify(after: Fragment, before: Fragment, into: ChangedRows) -> None:
+    """
+    Sort the rows named in `after` into gone/back/changed, against `before`
+    """
+
+    for model in TABLES:
+        was_there = before.get(model.__tablename__, {})
+
+        for _id, row in after.get(model.__tablename__, {}).items():
+            uuid = f"{model.__name__}_{_id}"
+
+            if row is None:
+                into.gone.append(uuid)
+            elif was_there.get(_id) is None:
+                into.back.append(uuid)
+            else:
+                into.changed.append(uuid)
 
 
 def _diff(before: Snapshot, after: Snapshot) -> Optional[Change]:
@@ -154,15 +179,15 @@ def _diff(before: Snapshot, after: Snapshot) -> Optional[Change]:
     return Change(before=old, after=new)
 
 
-def _apply(fragment: Fragment, leaving: Fragment) -> Restored:
+def _apply(fragment: Fragment, leaving: Fragment) -> ChangedRows:
     """
     Write one side of a change over the database (delete all named rows, reinsert)
 
-    `leaving` is the other side, used only to classify rows for `Restored`.
+    `leaving` is the other side, used only to classify rows for `ChangedRows`.
     """
 
     session = manager.session
-    restored = Restored()
+    restored = ChangedRows()
 
     # Current notes of rows about to be rewritten, read before deleting them
     todo_table = Todo.__table__
@@ -208,18 +233,7 @@ def _apply(fragment: Fragment, leaving: Fragment) -> Restored:
         if values:
             session.execute(insert(model.__table__), values)
 
-        was_there = leaving.get(model.__tablename__, {})
-
-        for _id, row in rows.items():
-            uuid = f"{model.__name__}_{_id}"
-
-            if row is None:
-                restored.gone.append(uuid)
-            elif was_there.get(_id) is None:
-                restored.back.append(uuid)
-            else:
-                restored.changed.append(uuid)
-
+    _classify(fragment, leaving, restored)
     manager.commit()
 
     # Every loaded model object is now stale
@@ -255,13 +269,18 @@ class History:
         self._revision = manager.revision
         _notes_of_deleted.clear()
 
-    def record(self) -> bool:
+    def record(self) -> ChangedRows:
         """
-        Record what the last key changed; returns whether anything did
+        Record what the last key changed, and hand back the rows it touched
+
+        Empty (falsy) when nothing did. The rows are the panes' one refresh
+        signal, so this is read after every key press, not only for undo.
         """
 
+        changed = ChangedRows()
+
         if not self.started or manager.revision == self._revision:
-            return False
+            return changed
 
         assert self._baseline is not None
 
@@ -274,7 +293,7 @@ class History:
         self._revision = manager.revision
 
         if change is None:
-            return False
+            return changed
 
         self._undo.append(change)
         del self._undo[:-MAX_DEPTH]
@@ -282,16 +301,17 @@ class History:
         # A new change invalidates the redo stack
         self._redo.clear()
 
-        return True
+        _classify(change.after, change.before, changed)
+        return changed
 
-    def undo(self) -> Optional[Restored]:
+    def undo(self) -> Optional[ChangedRows]:
         """
         Revert the last change; None if there is nothing to undo
         """
 
         return self._step(self._undo, self._redo, forward=False)
 
-    def redo(self) -> Optional[Restored]:
+    def redo(self) -> Optional[ChangedRows]:
         """
         Reapply the last undone change; None if there is nothing to redo
         """
@@ -303,7 +323,7 @@ class History:
         source: List[Change],
         target: List[Change],
         forward: bool,
-    ) -> Optional[Restored]:
+    ) -> Optional[ChangedRows]:
         if not source:
             return None
 

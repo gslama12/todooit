@@ -10,6 +10,7 @@ from tests.test_ui.ui_base import (
     descriptions,
     highlighted_index,
     new_project,
+    press_writing,
     reveal_project,
     run_pilot,
     visible_todos,
@@ -221,9 +222,12 @@ async def test_a_pane_out_of_sight_catches_up_when_it_comes_forward():
 
         # Renaming the todo in the pane behind marks it rather than redrawing
         todo = first.todos[0]
-        todo.description = "renamed"
-        todo.save()
-        await pilot.pause()
+
+        def rename() -> None:
+            todo.description = "renamed"
+            todo.save()
+
+        await press_writing(pilot, rename)
 
         assert first_pane._needs_refresh
 

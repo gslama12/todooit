@@ -41,8 +41,10 @@ def setup(api: TodooitAPI, event):
 | `@timer(seconds)` | Once immediately, then on that interval |
 
 Events live in `todooit.ui.api.events`: `Startup`, `ShutDown`, `ModeChanged`,
-`ProjectChanged`, `TodoChanged`, and the `Spawn*` events the overlays are
-opened by. Handlers are called with `(api, event)`.
+`ProjectSelected`, `TodoSelected`, and the `Spawn*` events the overlays are
+opened by. Handlers are called with `(api, event)`. There are no per-field
+change events: after every key press the panes redraw from the rows that key
+changed, whatever code changed them.
 
 ## Keybindings
 

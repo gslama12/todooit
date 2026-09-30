@@ -266,8 +266,7 @@ def test_indent_files_under_previous_sibling(create_project):
     second.description = "second"
     second.save()
 
-    parent = second.indent()
-    assert parent == first
+    assert second.indent() is not None
     assert second.parent_todo == first
     assert second.parent_project is None
     assert first.todos == [second]
@@ -309,8 +308,7 @@ def test_unindent_lands_beside_the_old_parent(create_project):
     step.description = "step"
     step.save()
 
-    grandparent = step.unindent()
-    assert grandparent == p
+    assert step.unindent() is not None
     assert step.parent_project == p
     assert step.parent_todo is None
 
@@ -325,7 +323,7 @@ def test_unindent_of_a_nested_step(create_project):
     step = task.add_todo()
     sub_step = step.add_todo()
 
-    assert sub_step.unindent() == task
+    assert sub_step.unindent() is not None
     assert sub_step.parent_todo == task
 
 

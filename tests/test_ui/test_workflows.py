@@ -290,7 +290,7 @@ async def test_quick_add_then_find_it():
 async def test_a_recurring_chore_through_the_day():
     """
     A chore scheduled today with a recurrence: Today shows it, ticking it
-    bounces it to tomorrow, and Upcoming picks it up instead.
+    advances it to tomorrow, and Upcoming picks it up instead.
     """
 
     async with run_pilot() as pilot:

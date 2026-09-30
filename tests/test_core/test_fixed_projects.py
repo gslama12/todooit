@@ -7,9 +7,8 @@ blocks and their rows come in.
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import update
-
 from todooit.api import (
+    lifecycle,
     BIN,
     COMPLETED,
     TODAY,
@@ -159,29 +158,31 @@ def test_today_orders_a_block_by_priority(create_project):
     assert group.todos == [high, low, none]
 
 
-def test_today_gathers_a_scheduled_task_once(create_project):
-    """A task planned for today is one row: its steps came along with it"""
+def test_today_gathers_a_scheduled_task_with_its_days_steps(create_project):
+    """A task planned for today brings the steps that took its day along"""
 
     p = create_project("work")
 
     task = p.add_todo()
+    task.description = "task"
     step = task.add_todo()
+    step.description = "step"
     deeper = step.add_todo()
+    deeper.description = "deeper"
 
-    task.scheduled = today_at()
-    task.save()
+    lifecycle.schedule(task, today_at())
 
-    # The day reached the whole family, and the pane still draws one task
+    # The day reached the whole family: each of them is today's work, drawn
+    # once, where it belongs
     assert step.scheduled == task.scheduled
     assert deeper.scheduled == task.scheduled
 
-    assert TODAY.todos == [task]
+    assert sorted(t.id for t in TODAY.todos) == sorted([task.id, step.id, deeper.id])
 
     (group,) = TODAY.todo_groups
-    (row,) = group.rows
-    assert row.todo == task
-    assert not row.is_context
-    assert row.under == []
+    assert shape(group.rows) == [
+        ("task", False, [("step", False, [("deeper", False, [])])]),
+    ]
 
 
 def test_today_draws_a_scheduled_step_under_its_task(create_project):
@@ -335,20 +336,22 @@ def test_upcoming_names_today_and_tomorrow(create_project):
     assert [g.label for g in UPCOMING.todo_groups] == ["Today", "Tomorrow"]
 
 
-def test_upcoming_gathers_a_scheduled_task_once(create_project):
+def test_upcoming_gathers_a_scheduled_task_with_its_days_steps(create_project):
     """The same rule Today reads by: a planned task's steps come with it"""
 
     p = create_project("work")
 
     task = p.add_todo()
+    task.description = "task"
     step = task.add_todo()
+    step.description = "step"
 
-    task.scheduled = today_at() + timedelta(days=1)
-    task.save()
+    lifecycle.schedule(task, today_at() + timedelta(days=1))
+
+    assert step.scheduled == task.scheduled
 
     (group,) = UPCOMING.todo_groups
-    assert group.todos == [task]
-    assert step.scheduled == task.scheduled
+    assert shape(group.rows) == [("task", False, [("step", False, [])])]
 
 
 def test_upcoming_draws_a_task_over_every_day_it_has_work_in(create_project):
@@ -508,6 +511,138 @@ def test_upcoming_draws_a_slipped_step_under_its_task_in_today(create_project):
 
 
 # ------------------------------------------------------------------
+# Steps on their own day: each day block lists exactly the
+# work planned for that day
+# ------------------------------------------------------------------
+
+
+def tax_return(p, *step_days: int):
+    """"Tax return", planned for today, with one step per offset in days"""
+
+    task = p.add_todo()
+    task.description = "Tax return"
+    task.save()
+    lifecycle.schedule(task, today_at())
+
+    steps = []
+
+    for index, days in enumerate(step_days):
+        step = task.add_todo()
+        step.description = f"step {index}"
+        step.save()
+        lifecycle.schedule(step, today_at() + timedelta(days=days))
+        steps.append(step)
+
+    return task, steps
+
+
+def shape(rows):
+    """The rows of a block as nested (description, is_context, under) tuples"""
+
+    return [
+        (row.todo.description, row.is_context, shape(row.under or []))
+        for row in rows
+    ]
+
+
+def test_today_shows_a_task_with_only_the_steps_planned_for_today(create_project):
+    p = create_project("work")
+    tax_return(p, 0, 1, 3)
+
+    (group,) = TODAY.todo_groups
+
+    assert shape(group.rows) == [
+        ("Tax return", False, [("step 0", False, [])]),
+    ]
+
+
+def test_today_shows_a_task_alone_when_none_of_its_steps_are_today(create_project):
+    p = create_project("work")
+    tax_return(p, 1, 2)
+
+    (group,) = TODAY.todo_groups
+
+    assert shape(group.rows) == [("Tax return", False, [])]
+    assert [t.description for t in group.todos] == ["Tax return"]
+
+
+def test_today_draws_a_slipped_ancestor_as_work_and_an_unscheduled_one_as_context(
+    create_project,
+):
+    """
+    "Garden season" was planned for last week and is still open, so it is
+    carried-over work; "Beds" was never planned, so it only says where the
+    day's step belongs
+    """
+
+    p = create_project("home")
+
+    garden = p.add_todo()
+    garden.description = "Garden season"
+    garden.save()
+    lifecycle.schedule(garden, today_at() - timedelta(days=7))
+
+    beds = garden.add_todo()
+    beds.description = "Beds"
+    beds.save()
+    lifecycle.schedule(beds, None)
+
+    # Straight to the rows: the step took its parent's day when it was placed
+    beds.scheduled = None
+    beds.save()
+
+    weed = beds.add_todo()
+    weed.description = "Weed"
+    weed.save()
+    lifecycle.schedule(weed, today_at())
+
+    (group,) = TODAY.todo_groups
+
+    assert shape(group.rows) == [
+        ("Garden season", False, [("Beds", True, [("Weed", False, [])])]),
+    ]
+
+
+def test_upcoming_draws_a_task_as_context_on_each_later_day_its_steps_fall_on(
+    create_project,
+):
+    p = create_project("work")
+    tax_return(p, 0, 1, 3, 3)
+
+    today_block, tomorrow_block, later_block = UPCOMING.todo_groups
+
+    assert shape(today_block.rows) == [
+        ("Tax return", False, [("step 0", False, [])]),
+    ]
+    assert shape(tomorrow_block.rows) == [
+        ("Tax return", True, [("step 1", False, [])]),
+    ]
+    assert shape(later_block.rows) == [
+        ("Tax return", True, [("step 2", False, []), ("step 3", False, [])]),
+    ]
+
+
+def test_upcoming_draws_every_ancestor_of_a_later_step_as_context(create_project):
+    """Even one planned itself, when that plan is for an earlier day"""
+
+    p = create_project("work")
+    task, (part,) = tax_return(p, 1)
+
+    step = part.add_todo()
+    step.description = "sign it"
+    step.save()
+    lifecycle.schedule(step, today_at() + timedelta(days=2))
+
+    blocks = UPCOMING.todo_groups
+
+    assert [shape(block.rows) for block in blocks] == [
+        [("Tax return", False, [])],
+        [("Tax return", True, [("step 0", False, [])])],
+        [("Tax return", True, [("step 0", True, [("sign it", False, [])])])],
+    ]
+
+
+# ------------------------------------------------------------------
 # Completed
 # ------------------------------------------------------------------
 
@@ -596,27 +731,21 @@ def test_bin_shows_a_task_with_its_steps_inside_it(create_project):
 # ------------------------------------------------------------------
 
 
-def test_upcoming_draws_no_todo_twice(create_project):
+def test_upcoming_draws_no_step_twice(create_project):
     """
-    A task and a step of it on different days is one row, not two
+    A step on a later day than its task is listed on that day only (story 48)
 
-    The day put on a task reaches every step of it now, so the two of them can
-    only be that far apart in work planned before that was true. The task is
-    still one row of one day, with the step drawn inside it, since a pane that
-    gathered both would draw the step under its task and beside it at once.
+    The task is today's work and alone there; tomorrow it is just the context
+    the step needs.
     """
 
     p = create_project("work")
-    task = p.add_todo()
-    step = task.add_todo()
+    task, (step,) = tax_return(p, 1)
 
-    # Straight to the database, the way the rows stood before the rule
-    for todo, day in ((task, today_at()), (step, today_at() + timedelta(days=1))):
-        manager.session.execute(  # noqa: F405
-            update(Todo).where(Todo.id == todo.id).values(scheduled=day)  # noqa: F405
-        )
+    today_block, tomorrow_block = UPCOMING.todo_groups
 
-    manager.session.expire_all()  # noqa: F405
+    assert shape(today_block.rows) == [("Tax return", False, [])]
+    assert shape(tomorrow_block.rows) == [("Tax return", True, [("step 0", False, [])])]
 
     drawn = [todo.id for group in UPCOMING.todo_groups for todo in group.todos]
-    assert drawn == [task.id]
+    assert drawn == [task.id, step.id]

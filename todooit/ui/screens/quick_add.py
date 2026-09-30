@@ -12,7 +12,7 @@ from rich.console import Group
 from rich.style import Style
 from rich.text import Text
 
-from todooit.api import Project, Todo
+from todooit.api import Project, Todo, lifecycle
 from todooit.utils import day_label
 from todooit.utils.project_complete import Token, find_token
 from todooit.utils.quick_add import (
@@ -318,10 +318,12 @@ class QuickAddScreen(ProjectCompletion, PanelScreen):
         todo = project.add_todo()
 
         todo.description = spec.description
-        todo.scheduled = spec.scheduled
-        todo.due = spec.due
         todo.priority = spec.priority
-        todo.save()
+
+        # Placed first, then dated through the lifecycle: the same rules
+        # as for a todo created in the tree and then edited
+        lifecycle.schedule(todo, spec.scheduled)
+        lifecycle.set_due(todo, spec.due)
 
         return todo
 

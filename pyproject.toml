@@ -81,6 +81,7 @@ markers = [
   "search: search and goto",
   "editing: inline editing and the cursor",
   "config: the config API, loader and keys",
+  "lifecycle: the todo lifecycle and the one refresh signal",
 ]
 
 [tool.ruff.lint]

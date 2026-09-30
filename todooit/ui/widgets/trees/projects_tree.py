@@ -3,10 +3,7 @@ from textual import on
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, fixed_projects, move_project_to_bin
-from todooit.ui.api.events import (
-    ProjectRemoved,
-    ProjectSelected,
-)
+from todooit.ui.api.events import ProjectSelected
 from .model_tree import ColumnRule, ModelTree
 from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
@@ -199,10 +196,6 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def _add_first_item(self) -> Project:
         return self.model.add_project()
 
-    def _delete_current_model(self) -> None:
-        self.post_message(ProjectRemoved(self.current_model))
-        return super()._delete_current_model()
-
     def _bin_node(self) -> bool:
         """
         Drops the highlighted project, but not its tasks: they move to the Bin
@@ -211,7 +204,6 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
         project = self.current_model
 
-        self.post_message(ProjectRemoved(project))
         self._renderers.pop(project.uuid, None)
         self.expanded_nodes.pop(project.uuid, None)
 

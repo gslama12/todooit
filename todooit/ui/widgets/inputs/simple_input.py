@@ -1,6 +1,9 @@
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 
 from todooit.api import TodooitModel
+
+if TYPE_CHECKING:  # pragma: no cover
+    from todooit.api.lifecycle import Outcome
 from ._input import Input
 
 ModelType = TypeVar("ModelType", bound=TodooitModel)
@@ -34,6 +37,18 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
     def _typecast_value(self, value: str) -> Any:
         return value
 
+    def _write(self, value: Any) -> Optional["Outcome"]:
+        """
+        Store a typed value on the model
+
+        A column whose field belongs to the lifecycle overrides this to go
+        through it, and returns what the change meant.
+        """
+
+        self.model_value = value
+        self.model.save()
+        return None
+
     def start_edit(self) -> None:
         """
         Refill the buffer from the model before editing, in case the model
@@ -44,19 +59,22 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
         super().start_edit()
         self.move_cursor_to_end()
 
-    def stop_edit(self, cancel: bool = False) -> None:
-        """End the edit, writing the buffer to the model unless cancelled."""
+    def stop_edit(self, cancel: bool = False) -> Optional["Outcome"]:
+        """
+        End the edit, writing the buffer to the model unless cancelled
+
+        Returns the lifecycle's outcome when the column goes through it.
+        """
 
         if cancel:
             self._value = self._get_default_value()
             super().stop_edit(cancel)
             self.move_cursor_to_end()
-            return
+            return None
 
         self._value = self.value.strip()
         try:
-            self.model_value = self._typecast_value(self.value)
-            self.model.save()
+            return self._write(self._typecast_value(self.value))
         finally:
             self._value = self._get_default_value()
             super().stop_edit()

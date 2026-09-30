@@ -428,11 +428,13 @@ class BaseRenderer(Generic[ModelType]):
         return True
 
     def stop_edit(self, cancel: bool = False):
+        """Ends the edit; returns the lifecycle's outcome, if the column has one"""
+
         # A rejected value raises here (tree turns it into a notification);
         # still tear down the edit state, or keystrokes keep routing to the
         # buffer while the bar thinks it's back in NORMAL mode.
         try:
-            getattr(self, self.editing).stop_edit(cancel)
+            return getattr(self, self.editing).stop_edit(cancel)
         finally:
             self.tree.get_column_width.cache_clear()
             self.editing = ""

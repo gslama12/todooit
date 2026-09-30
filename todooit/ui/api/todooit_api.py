@@ -353,16 +353,9 @@ class TodooitAPI:
         )
 
     def _empty_bin(self) -> None:
-        """
-        Empties the Bin and refreshes every pane, not just the Bin's own,
-        since a binned todo's original project pane still remembers it too.
-        """
+        """Empties the Bin; the panes drop the deleted rows from the change signal."""
 
-        gone = empty_bin()
-
-        for tree in self.app.screen.query(ModelTree):
-            tree.forget_rows(gone)
-            tree.force_refresh()
+        empty_bin()
 
     def undo(self):
         """Take back the last change made in the panes"""

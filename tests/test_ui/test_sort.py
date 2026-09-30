@@ -13,6 +13,7 @@ from tests.test_ui.ui_base import (
     create_and_move_to_todo,
     new_project,
     notification_message,
+    press_writing,
     run_pilot,
     tree_options,
 )
@@ -27,25 +28,26 @@ async def seed_unsorted(pilot):
 
     beta, alpha, gamma = Todo.all()
 
-    alpha.priority = 3
-    alpha.save()
-    gamma.priority = 1
-    gamma.save()
+    def plan() -> None:
+        from datetime import datetime
 
-    from datetime import datetime
+        alpha.priority = 3
+        alpha.save()
+        gamma.priority = 1
+        gamma.save()
 
-    beta.due = datetime(2030, 5, 1)
-    beta.save()
-    gamma.due = datetime(2030, 1, 1)
-    gamma.save()
+        beta.due = datetime(2030, 5, 1)
+        beta.save()
+        gamma.due = datetime(2030, 1, 1)
+        gamma.save()
 
-    beta.scheduled = datetime(2030, 3, 1)
-    beta.save()
-    alpha.scheduled = datetime(2030, 2, 1)
-    alpha.save()
+        beta.scheduled = datetime(2030, 3, 1)
+        beta.save()
+        alpha.scheduled = datetime(2030, 2, 1)
+        alpha.save()
 
-    # The field listeners redraw every pane once the writes have landed
-    await pilot.pause()
+    # One key press, so the panes redraw from its change signal
+    await press_writing(pilot, plan)
 
     return beta, alpha, gamma
 

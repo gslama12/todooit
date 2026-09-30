@@ -1,4 +1,4 @@
-from datetime import date, timedelta, datetime
+from datetime import date
 from typing import Any, Callable, Literal, Optional, Union
 from textual.message import Message
 
@@ -35,14 +35,6 @@ class TodoEvent(TodooitEvent):
     def __init__(self, todo: Todo) -> None:
         super().__init__()
         self.todo = todo
-
-
-class ProjectChanged(ProjectEvent):
-    """Base for events that leave a project different than before; excludes mere cursor/selection changes, so panes don't redraw per keystroke."""
-
-
-class TodoChanged(TodoEvent):
-    """Base for events that leave a todo different than before; a todo can be shown in more than one pane, so this has to reach beyond its own row."""
 
 
 # Events
@@ -137,22 +129,6 @@ class ProjectSelected(ProjectEvent):
         super().__init__(project)
 
 
-class ProjectRemoved(ProjectChanged):
-    """Emitted when user removes a project."""
-
-    def __init__(self, project: Project) -> None:
-        super().__init__(project)
-
-
-class ProjectDescriptionChanged(ProjectChanged):
-    """Emitted when user changes the description of a project."""
-
-    def __init__(self, old: str, new: str, project: Project) -> None:
-        super().__init__(project)
-        self.old = old
-        self.new = new
-
-
 # Todo events
 
 
@@ -165,91 +141,6 @@ class TodoSelected(TodoEvent):
 
 class RevealTodo(TodoEvent):
     """Emitted when a task leaves its current pane (e.g. unticked, restored from Bin) and has to be shown wherever it now lives: its pane opens, cursor moves there, row flashes."""
-
-
-class TodoRemoved(TodoChanged):
-    """Emitted when user removes a todo."""
-
-    def __init__(self, todo: Todo) -> None:
-        super().__init__(todo)
-
-
-class TodoDescriptionChanged(TodoChanged):
-    """Emitted when user changes the description of a todo."""
-
-    def __init__(self, old: str, new: str, todo: Todo) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
-
-
-class TodoDueChanged(TodoChanged):
-    """Emitted when user changes the due of a todo."""
-
-    def __init__(
-        self, old: Optional[datetime], new: Optional[datetime], todo: Todo
-    ) -> None:
-        super().__init__(todo)
-        self.new = new
-        self.old = old
-
-
-class TodoScheduledChanged(TodoChanged):
-    """Emitted when user changes the scheduled date of a todo."""
-
-    def __init__(
-        self, old: Optional[datetime], new: Optional[datetime], todo: Todo
-    ) -> None:
-        super().__init__(todo)
-        self.new = new
-        self.old = old
-
-
-class TodoStatusChanged(TodoChanged):
-    """Emitted when user changes the status of a todo."""
-
-    def __init__(self, old: str, new: str, todo: Todo) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
-
-
-class TodoAgentChanged(TodoChanged):
-    """Emitted when a todo is handed to an AI, or taken back off one."""
-
-    def __init__(self, old: bool, new: bool, todo: Todo) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
-
-
-class TodoRecurrenceChanged(TodoChanged):
-    """Emitted when user changes the recurrence of a todo."""
-
-    def __init__(
-        self, old: Optional[timedelta], new: Optional[timedelta], todo: Todo
-    ) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
-
-
-class TodoNoteChanged(TodoChanged):
-    """Emitted when user changes the note of a todo."""
-
-    def __init__(self, old: str, new: str, todo: Todo) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
-
-
-class TodoPriorityChanged(TodoChanged):
-    """Emitted when user changes the priority of a todo."""
-
-    def __init__(self, old: int, new: int, todo: Todo) -> None:
-        super().__init__(todo)
-        self.old = old
-        self.new = new
 
 
 class BarNotification(TodooitEvent):
