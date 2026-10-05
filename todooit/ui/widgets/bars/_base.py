@@ -6,8 +6,8 @@ from ...api.events import ModeChanged
 
 if TYPE_CHECKING:  # pragma: no cover
     from .bar_switcher import BarSwitcher
-    from todooit.ui.tui import Dooit
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.tui import Todooit
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 class BarBase(Static):
@@ -25,15 +25,15 @@ class BarBase(Static):
         self.callback = callback
 
     @property
-    def app(self) -> "Dooit":
-        from todooit.ui.tui import Dooit
+    def app(self) -> "Todooit":
+        from todooit.ui.tui import Todooit
 
         app = super().app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         return app
 
     @property
-    def api(self) -> "DooitAPI":  # pragma: no cover
+    def api(self) -> "TodooitAPI":  # pragma: no cover
         return self.app.api
 
     @property
@@ -44,7 +44,7 @@ class BarBase(Static):
         assert isinstance(parent, BarSwitcher)
         return parent
 
-    async def on_unmount(self):
+    def on_unmount(self):
         self.post_message(ModeChanged("NORMAL"))
         self.switcher.current = "status_bar"
 
@@ -56,5 +56,5 @@ class BarBase(Static):
         self.app.post_message(ModeChanged("NORMAL"))
         self.remove()
 
-    async def handle_keypress(self, key: str) -> None:  # pragma: no cover
+    def handle_keypress(self, key: str) -> None:  # pragma: no cover
         return

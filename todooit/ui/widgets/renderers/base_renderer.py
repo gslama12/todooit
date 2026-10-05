@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Generic, List, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Generic, List, TypeVar, Union
 from rich._wrap import divide_line
 from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -8,38 +8,20 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 from todooit.api import Todo, Project
+from todooit.ui.pane_layout import GUIDE_DROP, GUIDE_VERTICAL, PaneRow
 from todooit.utils import blend
 from ..inputs.simple_input import SimpleInput
 
 ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 
-# space kept on either side of a column, so that neighbouring columns are
-# separated by twice as much as the table edges get
+# Padding on each side of a column; neighbouring columns get double this.
 COLUMN_PADDING = 2
 
-# Guides drawn to the left of a nested item, in the same rounded style the pane
-# borders use: a line drops out of the parent's first column and turns right
-# into the first column of each of its children, the way a file tree does.
-# All four are the same width, which is what one level of nesting indents by.
-GUIDE_BRANCH = "├── "
-GUIDE_LAST_BRANCH = "╰── "
-GUIDE_VERTICAL = "│   "
-GUIDE_BLANK = "    "
-
-# How a description too long for its column is broken. Folded, never cut
-# short: a row says what there is to do, and a word of that quietly swapped
-# for an ellipsis is the one word the row was worth reading for
+# Folded rather than cut short, so overflow keeps whole words.
 DESCRIPTION_OVERFLOW = "fold"
 
-# The line of GUIDE_VERTICAL with none of the gap after it. A row is drawn
-# over as many lines as its description needs, and what hangs off it starts
-# only on the line after the last of them: this is what carries the line down
-# through the row, in the column its children turn out of.
-GUIDE_DROP = GUIDE_VERTICAL[0]
-
-# How far the guides are pulled towards the pane background. Far enough that
-# they stay behind the descriptions they indent, and short of the point where
-# the shape of the tree stops being readable.
+# How far guides are faded towards the pane background (still readable, but
+# behind the text they indent).
 GUIDE_FADE = 0.45
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -48,13 +30,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 class HangingText:
     """
-    Text wrapping into its column, with every line after the first pushed in
-
-    What makes room, in a pane whose first column is the description itself,
-    for the line dropping out of that column into the rows under it. The
-    description starts where it always did and wraps where it always did;
-    only its second line onwards steps aside, into the same column the rows
-    below it turn their elbows out of.
+    Text wrapped into its column with every line after the first indented,
+    to leave room for the guide line dropping into the rows below.
     """
 
     def __init__(self, text: Text, indent: int):
@@ -62,13 +39,7 @@ class HangingText:
         self.indent = indent
 
     def _lines(self, width: int) -> List[Text]:
-        """
-        The text broken to `width`, and to one indent less below its first line
-
-        Wrapped a line at a time rather than all at once, since the first line
-        has the whole column to run in and the rest have the indent taken out
-        of them: one call cannot break a run of text to two different widths.
-        """
+        """Text broken to `width`; first line full width, rest narrowed by indent (wrapped one line at a time, since a call can't break to two widths)."""
 
         first = max(width, 1)
         rest = max(width - self.indent, 1)
@@ -117,25 +88,11 @@ class HangingText:
 
 class GuidedRow:
     """
-    A row drawn in what the guides that place it in the tree leave of the pane
-
-    The guides are a margin the whole row sits in rather than something glued
-    to the front of its first cell: a description long enough to wrap would
-    otherwise take its second line back to the left edge of the pane, out from
-    under the row it belongs to and straight through the lines it hangs off.
-    Every line of the row gets a prefix of its own — the elbow on the first,
-    and below it only the ancestors whose lines carry on past the row.
-
-    The row inside is built without the padding a table keeps at its edges,
-    since the margin here is that padding: `inset` holds the same gap in front
-    of the guides that an unguided row has in front of its first column, and
-    `tail` the same gap after the last one, so that every row of the pane
-    lines up with the column titles however deep it is nested.
-
-    `connector` is the other line a tall row has to carry: what hangs off the
-    row turns out of its own first column, which is past the margin and inside
-    the row, so a row that wrapped has to be drawn through rather than around.
-    `connector_offset` says how far into the row that column starts.
+    A row drawn beside its tree guides, which form a margin (not a prefix on
+    the first cell) so wrapped description lines stay indented instead of
+    reaching the pane's left edge. `inset`/`tail` replace the table's own
+    edge padding; `connector`/`connector_offset` draw the line to this row's
+    children through the row when it has wrapped.
     """
 
     def __init__(
@@ -163,19 +120,15 @@ class GuidedRow:
         return self.inset + cell_len(self.first)
 
     def _inner_options(self, options: ConsoleOptions) -> ConsoleOptions:
-        # A column is kept back for the row itself, so that a pane narrow
-        # enough to be all margin still draws something rather than raising
+        # Clamp to 1 so an overly narrow pane still draws instead of raising.
         width = options.max_width - self.margin - self.tail
         return options.update_width(max(width, 1))
 
     def _connected(self, line: List[Segment]) -> List[Segment]:
         """
-        A line of the row with the drop into its own family drawn through it
-
-        Into the gap the row leaves in that column rather than over anything
-        standing there: a pane whose first column is the description itself
-        has no gap to draw it in once the description has wrapped into it,
-        and the line is left out rather than a letter of it painted over.
+        A line of the row with the connector to its children drawn through it,
+        into whatever gap the row happens to leave in that column (never over
+        existing text).
         """
 
         drawn: List[Segment] = []
@@ -187,8 +140,7 @@ class GuidedRow:
             width = segment.cell_length
             reached = column <= self.connector_offset < column + width
 
-            # A segment holding anything double width is measured in cells
-            # and cut in characters, which are not the same count in it
+            # Skip double-width segments: cell length and character count differ.
             if done or not reached or len(text) != width:
                 drawn.append(segment)
                 column += width
@@ -224,8 +176,7 @@ class GuidedRow:
         for index, line in enumerate(lines):
             yield Segment(lead + (self.first if index == 0 else self.rest), self.style)
 
-            # The first line is where the row itself is: the drop only has to
-            # cross the lines under it, on its way to the row hanging off it
+            # Connector only applies below the first line (the row's own line).
             yield from self._connected(line) if index and self.connector else line
 
             if self.tail:
@@ -265,10 +216,6 @@ class BaseRenderer(Generic[ModelType]):
         return self.tree.render_layout
 
     @property
-    def prompt(self) -> RenderableType:
-        return self.make_renderable()
-
-    @property
     def model(self) -> ModelType:
         raise NotImplementedError  # pragma: no cover
 
@@ -282,8 +229,8 @@ class BaseRenderer(Generic[ModelType]):
             self.tree.column_value(attr, component), component.model
         )
 
-        # An editing field draws its buffer plus whatever hint it appends to it,
-        # which is wider than the buffer alone: measure what actually gets drawn
+        # Measure what's actually drawn: an editing field's hint widens it
+        # beyond just the buffer.
         if component.is_editing:
             editing_width = self._cell_len(component.render_editing(self.theme))
         else:
@@ -303,72 +250,8 @@ class BaseRenderer(Generic[ModelType]):
         theme = self.theme
         return Style(color=blend(theme.foreground1, theme.background1, GUIDE_FADE))
 
-    @property
-    def tree_guides(self) -> Tuple[str, str]:
-        """
-        The file tree guides for this item: its first line, then every line below
-
-        The innermost level is the elbow the item itself hangs off; every level
-        above it only says whether the line of that ancestor carries on past
-        this row or has already run out of siblings. They stop at whichever
-        row the pane counts as the top of the family, which in a pane that
-        gathers its rows is not the top of the tree.
-
-        A row tall enough to have lines below its first gets the same guides
-        again underneath, with its own elbow spent: what is left there is the
-        line carrying on to the next row beside it, or nothing at all once
-        this row is the last of them.
-        """
-
-        if not self.tree.show_guides:
-            return "", ""
-
-        node = self.model
-        pieces: List[str] = []
-        last_here = True
-
-        while node.nest_level and not self.tree.is_row_root(node):
-            last = self.tree.is_last_row(node)
-
-            if pieces:
-                pieces.append(GUIDE_BLANK if last else GUIDE_VERTICAL)
-            else:
-                last_here = last
-                pieces.append(GUIDE_LAST_BRANCH if last else GUIDE_BRANCH)
-
-            node = node.parent
-
-        if not pieces:
-            return "", ""
-
-        pieces.reverse()
-        below = pieces[:-1] + [GUIDE_BLANK if last_here else GUIDE_VERTICAL]
-
-        return "".join(pieces), "".join(below)
-
-    @property
-    def child_connector(self) -> str:
-        """
-        The line dropping out of this row's first column into its own family
-
-        Something only a row drawn over more than one line ever needs: what
-        hangs off a row starts on the line after the last of its own, and
-        between the two there is nothing but however far it wrapped.
-        """
-
-        if not self.tree.show_guides:
-            return ""
-
-        return GUIDE_DROP if self.tree.draws_rows_under(self.model) else ""
-
     def _with_row_mark(self, rendered: RenderableType) -> RenderableType:
-        """
-        The description behind whatever the pane has to put in front of it
-
-        In front rather than after, and inside the description's own column:
-        what a mark says is what to do with the row, which is read before the
-        row itself and not hunted for at the end of it.
-        """
+        """Prefix a pane's mark onto the description, so it reads before the row."""
 
         mark = self.tree.row_mark(self.model)
 
@@ -377,12 +260,12 @@ class BaseRenderer(Generic[ModelType]):
 
         return mark + rendered if isinstance(rendered, Text) else rendered
 
-    def _with_row_note(self, rendered: RenderableType) -> RenderableType:
+    def _with_row_note(self, rendered: RenderableType, row: PaneRow) -> RenderableType:
         """
         The description with whatever the pane has to say about the row after it
         """
 
-        note = self.tree.row_note(self.model)
+        note = self.tree.row_note(self.model, row)
 
         if not note.cell_len:
             return rendered
@@ -394,19 +277,21 @@ class BaseRenderer(Generic[ModelType]):
 
         return cell
 
-    def make_renderable(self) -> RenderableType:
+    def make_renderable(self, row: PaneRow) -> RenderableType:
+        """Draws the model as the pane laid out `row`: its guides, and the line into what's under it"""
+
         layout = self.table_layout
 
-        first_guide, below_guide = self.tree_guides
+        first_guide, below_guide = row.guides, row.below
         guided = bool(first_guide)
-        connector = self.child_connector
+        connector = GUIDE_DROP if row.drops else ""
 
-        # A guided row keeps its edge padding out in the margin, where the
-        # guides are drawn in it; an unguided one has the table draw it
+        # A guided row's edge padding lives in the margin instead; the table
+        # only draws it for unguided rows.
         table = Table.grid(
             expand=True, padding=(0, COLUMN_PADDING), pad_edge=not guided
         )
-        row = []
+        cells = []
 
         for index, item in enumerate(layout):
             attr = item.value
@@ -420,31 +305,24 @@ class BaseRenderer(Generic[ModelType]):
                     self.tree.column_value(attr, component), component.model
                 )
 
-            # Measured on what is about to be drawn, so that a field which grows
-            # while it is edited gets the column widened for it
+            # Measure what's about to be drawn, so a field that grows while
+            # edited gets its column widened.
             if self._cell_len(rendered) > self._get_max_width(attr):
                 self.tree.get_column_width.cache_clear()
 
-            # A pane's note on the row shares the description's column
-            # rather than taking one of its own: pushed to the far end of it,
-            # kept on one line, and left out of the width check above, since
-            # it is the pane's word about the row and not the field's. What is
-            # left of the column goes to the description, which wraps into it
-            # exactly as it would have without a note.
-            # The pane's mark on the row leads its description, edit or no
-            # edit: a mark that came and went as the description was typed
-            # into would shift the whole of it sideways and back again
+            # Mark always applies (even while editing) so it doesn't appear
+            # and disappear as the description is typed, shifting it sideways.
             if attr == "description":
                 rendered = self._with_row_mark(rendered)
 
+            # Note shares the description's column, pushed to its far end,
+            # and is excluded from the width check above since it's the
+            # pane's addition, not the field's.
             if attr == "description" and not component.is_editing:
-                rendered = self._with_row_note(rendered)
+                rendered = self._with_row_note(rendered, row)
 
-            # A pane whose description is its first column has the line into
-            # the rows below coming down through that column. Only a row with
-            # rows under it has such a line, and only that row hangs its
-            # description in to leave a column free for it: the rest wrap
-            # flush, since there would be nothing to put in the gap
+            # Only a row with children hangs its description in (leaving a
+            # column for the guide line down to them); others wrap flush.
             if attr == "description" and index == 0 and connector:
                 if isinstance(rendered, Text):
                     rendered = HangingText(rendered, len(GUIDE_VERTICAL))
@@ -454,25 +332,21 @@ class BaseRenderer(Generic[ModelType]):
             else:
                 width = self._get_max_width(attr)
 
-                # the leftmost column has to hold the table edge padding as
-                # well, unless the margin is already holding it
+                # Leftmost column needs the edge padding too, unless the margin holds it.
                 if index == 0 and not guided:
                     width += COLUMN_PADDING
 
                 table.add_column(attr, width=width)
 
-            row.append(rendered)
+            cells.append(rendered)
 
-        table.add_row(*row)
+        table.add_row(*cells)
 
         if not guided and not connector:
             return table
 
-        # The guides are what pushes a nested row to the right: the row is
-        # drawn in what is left of the pane beside them, every line of it. A
-        # row deep enough to have guides has its own first column where they
-        # end; one at the top of the tree has it past the pane's edge gap,
-        # which the table is still drawing itself in that case
+        # Unguided top-of-tree rows still need the table's own edge gap
+        # accounted for via connector_offset.
         return GuidedRow(
             first_guide,
             below_guide,
@@ -497,12 +371,13 @@ class BaseRenderer(Generic[ModelType]):
         return True
 
     def stop_edit(self, cancel: bool = False):
-        # A field that rejects what was typed raises out of here, and the tree
-        # turns that into a notification. The edit still has to be torn down on
-        # the way out, or the tree keeps routing keystrokes into the buffer
-        # while the bar claims to be back in NORMAL mode
+        """Ends the edit; returns the lifecycle's outcome, if the column has one"""
+
+        # A rejected value raises here (tree turns it into a notification);
+        # still tear down the edit state, or keystrokes keep routing to the
+        # buffer while the bar thinks it's back in NORMAL mode.
         try:
-            getattr(self, self.editing).stop_edit(cancel)
+            return getattr(self, self.editing).stop_edit(cancel)
         finally:
             self.tree.get_column_width.cache_clear()
             self.editing = ""

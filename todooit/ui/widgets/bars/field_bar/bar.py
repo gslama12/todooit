@@ -10,25 +10,20 @@ from .._base import BarBase
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.widgets.trees.model_tree import ModelTree
 
-# The same rounded caps the status bar wears around its mode pill: the bar has
-# been taken over mid-edit, so what stands in its place is the pill it hid
+# Same rounded caps the status bar's mode pill wears, since this replaces it.
 CAP_LEFT = ""
 CAP_RIGHT = ""
 
-# A field edit is an insert like any other, and says so in the same place, and
-# in the same colour, the status bar would have said it
+# A field edit is an insert like any other, labeled the same way the status
+# bar would.
 MODE_LABEL = "INSERT"
 
 
 class FieldBar(BarBase):
     """
-    A column being typed into, drawn where the status bar sits
-
-    A pane that leaves a column out has nowhere to draw that column's buffer,
-    and making room for one would shift every row the moment an edit started.
-    The buffer goes to the bar instead, so the pane behind it never moves. The
-    edit itself stays with the tree: the keys are handed straight on, and what
-    is typed lands exactly where it would have.
+    A column being typed into, drawn where the status bar sits instead of
+    inline, so making room for the buffer doesn't shift every row. The edit
+    itself stays with the tree; keys are just handed straight through.
     """
 
     def __init__(self, tree: "ModelTree", column: str, *args, **kwargs):
@@ -37,12 +32,12 @@ class FieldBar(BarBase):
         self.column = column
 
     def perform_action(self, cancel: bool) -> None:
-        # Enter and escape reach the tree as keystrokes like any other, so the
-        # edit has already been settled by the time this runs
+        # Enter/escape reach the tree as keystrokes, so the edit is already
+        # settled by the time this runs.
         return
 
-    async def handle_keypress(self, key: str) -> None:
-        await self._tree.handle_keypress(key)
+    def handle_keypress(self, key: str) -> None:
+        self._tree.handle_keypress(key)
 
         if self._tree.is_editing:
             self.refresh()
@@ -50,11 +45,11 @@ class FieldBar(BarBase):
 
         self.dismiss(cancel=False)
 
-    async def on_unmount(self):
+    def on_unmount(self):
         self.post_message(ModeChanged("NORMAL"))
 
-        # The edit may have raised a notification on its way out, which has
-        # taken the bar for itself; only what is still ours is handed back
+        # A notification raised on the way out may have taken the bar; only
+        # hand it back if it's still ours.
         if self.switcher.current == self.id:
             self.switcher.current = "status_bar"
 

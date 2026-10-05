@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 from typing import Optional, Type, Union
-from todooit.api.theme import DooitThemeBase, TokyoNight
+from todooit.api.theme import TodooitThemeBase, TokyoNight
 from todooit.paths import cache_dir
 from uuid import uuid4
 
@@ -21,12 +21,12 @@ class CssManager:
 
     def __init__(
         self,
-        theme: DooitThemeBase = TokyoNight(),
+        theme: TodooitThemeBase = TokyoNight(),
         cache_path: Optional[Path] = None,
     ):
         cache_path = cache_path or cache_dir()
 
-        self.theme: DooitThemeBase = theme
+        self.theme: TodooitThemeBase = theme
         self.cache_path = cache_path
         self.stylesheets: Path = cache_path / "stylesheets"
         self.css_file: Path = cache_path / "todooit.tcss"
@@ -58,11 +58,11 @@ class CssManager:
 
         self.write(css)
 
-    def add_theme(self, theme: Type[DooitThemeBase]):
+    def add_theme(self, theme: Type[TodooitThemeBase]):
         self.themes[theme._name] = theme()
         self.refresh_css()
 
-    def set_theme(self, theme: Union[str, Type[DooitThemeBase]]):
+    def set_theme(self, theme: Union[str, Type[TodooitThemeBase]]):
         if isinstance(theme, str):
             self.theme = self.themes.get(theme, TokyoNight())
         else:

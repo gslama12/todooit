@@ -3,20 +3,22 @@ from rich.console import Group, RenderableType
 from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
-from textual.app import ComposeResult
+from textual.app import ComposeResult, events
+from textual.containers import VerticalScroll
+from textual.screen import ModalScreen
+from textual.widgets import Static
 
 from todooit.ui.api.api_components.keys import KeyManager
 from .base import BaseScreen
-from textual.widgets import Static
+from .panel import HINT_GAP
 
 
-class DooitKeyTable(Static):
+class TodooitKeyTable(Static):
     DEFAULT_CSS = """
-    DooitKeyTable {
-        content-align: center middle;
-        width: 80%;
-        margin: 1;
-        padding: 1 2;
+    TodooitKeyTable {
+        width: 1fr;
+        height: auto;
+        padding: 0 1;
     }
     """
 
@@ -27,23 +29,17 @@ class DooitKeyTable(Static):
         "table-title",
         "separator",
     }
-    BORDER_TITLE = "Key Bindings"
-
     def __init__(self, keybinds: KeyManager):
         super().__init__()
         self.keybinds = keybinds
 
-    # Keys that arrive as a character nobody can see, and so have to be named
+    # Keys with no visible character need an explicit name
     KEY_LABELS = {" ": "space"}
 
     def _rows(self, group: str) -> List[Tuple[str, str]]:
-        """
-        The rows a section lists, as the key it names and what it does
+        """Rows for a section: (key or label, description).
 
-        A binding carrying a label of its own is written under that instead of
-        under its key, and the whole run of bindings sharing one collapses to
-        the single row they all read as: a scale is one thing to learn, and
-        four rows of it is four times the screen saying so.
+        Bindings sharing a label collapse into one row instead of repeating it.
         """
 
         rows: List[Tuple[str, str]] = []
@@ -64,9 +60,7 @@ class DooitKeyTable(Static):
         if keybind in cls.KEY_LABELS:
             return cls.KEY_LABELS[keybind]
 
-        # A named key is written `<ctrl+q>` so that it can be told apart from
-        # the four characters it would otherwise be, which is a distinction
-        # only the key input cares about: the table reads it as a key
+        # Strip the `<...>` markup used to distinguish a named key from literal characters
         if keybind.startswith("<") and keybind.endswith(">"):
             return keybind[1:-1]
 
@@ -74,8 +68,7 @@ class DooitKeyTable(Static):
 
     def _render_group(self, group: str, key_width: int) -> RenderableType:
         t = Table.grid(expand=True, padding=(0, 1))
-        # A fixed key column keeps the arrows lined up across every section;
-        # the description soaks up whatever width is left over
+        # Fixed key column keeps arrows aligned across sections; description fills the rest
         t.add_column("key", width=key_width)
         t.add_column("arrow", width=2)
         t.add_column("description", ratio=1)
@@ -110,10 +103,7 @@ class DooitKeyTable(Static):
         renderables = []
 
         for group in self.keybinds.groups:
-            # A blank line above the rule and the section title straight under
-            # it. The gap the sections were once given on either side is worth
-            # less than the whole listing being on screen at once: a screen of
-            # blank lines is what pushes the last section off the bottom of it.
+            # Kept tight (blank line + rule, no gap below) so the whole listing fits on screen
             if renderables:
                 renderables += [Text(""), separator]
 
@@ -127,32 +117,67 @@ class DooitKeyTable(Static):
         return Group(*renderables)
 
 
-class HelpScreen(BaseScreen):
-    """
-    Help Screen to view Help Menu
-    """
+# Panel border title
+PANEL_TITLE = "Key Bindings"
 
-    DEFAULT_CSS = """
-    HelpScreen {
-        align: center top;
+
+# Hint bar: just navigation/exit, not the keybind listing itself
+HINT = HINT_GAP.join(("k/l scroll", "gg/G top/end", "esc close"))
+
+
+class HelpScreen(BaseScreen, ModalScreen):
+    """Key bindings panel over a dimmed app; spawned fresh, not kept as a named screen."""
+
+    # Listing usually overflows the panel, so it scrolls: k/l up/down, j/ö left/right
+    SCROLLS = {
+        "k": "scroll_up",
+        "l": "scroll_down",
+        "j": "scroll_left",
+        "ö": "scroll_right",
+        "up": "scroll_up",
+        "down": "scroll_down",
+        "left": "scroll_left",
+        "right": "scroll_right",
+        "G": "scroll_end",
     }
-    """
 
-    BINDINGS = [
-        ("escape", "app.pop_screen", "Pop screen"),
-    ]
+    # Raised by the first `g` of a `gg` and by nothing else
+    _pending_g = False
+
+    @property
+    def panel(self) -> VerticalScroll:
+        return self.query_one("#help-panel", VerticalScroll)
 
     def compose(self) -> ComposeResult:
-        yield DooitKeyTable(self.api.keys)
+        # can_focus=False: a focused scroll view has its own arrow bindings, which would steal keys from the screen
+        with VerticalScroll(id="help-panel", can_focus=False):
+            yield TodooitKeyTable(self.api.keys)
 
-    def key_down(self):
-        self.scroll_down()
+        yield Static(HINT, id="help-hint")
 
-    def key_up(self):
-        self.scroll_up()
+    def on_mount(self) -> None:
+        self.panel.border_title = PANEL_TITLE
 
-    def key_k(self):
-        self.scroll_up()
+    async def handle_key(self, event: events.Key) -> bool:
+        # Modal owns every key; the app's bindings are for the panes behind it
+        event.stop()
 
-    def key_l(self):
-        self.scroll_down()
+        key = self.resolve_key(event)
+
+        if key == "escape":
+            self.dismiss()
+            return True
+
+        # Only the key immediately after a `g` can complete `gg`
+        pending_g, self._pending_g = self._pending_g, False
+
+        if key == "g":
+            if pending_g:
+                self.panel.scroll_home()
+            else:
+                self._pending_g = True
+
+        elif scroll := self.SCROLLS.get(key):
+            getattr(self.panel, scroll)()
+
+        return True

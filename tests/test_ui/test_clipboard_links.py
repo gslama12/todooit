@@ -82,13 +82,51 @@ async def test_paste_into_an_edit_pastes_text():
         assert tree.current_model.description == "start pasted words"
 
 
+async def test_cmd_copies_and_pastes_like_ctrl():
+    """On a Mac the clipboard keys are Cmd's, and they do what ctrl's do"""
+
+    async with run_pilot() as pilot:
+        app = pilot.app
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "copy me")
+
+        await pilot.press("super+c")
+        await pilot.pause()
+
+        assert app.clipboard == "copy me"
+
+        set_clipboard("pasted task")
+        await pilot.press("super+v")
+        await pilot.pause()
+
+        assert len(tree_options(tree)) == 2
+        assert tree.current_model.description == "pasted task"
+
+
+async def test_cmd_paste_into_an_edit_pastes_text():
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        set_clipboard("pasted words")
+
+        await pilot.press("n")
+        await pilot.press(*list("start "))
+        await pilot.press("super+v")
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert tree.current_model.description == "start pasted words"
+
+
 async def test_open_link_on_a_row():
     async with run_pilot() as pilot:
         app = pilot.app
         opened = []
 
         with patch(
-            "todooit.ui.api.dooit_api.open_url",
+            "todooit.ui.api.todooit_api.open_url",
             lambda url: opened.append(url) or True,
         ):
             await create_and_move_to_todo(pilot)
@@ -111,7 +149,7 @@ async def test_open_link_without_one_warns():
         opened = []
 
         with patch(
-            "todooit.ui.api.dooit_api.open_url",
+            "todooit.ui.api.todooit_api.open_url",
             lambda url: opened.append(url) or True,
         ):
             await create_and_move_to_todo(pilot)
@@ -131,7 +169,7 @@ async def test_open_link_with_no_browser_reports_it():
     async with run_pilot() as pilot:
         app = pilot.app
 
-        with patch("todooit.ui.api.dooit_api.open_url", lambda url: False):
+        with patch("todooit.ui.api.todooit_api.open_url", lambda url: False):
             await create_and_move_to_todo(pilot)
 
             await pilot.press("n")

@@ -9,16 +9,16 @@ from todooit.paths import DEV_HOME, HOME_ENV_VAR, config_file
 VERSION = "1.0.0"
 
 
-def run_dooit(config: Optional[str] = None, db_path: Optional[str] = None):
+def run_todooit(config: Optional[str] = None, db_path: Optional[str] = None):
     config_path = None if not config else Path(config)
 
     if config_path and not (config_path.exists() and config_path.is_file()):
         print(f"Config file {config} not found.")
         return
 
-    from todooit.ui.tui import Dooit
+    from todooit.ui.tui import Todooit
 
-    Dooit(config=config_path, db_path=db_path).run()
+    Todooit(config=config_path, db_path=db_path).run()
 
 
 @click.group(
@@ -43,14 +43,14 @@ def main(ctx, version: bool, config: str, db: str, dev: bool) -> None:
     if version:
         return print(f"todooit - {VERSION}")
 
-    # Must happen before anything imports the package: Dooit.CSS_PATH is
+    # Must happen before anything imports the package: Todooit.CSS_PATH is
     # evaluated in the class body, so the cache dir is resolved at import time.
     # setdefault so an explicit TODOOIT_HOME still wins over --dev.
     if dev:
         os.environ.setdefault(HOME_ENV_VAR, str(DEV_HOME))
 
     if ctx.invoked_subcommand is None:
-        run_dooit(config=config, db_path=db)
+        run_todooit(config=config, db_path=db)
 
 
 @main.command(help="Show config location.")

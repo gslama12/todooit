@@ -1,7 +1,7 @@
 """
 The links inside a description or a note, and the way out to a browser
 
-Three things that have to be kept together: what dooit *underlines*, what it
+Three things that have to be kept together: what todooit *underlines*, what it
 *draws*, and what it *opens* are read off the same scan, so a key pressed on
 something drawn as a link can never come back saying there was no link there -
 and a link drawn short can never point somewhere other than the address that
@@ -199,7 +199,7 @@ def link_title(url: str) -> str:
 
 
 # What a note delimits an emphasised phrase with: one zero-width mark either
-# side of the words. The character is chosen in `ui/screens/note.py`, which is
+# side of the words. The character is chosen in `ui/screens/note/`, which is
 # what puts it there and what draws what it means; it is named here because
 # this is the module that says what a line looks like on the page, and what a
 # mark looks like on the page is nothing at all.
@@ -551,7 +551,7 @@ def open_url(url: str) -> bool:
 
     Which program that is, and in what order they are tried, is
     `todooit.utils.files`: one desktop opens both a page and a file, and there
-    is no reason for dooit to know two lists of doors when the desktop has one
+    is no reason for todooit to know two lists of doors when the desktop has one
     """
 
     if hand_over(url):
@@ -560,7 +560,7 @@ def open_url(url: str) -> bool:
     # Last resort, and only where there is a screen to open a window on:
     # `webbrowser` falls back to console browsers - lynx, w3m - which it runs
     # in the *foreground*, and that would take the terminal out from under
-    # dooit and hang it there. With a display it hands off to a GUI browser
+    # todooit and hang it there. With a display it hands off to a GUI browser
     # in the background instead, which is the only case worth trying
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return False

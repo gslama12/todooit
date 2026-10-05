@@ -306,20 +306,18 @@ async def test_escape_cancels_rather_than_closing_the_list():
 
 
 async def test_app_keys_are_letters_here():
-    """`q` toggles shading in the app; in the line it is just a letter"""
+    """`q` quits the app; in the line it is just a letter"""
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
         await two_projects_and_a_task(pilot)
         build_project(["quarry"])
 
-        shading = app.api.vars.row_shading
-
         screen = await open_move(pilot)
         await pilot.press(*list("qu"))
 
         assert screen._input.value == "qu"
-        assert app.api.vars.row_shading == shading
+        assert app.is_running
 
         await pilot.press("escape")
         await pilot.pause()

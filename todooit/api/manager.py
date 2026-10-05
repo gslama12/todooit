@@ -12,10 +12,7 @@ class Manager:
     """
 
     def __init__(self) -> None:
-        # Counts the commits that have gone through here, so that anything
-        # watching for a change can ask whether there has been one without
-        # reading the database to find out. The undo history is what it is
-        # for: it looks after every key, and most keys write nothing.
+        # Commit counter, so undo history can cheaply detect "nothing written"
         self.revision = 0
 
     def connect(self, path: Optional[str] = None):
@@ -27,17 +24,6 @@ class Manager:
         """
 
         from todooit.api import BaseModel
-        from todooit.utils.database import (
-            add_agent_column,
-            add_attachments_column,
-            add_bin_columns,
-            add_completed_at_column,
-            add_indexes,
-            add_note_column,
-            add_project_color_column,
-            add_scheduled_column,
-            sync_project_colors,
-        )
 
         path = str(path or database_file())
         path = os.path.expanduser(path)
@@ -50,44 +36,8 @@ class Manager:
         self.engine = create_engine(connection_string)
         self.session = Session(self.engine)
 
-        add_scheduled_column(self.engine)
-        add_note_column(self.engine)
-        add_attachments_column(self.engine)
-        add_completed_at_column(self.engine)
-        add_bin_columns(self.engine)
-        add_project_color_column(self.engine)
-        add_agent_column(self.engine)
-        sync_project_colors(self.engine)
+        # Creates missing tables only; existing tables are never migrated
         BaseModel.metadata.create_all(bind=self.engine)
-
-        # After `create_all`, not beside the migrations above: an index needs a
-        # table to be laid on, and `create_all` is what makes one on a database
-        # that had none
-        add_indexes(self.engine)
-
-        self._db_last_modified = self._get_db_last_modified()
-
-    def _get_db_last_modified(self) -> Optional[float]:
-        database = self.engine.url.database
-        assert database is not None
-
-        try:
-            return os.path.getmtime(database)
-        except OSError:
-            return None
-
-    def has_changed(self) -> bool:
-        current_last_modified = self._get_db_last_modified()
-        if current_last_modified and self._db_last_modified != current_last_modified:
-            self._db_last_modified = current_last_modified
-            manager.session.expire_all()
-
-            # Written by somebody else, but written all the same: anything
-            # measuring against the last commit has to know the rows it was
-            # holding are not the rows that are there now
-            self.revision += 1
-            return True
-        return False
 
     def delete(self, obj):
         self.session.delete(obj)
@@ -100,7 +50,6 @@ class Manager:
     def commit(self):
         self.session.commit()
         self.revision += 1
-        self._db_last_modified = self._get_db_last_modified()
 
 
 manager = Manager()

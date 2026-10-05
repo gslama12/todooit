@@ -7,7 +7,7 @@ from todooit.api.project import ModelType
 from todooit.ui.api.api_components.formatters._decorators import MUTLIPLE_FORMATTER_ATTR
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 @dataclass
@@ -27,21 +27,16 @@ def trigger_refresh(func: Callable) -> Callable:
 
 
 class FormatterStore:
-    def __init__(self, trigger: Callable, api: "DooitAPI") -> None:
+    def __init__(self, trigger: Callable, api: "TodooitAPI") -> None:
         self.formatters = dict()
         self.trigger = trigger
         self.api = api
 
     def _fire(self) -> None:
         """
-        Redraws what the formatters are drawn into, or leaves it to the batch
-
-        Every formatter registered redraws the panes, which is right for one
-        added by hand while the app is running and wrong for the run of them
-        the config lays down at startup: there a pane is rebuilt once per
-        formatter, and the only draw anybody sees is the last of them. Inside
-        a batch the trigger is written down instead, and each distinct one is
-        run once when the batch closes.
+        Redraws the panes, or records the trigger for a batch to run once at
+        close — needed so config startup registering ~40 formatters doesn't
+        rebuild the panes 40 times.
         """
 
         batch = getattr(self.api, "_formatter_batch", None)

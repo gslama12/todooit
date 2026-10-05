@@ -2,27 +2,19 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Callable, Optional, Tuple
 from rich.style import Style
-from todooit.api import Todo, Project
-from todooit.extras.formatters import (
+from todooit.api import Cadence, Todo, Project
+from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
+from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
+from todooit.ui.api.formatter_presets import (
     agent_icon,
     description_highlight_link,
     due_danger_today,
     recurrence_icon,
 )
-from todooit.extras.bar_widgets import (
-    Clock,
-    Custom,
-    CurrentProject,
-    Powerline,
-    Spacer,
-)
-from todooit.ui.api import DooitAPI, extra_formatter, subscribe, timer
-from todooit.ui.api.dooit_api import SORT_LABELS
+from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
-from todooit.ui.screens import HelpScreen
 from todooit.ui.widgets.bars import StatusBarWidget
-from todooit.ui.widgets.inputs.model_inputs import Recurrence
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
 from rich.text import Text
 
@@ -37,7 +29,7 @@ from rich.text import Text
 COUNT_FADE = 0.4
 
 
-def count_color(api: DooitAPI) -> str:
+def count_color(api: TodooitAPI) -> str:
     return blend(api.vars.theme.primary, api.vars.theme.background1, COUNT_FADE)
 
 
@@ -45,7 +37,7 @@ def count_color(api: DooitAPI) -> str:
 PRIORITIES = (1, 2, 3)
 
 
-def priority_color(priority: int, api: DooitAPI) -> str:
+def priority_color(priority: int, api: TodooitAPI) -> str:
     theme = api.vars.theme
     colors = {
         1: theme.red,
@@ -75,7 +67,7 @@ CHECKBOX_TICKED = "󰄵"
 # color, so a row's urgency reads from the very first column and needs no column
 # of its own; the tick only pulls that color a notch towards the background,
 # dimming it without draining it the way the other columns get grayed out.
-def todo_status_formatter(status: str, todo: Todo, api: DooitAPI):
+def todo_status_formatter(status: str, todo: Todo, api: TodooitAPI):
     completed = status == "completed"
     color = priority_color(todo.priority, api)
 
@@ -141,7 +133,7 @@ DATE_ICON_OVERDUE = " "
 # formatter above it then drops in favor of one style over the whole column.
 def date_icon(field: str):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI):
+    def wrapper(value: str, todo: Todo, api: TodooitAPI):
         date = getattr(todo, field)
 
         if not date:
@@ -168,7 +160,7 @@ def date_icon(field: str):
 # string, since a Text would get escaped by the formatter store.
 def date_color_formatter(field: str):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI) -> str:
+    def wrapper(value: str, todo: Todo, api: TodooitAPI) -> str:
         date = getattr(todo, field)
 
         if not date:
@@ -206,7 +198,7 @@ def date_color_formatter(field: str):
 # How many todos hang below this one, at any depth. Nesting is invisible while a
 # todo is collapsed, so the count rides along with the description, in the same
 # dimmed accent as the project pane's task tally.
-def todo_description_formatter(description: str, todo: Todo, api: DooitAPI) -> str:
+def todo_description_formatter(description: str, todo: Todo, api: TodooitAPI) -> str:
     count = todo.total_children
 
     if not count:
@@ -230,7 +222,7 @@ def todo_agent_formatter(agent: bool, _: Todo) -> str:
 NOTE_ICON = ""
 
 
-def todo_note_formatter(note: str, todo: Todo, api: DooitAPI) -> str:
+def todo_note_formatter(note: str, todo: Todo, api: TodooitAPI) -> str:
     # A file hanging off a note is something the task carries just as much as
     # the text is, so a note holding nothing but an attachment is still a note
     # to open: the column marks it either way, rather than leaving the row
@@ -244,11 +236,11 @@ def todo_note_formatter(note: str, todo: Todo, api: DooitAPI) -> str:
     return f"[{api.vars.theme.foreground3}]{NOTE_ICON}[/]"
 
 
-def todo_recurrence_formatter(recurrence: Optional[timedelta], _):
+def todo_recurrence_formatter(recurrence: Optional[Cadence], _):
     if recurrence is None:
         return ""
 
-    return Recurrence.timedelta_to_simple_string(recurrence)
+    return str(recurrence)
 
 
 # How far a completed row's text is pulled towards the background. Far enough
@@ -263,7 +255,7 @@ COMPLETED_FADE = 0.55
 # the row.
 def _gray_out(applies: Callable[[Todo], bool], strike: bool):
     @extra_formatter
-    def wrapper(value: str, todo: Todo, api: DooitAPI):
+    def wrapper(value: str, todo: Todo, api: TodooitAPI):
         if not applies(todo):
             return
 
@@ -307,7 +299,7 @@ BIN_DATE_ICON = "󰆴 "
 
 
 @extra_formatter
-def binned_date_formatter(value: str, todo: Todo, api: DooitAPI) -> str:
+def binned_date_formatter(value: str, todo: Todo, api: TodooitAPI) -> str:
     if not todo.binned_at:
         return value
 
@@ -315,48 +307,6 @@ def binned_date_formatter(value: str, todo: Todo, api: DooitAPI) -> str:
     color = blend(theme.foreground1, theme.background1, COMPLETED_FADE)
 
     return f"[{color}]{BIN_DATE_ICON}{_strip_markup(value)}[/]"
-
-
-# Hold-to-show help
-
-
-# Terminals don't report key releases, so a held "?" is detected through the
-# terminal's own key auto-repeat: every repeat pushes the close back.
-#
-# The wait for the *first* repeat has to cover the OS repeat delay (Windows:
-# up to 1s), or the menu blinks shut before the hold is noticed. Once repeats
-# are streaming in (every ~30ms) a much shorter wait spots the release, so the
-# menu closes snappily the moment "?" is let go.
-HELP_FIRST_REPEAT_TIMEOUT = 1.0
-HELP_HOLD_TIMEOUT = 0.1
-
-_help_close_timer = None
-
-
-def _close_help(api: DooitAPI):
-    global _help_close_timer
-
-    _help_close_timer = None
-    if isinstance(api.app.screen, HelpScreen):
-        api.app.pop_screen()
-
-
-def _keep_help_open(api: DooitAPI, timeout: float = HELP_HOLD_TIMEOUT):
-    global _help_close_timer
-
-    if _help_close_timer is not None:
-        _help_close_timer.stop()
-
-    _help_close_timer = api.app.set_timer(timeout, lambda: _close_help(api))
-
-
-def show_help_while_held(api: DooitAPI):
-    api.show_help()
-    _keep_help_open(api, HELP_FIRST_REPEAT_TIMEOUT)
-
-
-# Each auto-repeat of "?" reaches the help screen itself, not the tree
-HelpScreen.key_question_mark = lambda self: _keep_help_open(self.api)
 
 
 # Project formatters
@@ -367,7 +317,7 @@ HelpScreen.key_question_mark = lambda self: _keep_help_open(self.api)
 # nothing but the number is needed. The column header is drawn in the accent
 # color, and the numbers under it in a dimmer shade of the same, so the pair
 # reads as one unit without competing with the descriptions beside it.
-def project_tasks_formatter(count: int, _: Project, api: DooitAPI) -> str:
+def project_tasks_formatter(count: int, _: Project, api: TodooitAPI) -> str:
     if not count:
         return ""
 
@@ -407,7 +357,7 @@ PROJECT_COLOR_LIFT = 0.25
 PROJECT_MUTED_FADE = 0.45
 
 
-def project_palette(api: DooitAPI) -> Tuple[str, ...]:
+def project_palette(api: TodooitAPI) -> Tuple[str, ...]:
     """
     The ten colors a project can be given, in the order the digits hand them out
     """
@@ -433,7 +383,7 @@ def project_palette(api: DooitAPI) -> Tuple[str, ...]:
     )
 
 
-def project_color(project, api: DooitAPI) -> Optional[str]:
+def project_color(project, api: TodooitAPI) -> Optional[str]:
     """
     The color a project was given, or None for one that was never colored
 
@@ -469,7 +419,7 @@ PROJECT_ICON_FADE = 0.35
 # fixed project takes the accent, since it is part of the app rather than one
 # more thing in the list.
 @extra_formatter
-def project_icon_formatter(name: str, project, api: DooitAPI) -> str:
+def project_icon_formatter(name: str, project, api: TodooitAPI) -> str:
     theme = api.vars.theme
 
     if getattr(project, "is_fixed", False):
@@ -496,7 +446,7 @@ MUTED_PROJECT_FADE = COMPLETED_FADE
 # all. The accent the fixed projects otherwise carry would put it on a level
 # with Today, which is where the day actually starts.
 @extra_formatter
-def gray_out_muted_project(value: str, project, api: DooitAPI):
+def gray_out_muted_project(value: str, project, api: TodooitAPI):
     if not getattr(project, "muted", False):
         return
 
@@ -519,7 +469,7 @@ def gray_out_muted_project(value: str, project, api: DooitAPI):
 # while a project is collapsed, so the count rides along with the name, in the
 # same dimmed accent as the task tally beside it.
 def project_description_formatter(
-    description: str, project: Project, api: DooitAPI
+    description: str, project: Project, api: TodooitAPI
 ) -> str:
     count = project.total_projects
 
@@ -534,7 +484,7 @@ def project_description_formatter(
 # color of its own on an inner span and keeps it: it is the pane counting, not
 # part of what the project is called.
 @extra_formatter
-def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
+def project_color_formatter(name: str, project, api: TodooitAPI) -> Optional[str]:
     color = project_color(project, api)
 
     if color is None:
@@ -544,7 +494,7 @@ def project_color_formatter(name: str, project, api: DooitAPI) -> Optional[str]:
 
 
 @subscribe(Startup)
-def key_setup(api: DooitAPI, _):
+def key_setup(api: TodooitAPI, _):
     # Groups show up as sections in the help screen, in this order
     NAVIGATION = "Navigation"
     EDITING = "Editing"
@@ -567,6 +517,10 @@ def key_setup(api: DooitAPI, _):
     # project row is already standing in its own pane
     api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
+    # The desktop's top/bottom of a document too (a Mac's cmd+up/down,
+    # passed on by the terminal); hidden, as gg/G already say it in help
+    api.keys.set("<ctrl+home>", api.go_to_top, group=NAVIGATION, hidden=True)
+    api.keys.set("<ctrl+end>", api.go_to_bottom, group=NAVIGATION, hidden=True)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
     api.keys.set("i", api.edit_description, group=EDITING)
@@ -691,10 +645,8 @@ def key_setup(api: DooitAPI, _):
     # front: what a search is for here is a task somewhere else in the tree,
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
-    api.keys.set("q", api.toggle_row_shading, group=VIEW)
-    # The one way out of dooit: ctrl+c is a copy here, as it is everywhere
-    # else, and nothing else quits
-    api.keys.set("<ctrl+q>", api.quit, group=VIEW)
+    # The way out of todooit: ctrl+c is a copy here, as it is everywhere else
+    api.keys.set("q", api.quit, group=VIEW)
 
     # The order a project is read in, typed as one chord per order: shifted
     # "S" then the shifted initial of the thing sorted by. Shifted, so that
@@ -718,15 +670,15 @@ def key_setup(api: DooitAPI, _):
 
     api.keys.set(
         "?",
-        lambda: show_help_while_held(api),
-        description="Show the help screen (while held)",
+        api.show_help,
+        description="Show the help screen",
         group=VIEW,
         hidden=True,
     )
 
 
 @subscribe(Startup)
-def layout_setup(api: DooitAPI, _):
+def layout_setup(api: TodooitAPI, _):
     api.layouts.project_layout = [
         ProjectWidget.description,
         ProjectWidget.tasks,
@@ -748,7 +700,7 @@ def layout_setup(api: DooitAPI, _):
 
 
 @subscribe(Startup)
-def formatter_setup(api: DooitAPI, _):
+def formatter_setup(api: TodooitAPI, _):
     # Added first => runs last, so the graying has the final say over every
     # color the formatters below hand out
     for gray_out in (gray_out_binned, gray_out_completed):
@@ -825,7 +777,7 @@ ROUND_CLOSE = ""
 
 
 # What the caps at either end of a chain sit on: the bar's own background
-def bar_background(api: DooitAPI) -> str:
+def bar_background(api: TodooitAPI) -> str:
     return api.vars.theme.background2
 
 
@@ -835,18 +787,18 @@ MODE_COLORS = {
 }
 
 
-def mode_color(api: DooitAPI, mode: str) -> str:
+def mode_color(api: TodooitAPI, mode: str) -> str:
     theme = api.vars.theme
     return getattr(theme, MODE_COLORS.get(mode, "primary"))
 
 
 # The mode block takes its color from the mode itself, so the two caps around it
-# have to be repainted whenever it changes. A Powerline widget is fixed at
+# have to be repainted whenever it changes. A `text` widget is fixed at
 # startup and can't follow along, so all three pieces are built here, each one
 # its own widget listening to the same event.
-def mode_widget(render: Callable[[DooitAPI, str], Text]) -> StatusBarWidget:
+def mode_widget(render: Callable[[TodooitAPI, str], Text]) -> StatusBarWidget:
     @subscribe(ModeChanged)
-    def wrapper(api: DooitAPI, event: ModeChanged) -> Text:
+    def wrapper(api: TodooitAPI, event: ModeChanged) -> Text:
         return render(api, event.mode)
 
     return StatusBarWidget(wrapper)
@@ -861,7 +813,7 @@ def mode_cap(glyph: str) -> StatusBarWidget:
     )
 
 
-def mode_label(api: DooitAPI, mode: str) -> Text:
+def mode_label(api: TodooitAPI, mode: str) -> Text:
     return Text(
         f" {mode} ",
         style=Style(
@@ -878,16 +830,16 @@ def mode_label(api: DooitAPI, mode: str) -> Text:
 DATE_TICK = 60
 
 
-def date_widget(api: DooitAPI, fg: str, bg: str) -> StatusBarWidget:
+def date_widget(fg: str, bg: str) -> StatusBarWidget:
     @timer(DATE_TICK)
     def today(*_) -> str:
         return day_label(date.today())
 
-    return Custom(api, today, fmt="[bold] 󰃭 {} [/]", fg=fg, bg=bg)
+    return StatusBarWidget(today, fmt="[bold] 󰃭 {} [/]", fg=fg, bg=bg)
 
 
 @subscribe(Startup)
-def bar_setup(api: DooitAPI, _):
+def bar_setup(api: TodooitAPI, _):
     theme = api.vars.theme
 
     # The mode sits alone on the left as a pill, and the three things that say
@@ -901,34 +853,21 @@ def bar_setup(api: DooitAPI, _):
         mode_cap(ROUND_OPEN),
         mode_widget(mode_label),
         mode_cap(ROUND_CLOSE),
-        Spacer(api, width=0, bg=bar_background(api)),
-        Powerline.left_rounded(api, fg=theme.background3),
-        CurrentProject(
-            api,
+        spacer(width=0, bg=bar_background(api)),
+        text(ROUND_OPEN, fg=theme.background3, bg=bar_background(api)),
+        current_project(
             fmt=" 󰉋 {} ",
             fg=theme.foreground3,
             bg=theme.background3,
         ),
-        Powerline.left_rounded(api, fg=theme.background1, bg=theme.background3),
-        Clock(
-            api,
+        text(ROUND_OPEN, fg=theme.background1, bg=theme.background3),
+        clock(
             format="%H:%M",
             fmt=" 󰥔 {} ",
             fg=theme.foreground2,
             bg=theme.background1,
         ),
-        Powerline.left_rounded(api, fg=theme.primary, bg=theme.background1),
-        date_widget(api, fg=theme.background1, bg=theme.primary),
+        text(ROUND_OPEN, fg=theme.primary, bg=theme.background1),
+        date_widget(fg=theme.background1, bg=theme.primary),
     ]
     api.bar.set(bar_widgets)
-
-
-@subscribe(Startup)
-def dashboard_setup(api: DooitAPI, _):
-    api.dashboard.set(
-        [
-            "Welcome to Dooit!",
-            "",
-            "If you're stuck, press '?' for help.",
-        ]
-    )

@@ -1,4 +1,5 @@
-from typing import List, Optional
+from contextlib import contextmanager
+from typing import Callable, List, Optional
 from unittest.mock import patch
 
 from textual.pilot import Pilot
@@ -6,7 +7,7 @@ from textual.widgets import ContentSwitcher
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, Todo, fixed_project_from_id
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from todooit.ui.widgets.trees.todos_tree import TodosTree
@@ -14,7 +15,7 @@ from todooit.ui.widgets.trees.todos_tree import TodosTree
 TEMP_DB_PATH = ":memory:"
 
 # The host's clipboard, which a test can neither be handed nor allowed to
-# write over. Patched once, for the whole run: what dooit reads back is what a
+# write over. Patched once, for the whole run: what todooit reads back is what a
 # test last put here, and nothing else on the machine can change it underneath
 _clipboard = ""
 
@@ -28,6 +29,24 @@ patch("todooit.utils.clipboard.pyperclip.paste", lambda: _clipboard).start()
 patch("todooit.utils.clipboard.pyperclip.copy", lambda text: None).start()
 
 
+async def press_writing(pilot: Pilot, write: Callable[[], object]) -> None:
+    """
+    Presses a key whose only job is `write`, a plain model write
+
+    Bound through the config's key API, the same way any config function
+    reaches the database: nothing on this path asks a pane to redraw, so the
+    panes catch up from the key's change signal alone. A model written
+    outside a key press isn't redrawn until the next one.
+    """
+
+    app = pilot.app
+    assert isinstance(app, Todooit)
+
+    app.api.keys.set("<f9>", write)
+    await pilot.press("f9")
+    await pilot.pause()
+
+
 def run_pilot():
     # Expansion state lives on the tree *class* and model uuids repeat
     # between one :memory: database and the next, so a row expanded in one
@@ -36,10 +55,10 @@ def run_pilot():
 
     BaseTree.expanded_nodes.clear()
 
-    return Dooit(db_path=TEMP_DB_PATH).run_test(size=(120, 36))
+    return Todooit(db_path=TEMP_DB_PATH).run_test(size=(120, 36))
 
 
-async def boot(pilot: Pilot) -> Dooit:
+async def boot(pilot: Pilot) -> Todooit:
     """
     Waits out the startup jump to the Today pane
 
@@ -50,7 +69,7 @@ async def boot(pilot: Pilot) -> Dooit:
     """
 
     app = pilot.app
-    assert isinstance(app, Dooit)
+    assert isinstance(app, Todooit)
 
     for _ in range(20):
         await pilot.pause()
@@ -62,8 +81,8 @@ async def boot(pilot: Pilot) -> Dooit:
     raise AssertionError("The app never settled on the Today pane")
 
 
-def visible_todos_or_none(app: Dooit) -> Optional[TodosTree]:
-    """The tasks pane in front, or None while the dashboard is showing"""
+def visible_todos_or_none(app: Todooit) -> Optional[TodosTree]:
+    """The tasks pane in front, or None while the empty pane is showing"""
 
     content = app.screen.query_one(
         "#todo_switcher", expect_type=ContentSwitcher
@@ -75,7 +94,7 @@ def visible_todos_or_none(app: Dooit) -> Optional[TodosTree]:
     return None
 
 
-def visible_todos(app: Dooit) -> TodosTree:
+def visible_todos(app: Todooit) -> TodosTree:
     tree = visible_todos_or_none(app)
     assert tree is not None, "No tasks pane is in front"
     return tree
@@ -105,7 +124,7 @@ async def new_project(pilot: Pilot, name: str) -> Project:
     """
 
     app = pilot.app
-    assert isinstance(app, Dooit)
+    assert isinstance(app, Todooit)
 
     await pilot.press("j", "n")
     await commit_line(pilot, name)
@@ -126,7 +145,7 @@ async def new_todo(pilot: Pilot, name: str) -> Todo:
     """
 
     app = pilot.app
-    assert isinstance(app, Dooit)
+    assert isinstance(app, Todooit)
 
     await pilot.press("ö", "n")
     await commit_line(pilot, name)
@@ -175,7 +194,7 @@ async def reveal_project(pilot: Pilot, project) -> TodosTree:
     """
 
     app = pilot.app
-    assert isinstance(app, Dooit)
+    assert isinstance(app, Todooit)
 
     app.api.vars.projects_tree.highlight_id(project.uuid)
     await pilot.pause()
@@ -218,10 +237,31 @@ def highlighted_index(tree: ModelTree) -> Optional[int]:
     return options.index(highlighted)
 
 
-def notification_message(app: Dooit) -> Optional[str]:
+def notification_message(app: Todooit) -> Optional[str]:
     """What the bar is saying right now, if it is saying anything"""
 
     if app.bar_switcher.current != "notification_bar":
         return None
 
     return app.bar_switcher.visible_content.message
+
+
+@contextmanager
+def flashed():
+    """
+    Every row flashed while the block runs, as (pane, row) pairs
+
+    Read off the calls rather than off the pane: a flash fades on a timer of
+    its own, so a test that looks for it afterwards is reading a race it
+    sometimes loses. What is being checked is that the row was pointed out.
+    """
+
+    seen = []
+    flash_row = ModelTree.flash_row
+
+    def record(self, _id):
+        seen.append((self.id, _id))
+        flash_row(self, _id)
+
+    with patch.object(ModelTree, "flash_row", record):
+        yield seen

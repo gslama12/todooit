@@ -56,7 +56,7 @@ addopts = "--strict-markers"
 # than a run that quietly selects nothing.
 markers = [
   "core: pure-logic tests, no Textual app",
-  "ui: drives a real Dooit app through a pilot",
+  "ui: drives a real Todooit app through a pilot",
   "smoke: the always-run sanity subset",
   "model: the base model",
   "todos: todos and the tasks pane",
@@ -81,6 +81,9 @@ markers = [
   "search: search and goto",
   "editing: inline editing and the cursor",
   "config: the config API, loader and keys",
+  "lifecycle: the todo lifecycle and the one refresh signal",
+  "placement: where a todo lives (its home, root and bin row)",
+  "layout: the rows a pane draws (guides, blocks, context rows, banding)",
 ]
 
 [tool.ruff.lint]

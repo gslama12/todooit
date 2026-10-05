@@ -5,29 +5,29 @@ Notes: the window on a todo's note, and the pinned scratchpad
 from unittest.mock import patch
 
 from rich.cells import cell_len
+from textual.geometry import Offset
 
 from todooit.api import PinnedNote, Todo
-from todooit.api.theme import DooitThemeBase
-from todooit.ui.screens.note import (
+from todooit.api.theme import TodooitThemeBase
+
+from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
+from todooit.ui.screens.note.document import FoldedDocument, HangingDocument
+from todooit.ui.screens.note.editor import MODE_INSERT, MODE_NORMAL, build_theme
+from todooit.ui.screens.note.markup import (
     EMPH,
     EMPH_MARK,
     HEADER,
+    INDENT,
     LINK,
     MARKER,
-    MODE_INSERT,
-    MODE_NORMAL,
     QUOTE,
     QUOTE_BAR,
     QUOTE_GLYPH,
     QUOTE_ITEM,
     RULE,
     RULE_SPAN,
-    NoteScreen,
-    NoteScreenBase,
-    build_theme,
     scan_note,
 )
-from todooit.ui.screens.pinned_note import PinnedNoteScreen
 from todooit.utils import Opened
 from todooit.utils.links import fold_links
 from tests.test_ui.ui_base import (
@@ -173,6 +173,83 @@ async def test_normal_mode_answers_to_no_other_letter():
             assert screen.editor.text == "two words", key
 
 
+async def test_the_window_takes_most_of_the_screen():
+    """
+    A note is read in the window, so the window is most of what is on screen
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        width, height = pilot.app.size
+
+        assert screen.frame.outer_size.width == int(width * 0.8)
+        assert screen.frame.outer_size.height == int(height * 0.85)
+
+        # The hint under it is drawn to the same width, so the two line up
+        assert screen.hint.outer_size.width == screen.frame.outer_size.width
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_u_and_d_scroll_half_a_page():
+    """
+    vim's half-page keys, on a note too long to be read in one window
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("\n".join(f"line {n}" for n in range(200)))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert editor.mode == MODE_NORMAL
+        assert editor.cursor_location == (0, 0)
+
+        half = editor.half_page()
+        assert half > 1
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        # The view came with it, so the cursor is back on the row of the
+        # window it started on and the text under it is what changed
+        assert editor.cursor_location == (half, 0)
+        assert editor.scroll_offset.y == half
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert editor.cursor_location == (half * 2, 0)
+        assert editor.scroll_offset.y == half * 2
+
+        await pilot.press("u")
+        await pilot.pause()
+
+        assert editor.cursor_location == (half, 0)
+        assert editor.scroll_offset.y == half
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_u_and_d_are_letters_again_in_insert():
+    """The two keys are motions in NORMAL only; in INSERT they are typed"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("mud"))
+        await pilot.pause()
+
+        assert screen.editor.text == "mud"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_clear_note_asks_first():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -291,6 +368,32 @@ async def test_emph_is_drawn_in_its_own_color():
     ]
 
 
+async def test_cmd_keys_in_the_note():
+    """Clear, select all and paste answer to Cmd as they do to ctrl"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press(*list("some words"))
+        await pilot.press("escape")
+
+        await pilot.press("super+a")
+        await pilot.pause()
+        assert editor.selected_text == "some words"
+
+        set_clipboard("pasted")
+        await pilot.press("super+v")
+        await pilot.pause()
+        assert editor.text == "pasted"
+
+        await pilot.press("escape")
+        await pilot.press("super+d")
+        await pilot.press("y")
+        await pilot.pause()
+        assert editor.text == ""
+
+
 async def test_the_formatting_keys_no_longer_format():
     """
     The markup is typed, not pressed: the four keys that used to write it are
@@ -325,7 +428,7 @@ async def test_star_markers_are_faint_but_not_hidden():
     indent that is not there. Faint, then, but visible
     """
 
-    theme = build_theme(DooitThemeBase)
+    theme = build_theme(TodooitThemeBase)
     marker = theme.syntax_styles[MARKER].color.triplet
 
     assert marker != theme.base_style.bgcolor.triplet
@@ -731,7 +834,7 @@ async def test_a_quoted_marker_is_green_rather_than_its_depth():
 
     assert names == [[QUOTE, QUOTE_BAR, QUOTE_ITEM]] * 3
 
-    theme = build_theme(DooitThemeBase)
+    theme = build_theme(TodooitThemeBase)
 
     assert (
         theme.syntax_styles[QUOTE_ITEM].color.triplet
@@ -979,7 +1082,7 @@ async def test_o_opens_a_folded_link_in_full():
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.open_url",
+            "todooit.ui.screens.note.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             screen = await open_note(pilot)
@@ -1450,6 +1553,33 @@ async def test_a_run_of_hashes_opens_the_one_header_there_is():
         await pilot.pause()
 
 
+async def test_a_hash_in_front_of_a_written_line_titles_it():
+    """The mark opens a header where the words already are, not only before"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("Section"))
+        await pilot.press("home")
+        await pilot.press(*list("# "))
+        await pilot.pause()
+
+        # The words stay put and the rule arrives underneath them: the same
+        # header, written the other way round
+        lines = screen.editor.text.splitlines()
+        assert lines[0] == "Section"
+        assert set(lines[1]) == {RULE}
+
+        names = [name for row in scan_note(lines) for _, _, name in row]
+        assert names == [HEADER, RULE_SPAN]
+
+        # The cursor is left where the mark was, in front of the title
+        assert screen.editor.cursor_location == (0, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_a_hash_mid_line_stays_a_number_sign():
     """Only a mark at the head of a line is opening one"""
 
@@ -1468,7 +1598,7 @@ async def test_open_link_inside_the_note():
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.open_url",
+            "todooit.ui.screens.note.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             await open_note(pilot)
@@ -1520,6 +1650,176 @@ async def test_pinned_note_via_m():
         assert screen.editor.text == "a thought with no task yet"
 
         await pilot.press("escape")
+        await pilot.pause()
+
+
+# --- a line too long for the window ---------------------------------------
+
+# Long enough to wrap two or three times over in any window a note is opened
+# in, so that what is asked below is asked of a continuation and not only of a
+# line that happened to run one word past the edge
+LONG_TEXT = (
+    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu "
+    "xi omicron pi rho sigma tau upsilon phi chi psi omega"
+)
+
+
+def wrapped(line: str, width: int = 40) -> HangingDocument:
+    """One line of a note, wrapped into a window `width` columns wide"""
+
+    return HangingDocument(FoldedDocument(line), width=width, tab_width=len(INDENT))
+
+
+def rows(document: HangingDocument) -> list:
+    """
+    Every row the one line of `document` is drawn across, each with the indent
+    it is drawn behind written out in front of it
+    """
+
+    return [
+        " " * document.hanging_pad(0, index) + section
+        for index, section in enumerate(document.get_sections(0))
+    ]
+
+
+async def test_a_wrapped_bullet_keeps_its_indent():
+    """
+    The bug this is all here for: an item long enough to wrap used to have its
+    second row drawn from the margin, which reads as a line out of the list
+    """
+
+    drawn = rows(wrapped("• " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(INDENT) and row[2] != " " for row in drawn[1:])
+
+
+async def test_a_nested_bullet_wraps_under_its_own_words():
+    line = INDENT * 2 + "◦ " + LONG_TEXT
+    drawn = rows(wrapped(line))
+
+    # Six columns: two levels of indent and the glyph with its space, which is
+    # exactly where the words of the first row start
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 6) and row[6] != " " for row in drawn[1:])
+
+
+async def test_a_wrapped_enumeration_keeps_its_indent():
+    drawn = rows(wrapped("1. " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 3) and row[3] != " " for row in drawn[1:])
+
+
+async def test_a_wrapped_quoted_bullet_stays_inside_its_block():
+    drawn = rows(wrapped(QUOTE_GLYPH + "• " + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(" " * 4) and row[4] != " " for row in drawn[1:])
+
+
+async def test_an_indented_line_with_no_marker_keeps_its_indent_too():
+    drawn = rows(wrapped(INDENT + LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert all(row.startswith(INDENT) and row[2] != " " for row in drawn[1:])
+
+
+async def test_a_line_at_the_margin_still_wraps_to_the_margin():
+    drawn = rows(wrapped(LONG_TEXT))
+
+    assert len(drawn) > 1
+    assert not any(row.startswith(" ") for row in drawn)
+
+
+async def test_an_indented_row_still_fits_the_window():
+    """
+    The indent is taken out of the width the line is wrapped at, rather than
+    added to a row already as wide as the window
+    """
+
+    for line in ("• " + LONG_TEXT, INDENT * 2 + "◦ " + LONG_TEXT, "1. " + LONG_TEXT):
+        assert all(cell_len(row) <= 40 for row in rows(wrapped(line)))
+
+
+async def test_a_deep_item_in_a_narrow_window_gives_the_indent_up():
+    """
+    Past some depth there is more indent than window, and a column of text a
+    few characters wide is worse than a row that starts at the margin
+    """
+
+    document = wrapped(INDENT * 6 + "▪ " + LONG_TEXT, width=20)
+
+    assert document.get_offsets(0)
+    assert document.hanging_pad(0, 1) == 0
+
+
+async def test_a_column_of_a_wrapped_row_is_read_where_it_is_drawn():
+    """
+    What the cursor and the mouse are both mapped through: a column three in
+    from the words of the second row, which is five in from the window's edge
+    """
+
+    document = wrapped("• " + LONG_TEXT)
+    (break_at, *_) = document.get_offsets(0)
+
+    assert document.location_to_offset((0, break_at + 3)) == (5, 1)
+    assert document.offset_to_location(Offset(5, 1)) == (0, break_at + 3)
+
+
+async def test_a_wrapped_bullet_is_drawn_under_its_words():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        await pilot.pause()
+
+        assert editor.wrapped_document.get_offsets(0)
+
+        first, second = editor.render_line(0).text, editor.render_line(1).text
+
+        assert second.startswith(" " * 6)
+        assert second.strip()
+
+        # The row is padded, not shifted: nothing was pushed off the end of it
+        assert cell_len(second) == cell_len(first)
+        assert (
+            second.split()
+            == rows(wrapped(editor.document[0], editor.wrap_width))[1].split()
+        )
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_cursor_keeps_its_column_into_a_wrapped_row():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        await pilot.pause()
+
+        editor.move_cursor((0, 20))
+        wrapped_document = editor.wrapped_document
+
+        assert wrapped_document.location_to_offset(editor.cursor_location) == (20, 0)
+
+        editor.action_cursor_down()
+        await pilot.pause()
+
+        # Down a row and nowhere else: the cursor is drawn in the column it
+        # was in, although the row under it starts six columns along
+        assert wrapped_document.location_to_offset(editor.cursor_location) == (20, 1)
+        assert editor.cursor_location[1] > 20
+
+        editor.action_cursor_up()
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 20)
+
+        await pilot.press("escape", "escape")
         await pilot.pause()
 
 
@@ -1620,7 +1920,7 @@ async def test_a_copied_file_leaves_no_text_to_paste(tmp_path):
         await pilot.press("escape")
         set_clipboard("")
 
-        with patch("todooit.ui.screens.note.paste_files", lambda: [str(report)]):
+        with patch("todooit.ui.screens.note.editor.paste_files", lambda: [str(report)]):
             await pilot.press("ctrl+v")
             await pilot.pause()
 
@@ -1703,7 +2003,7 @@ async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
         report = tmp_path / "Q3 report.pdf"
 
         with patch(
-            "todooit.ui.screens.note.open_path",
+            "todooit.ui.screens.note.screen.open_path",
             lambda path: opened.append(path) or Opened.OK,
         ):
             await pilot.press("escape")

@@ -1,21 +1,8 @@
-from typing import List, Tuple
 from datetime import datetime, timedelta
-from pytest import raises, mark
+from pytest import raises
 from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Todo, Project
+from todooit.api import Cadence, Project, Todo
 from tests.test_core.core_base import *  # noqa
-
-
-def _sort_before_and_after(session, field) -> Tuple[List[Todo], List[Todo]]:
-    from tests.generate_test_data import generate
-
-    generate(session)
-    p = Project.all()[2]
-    t = p.todos[0]
-    old_todos = t.siblings
-    t.sort_siblings(field)
-    new_descriptions = t.siblings
-    return old_todos, new_descriptions
 
 
 def test_todo_creation(create_project, create_todo):
@@ -49,14 +36,6 @@ def test_todo_siblings_by_creation(create_project, create_todo):
     assert len(todo.siblings) == 5
 
 
-def test_parent_kind(create_todo):
-    todo1 = create_todo()
-    assert not todo1.has_same_parent_kind
-
-    todo2 = create_todo(parent_todo=todo1)
-    assert todo2.has_same_parent_kind
-
-
 def test_without_parent():
     t = Todo()
 
@@ -76,25 +55,6 @@ def test_sibling_add(create_todo):
     assert len(t.siblings) == 2
     assert len(t2.siblings) == 2
     assert t2.order_index == 1
-
-
-def test_comparable_fields():
-    fields = Todo.comparable_fields()
-    expected_fields = [
-        "description",
-        "due",
-        "scheduled",
-        "agent",
-        "recurrence",
-        "priority",
-        "pending",
-        "completed_at",
-        "binned_at",
-        "origin_path",
-        "note",
-        "attachments",
-    ]
-    assert fields == expected_fields
 
 
 def test_nest_level(create_todo):
@@ -192,7 +152,7 @@ def test_recurrence_change(create_project, create_todo):
     p = create_project()
     t = p.add_todo()
     t.scheduled = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    t.recurrence = timedelta(days=1)
+    t.recurrence = Cadence(1, "days")
     t.save()
     assert t.scheduled == datetime.strptime("2021-01-01", "%Y-%m-%d")
     t.toggle_complete()
@@ -206,7 +166,7 @@ def test_recurrence_takes_over_the_due_date(create_project):
     p = create_project()
     t = p.add_todo()
     t.due = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    t.recurrence = timedelta(weeks=1)
+    t.recurrence = Cadence(1, "weeks")
     t.save()
 
     assert t.due is None
@@ -220,49 +180,12 @@ def test_recurrence_drops_a_due_date_it_cannot_use(create_project):
     t = p.add_todo()
     t.due = datetime.strptime("2021-01-01", "%Y-%m-%d")
     t.scheduled = datetime.strptime("2021-02-01", "%Y-%m-%d")
-    t.recurrence = timedelta(weeks=1)
+    t.recurrence = Cadence(1, "weeks")
     t.save()
 
     assert t.due is None
     assert t.scheduled == datetime.strptime("2021-02-01", "%Y-%m-%d")
 
-
-def test_sort_invalid(create_project, create_todo):
-    p = create_project()
-    t = p.add_todo()
-    with raises(AttributeError):
-        t.sort_siblings("???????")
-
-
-@mark.parametrize(
-    "field,sort_key,filter_func,compare_ids",
-    [
-        (
-            "pending",
-            lambda x: (not x.pending, x.due or datetime.max, x.order_index),
-            None,
-            True,
-        ),
-        ("description", lambda x: x.description, None, False),
-        ("recurrence", lambda x: x.recurrence, lambda x: x.recurrence, False),
-        ("agent", lambda x: x.agent, None, False),
-        ("priority", lambda x: x.priority, None, False),
-        ("due", lambda x: x.due, lambda x: x.due, True),
-    ],
-)
-def test_sort(session, create_project, field, sort_key, filter_func, compare_ids):
-    old, new = _sort_before_and_after(session, field)
-
-    if filter_func:
-        old = [t for t in old if filter_func(t)]
-        new = new[: len(old)]
-
-    old.sort(key=sort_key)
-
-    if compare_ids:
-        assert [i.id for i in old] == [i.id for i in new]
-    else:
-        assert old == new
 
 # ------------------------------------------------------------------
 # Behaviour this fork added to the model itself
@@ -343,8 +266,7 @@ def test_indent_files_under_previous_sibling(create_project):
     second.description = "second"
     second.save()
 
-    parent = second.indent()
-    assert parent == first
+    assert second.indent() is not None
     assert second.parent_todo == first
     assert second.parent_project is None
     assert first.todos == [second]
@@ -386,8 +308,7 @@ def test_unindent_lands_beside_the_old_parent(create_project):
     step.description = "step"
     step.save()
 
-    grandparent = step.unindent()
-    assert grandparent == p
+    assert step.unindent() is not None
     assert step.parent_project == p
     assert step.parent_todo is None
 
@@ -402,7 +323,7 @@ def test_unindent_of_a_nested_step(create_project):
     step = task.add_todo()
     sub_step = step.add_todo()
 
-    assert sub_step.unindent() == task
+    assert sub_step.unindent() is not None
     assert sub_step.parent_todo == task
 
 
@@ -511,3 +432,20 @@ def test_move_to_leaves_a_binned_todo_binned(create_project):
 
     assert t.is_binned
     assert t.parent_project == there
+
+
+def test_from_id_accepts_uuid(create_project, create_todo):
+    project = create_project()
+    todo = create_todo(parent_project=project)
+
+    assert Todo.from_id(todo.uuid) is todo
+    assert Project.from_id(project.uuid) is project
+
+
+def test_ancestors_nearest_first(create_todo):
+    task = create_todo()
+    step = create_todo(parent_todo=task)
+    sub_step = create_todo(parent_todo=step)
+
+    assert sub_step.ancestors == [step, task]
+    assert task.family == [task, step, sub_step]

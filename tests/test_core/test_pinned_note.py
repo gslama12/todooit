@@ -1,5 +1,5 @@
 """
-The pinned note: one scratchpad for the whole of dooit
+The pinned note: one scratchpad for the whole of todooit
 """
 
 from todooit.api import PinnedNote
@@ -33,8 +33,8 @@ def test_writing_the_same_text_is_a_no_op(session):
     PinnedNote.set_text("scratch")
     row = PinnedNote.instance()
 
-    # A second identical write must not dirty the session (the db poller
-    # would read it as a change made elsewhere and refresh every pane)
+    # A second identical write must not dirty the session: it would be a
+    # commit that changes nothing
     PinnedNote.set_text("scratch")
     assert row not in session.dirty
 

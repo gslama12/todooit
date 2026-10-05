@@ -13,13 +13,14 @@ from typing import List
 
 from rich.console import Console
 
-from todooit.api import Project, Todo, move_todo_to_bin
-from todooit.ui.widgets.renderers.base_renderer import (
+from todooit.api import Todo, move_todo_to_bin
+from todooit.ui.pane_layout import (
     GUIDE_BLANK,
     GUIDE_BRANCH,
     GUIDE_DROP,
     GUIDE_LAST_BRANCH,
     GUIDE_VERTICAL,
+    context_id,
 )
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
@@ -27,6 +28,7 @@ from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     run_pilot,
+    visible_todos,
 )
 
 # Narrow enough that a sentence of a description has to wrap, wide enough that
@@ -62,13 +64,13 @@ def row_lines(tree: ModelTree, model, width: int = PANE_WIDTH) -> List[str]:
     console = Console(width=width, no_color=True, legacy_windows=False)
 
     with console.capture() as capture:
-        console.print(tree._renderers[model.uuid].prompt, end="")
+        console.print(tree.prompt_for(model.uuid), end="")
 
     return ANSI.sub("", capture.get()).rstrip("\n").split("\n")
 
 
 def guides_of(tree: ModelTree, model) -> str:
-    return tree._renderers[model.uuid].tree_guides[0]
+    return tree._rows[model.uuid].guides
 
 
 async def seed_steps(pilot) -> Todo:
@@ -347,17 +349,14 @@ async def test_a_wrapped_project_keeps_the_guides_under_it():
         app = await boot(pilot)
         tree = app.project_tree
 
-        parent = Project()
-        parent.save()
+        parent = tree.model.add_project()
         parent.description = "a parent project"
         parent.save()
 
-        child = Project()
-        child.save()
+        child = parent.add_project()
         child.description = (
             "a sub project whose name runs on well past the end of the pane"
         )
-        child.parent_project = parent
         child.save()
 
         tree._refresh_and_restore_highlight()
@@ -391,15 +390,12 @@ async def test_a_project_with_children_carries_the_drop_through_its_name():
         app = await boot(pilot)
         tree = app.project_tree
 
-        parent = Project()
-        parent.save()
+        parent = tree.model.add_project()
         parent.description = "a parent project whose name runs past the end of the pane"
         parent.save()
 
-        child = Project()
-        child.save()
+        child = parent.add_project()
         child.description = "a sub project"
-        child.parent_project = parent
         child.save()
 
         tree._refresh_and_restore_highlight()
@@ -461,3 +457,46 @@ async def test_a_description_too_long_for_its_column_is_folded_not_cut():
         assert len(lines) > 1
         assert "…" not in " ".join(lines)
         assert letters(lines) == long_word
+
+
+async def test_a_task_in_two_day_blocks_takes_its_guides_from_each():
+    """
+    Upcoming draws a task planned for today as work there, alone, and as
+    context tomorrow over the step planned then: the line down into a family
+    runs out of the context row only, since only there is anything under it
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, LONG)
+        await pilot.press("s")
+        await commit_line(pilot, "today")
+
+        await pilot.press("N")
+        await commit_line(pilot, "later")
+        await pilot.press("s")
+        await commit_line(pilot, "tomorrow")
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+        task = next(todo for todo in Todo.all() if todo.description == LONG)
+
+        def lines(_id: str) -> List[str]:
+            console = Console(width=PANE_WIDTH, no_color=True, legacy_windows=False)
+
+            with console.capture() as capture:
+                console.print(upcoming.prompt_for(_id), end="")
+
+            return ANSI.sub("", capture.get()).rstrip("\n").split("\n")
+
+        work = lines(task.uuid)
+        context = lines(context_id(1, task))
+        assert len(work) > 1 and len(context) > 1
+
+        assert all(line[drop_column(0)] == " " for line in work[1:])
+        assert all(line[drop_column(0)] == GUIDE_DROP for line in context[1:])

@@ -1,16 +1,17 @@
-from typing import Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
 
-from todooit.api import DooitModel
+from todooit.api import TodooitModel
+
+if TYPE_CHECKING:  # pragma: no cover
+    from todooit.api.lifecycle import Outcome
 from ._input import Input
 
-ModelType = TypeVar("ModelType", bound=DooitModel)
+ModelType = TypeVar("ModelType", bound=TodooitModel)
 ModelValue = TypeVar("ModelValue", bound=Any)
 
 
 class SimpleInput(Input, Generic[ModelType, ModelValue]):
-    """
-    A simple single line Text Input widget
-    """
+    """A simple single line Text Input widget."""
 
     def __init__(self, model: ModelType) -> None:
         self.model = model
@@ -36,40 +37,44 @@ class SimpleInput(Input, Generic[ModelType, ModelValue]):
     def _typecast_value(self, value: str) -> Any:
         return value
 
+    def _write(self, value: Any) -> Optional["Outcome"]:
+        """
+        Store a typed value on the model
+
+        A column whose field belongs to the lifecycle overrides this to go
+        through it, and returns what the change meant.
+        """
+
+        self.model_value = value
+        self.model.save()
+        return None
+
     def start_edit(self) -> None:
         """
-        Begin an edit on what the model holds now, not what it held then
-
-        A row is drawn straight off the model, so a field that was changed
-        without being typed into - pasted in, say - shows the new value while
-        this buffer still holds the one the renderer was built with. Filling
-        it here is what keeps the two the same thing.
+        Refill the buffer from the model before editing, in case the model
+        changed since the renderer was built (e.g. an external update).
         """
 
         self._value = self._get_default_value()
         super().start_edit()
         self.move_cursor_to_end()
 
-    def stop_edit(self, cancel: bool = False) -> None:
+    def stop_edit(self, cancel: bool = False) -> Optional["Outcome"]:
         """
-        End the edit, writing the buffer back to the model unless it is thrown
-        away
+        End the edit, writing the buffer to the model unless cancelled
 
-        A cancelled edit never touches the model: the buffer is refilled from
-        what the model still holds, which is what puts the field back the way
-        it was before the first keystroke.
+        Returns the lifecycle's outcome when the column goes through it.
         """
 
         if cancel:
             self._value = self._get_default_value()
             super().stop_edit(cancel)
             self.move_cursor_to_end()
-            return
+            return None
 
         self._value = self.value.strip()
         try:
-            self.model_value = self._typecast_value(self.value)
-            self.model.save()
+            return self._write(self._typecast_value(self.value))
         finally:
             self._value = self._get_default_value()
             super().stop_edit()

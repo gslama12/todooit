@@ -2,14 +2,14 @@
 The bar under the panes: the status line, and the bars that take it over
 
 Notifications, the y/N that guards a delete, and the field editor a fixed
-pane borrows when a hidden column is edited. (The old modal sort bar has no
-key bound to it any more; the sort chords are tested in test_sort.py.)
+pane borrows when a hidden column is edited. The sort chords are tested in
+test_sort.py.
 """
 
 from typing import Optional
 
 from todooit.api import BIN, Todo
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.widgets.bars import StatusBar
 from tests.test_ui.ui_base import (
     boot,
@@ -29,7 +29,7 @@ async def settle(pilot):
         await pilot.pause()
 
 
-def confirm_message(app: Dooit) -> Optional[str]:
+def confirm_message(app: Todooit) -> Optional[str]:
     """The question the bar is holding the keyboard for, if it is asking one"""
 
     if app.bar_switcher.current != "confirm_bar":
@@ -290,11 +290,11 @@ async def test_a_bar_widget_tick_survives_the_screen_going_away():
         app._screen_stack.clear()
 
         try:
-            app.api.plugin_manager._update_dooit_value(tick)
+            app.api.config_manager._update_todooit_value(tick)
         finally:
             app._screen_stack.extend(stack)
 
-        assert getattr(tick, "__dooit_value") == "09:19:58"
+        assert getattr(tick, "__todooit_value") == "09:19:58"
 
 
 async def test_binning_says_where_it_went_and_how_to_get_back():

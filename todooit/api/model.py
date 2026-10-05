@@ -2,7 +2,6 @@ from typing import Any, List
 from typing_extensions import Self
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.ext.declarative import declared_attr
-from sqlalchemy import inspect
 from .manager import manager
 
 
@@ -16,27 +15,15 @@ class BaseModelMixin:
         return cls.__name__.lower()
 
 
-class DooitModel(BaseModel, BaseModelMixin):
+class TodooitModel(BaseModel, BaseModelMixin):
     """
-    Model class to for the base tree structure
+    Base class for the tree models (projects and todos)
     """
 
     __abstract__ = True
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
-
-    @classmethod
-    def comparable_fields(cls):
-        to_ignore = ["id", "order_index", "is_root"]
-
-        comparable_fields = [
-            column.name
-            for column in inspect(cls).columns
-            if not column.name.endswith("_id") and column.name not in to_ignore
-        ]
-
-        return comparable_fields
 
     @property
     def uuid(self) -> str:
@@ -73,9 +60,7 @@ class DooitModel(BaseModel, BaseModelMixin):
     def session(self):
         return manager.session
 
-    # An item with nobody beside it is at both ends of the run it is the whole
-    # of. A todo that outlived its project has no siblings at all, and asking
-    # where it sits among them has to answer rather than fall over.
+    # An item without siblings (e.g. an orphaned todo) counts as both first and last
     def is_last_sibling(self) -> bool:
         siblings = self.siblings
         return not siblings or siblings[-1].id == self.id
@@ -84,33 +69,12 @@ class DooitModel(BaseModel, BaseModelMixin):
         siblings = self.siblings
         return not siblings or siblings[0].id == self.id
 
-    @property
-    def has_same_parent_kind(self) -> bool:
-        raise NotImplementedError  # pragma: no cover
-
-    def sort_siblings(self, field: str):
-        raise NotImplementedError  # pragma: no cover
-
-    def reverse_siblings(self):
-        for index, model in enumerate(reversed(self.siblings)):
-            model.order_index = index
-
-        manager.commit()
-
     def swap_with(self, other: Self) -> bool:
         """
-        Exchange filed places with another item beside it
+        Exchange order positions with a sibling
 
-        What a move by hand is made of, so that one can be asked for in terms
-        of the item to end up beside rather than in terms of a step through
-        the filing. A pane draws its rows in an order of its own and leaves
-        part of the run out of it altogether, so the item next to the cursor
-        and the item next in the filing are often not the same one.
-
-        The two indexes are exchanged rather than nudged past each other by
-        one, and the run is numbered straight through first: a run built up by
-        hand can have holes in it, or two items filed at the same index, and a
-        nudge across either of those moves nothing at all.
+        The run is renumbered first so gaps or duplicate indexes can't make
+        the swap a no-op.
         """
 
         siblings = list(self.siblings)
@@ -130,11 +94,7 @@ class DooitModel(BaseModel, BaseModelMixin):
 
     def shift_up(self) -> bool:
         """
-        Shift the item one place up among its siblings
-
-        One place up the filing, which is not one row up a pane that leaves
-        part of the run out of what it draws. That move belongs to the pane,
-        and is made with `swap_with`.
+        Move one place up in the stored order (not necessarily one row up on screen)
         """
 
         if self.is_first_sibling():
@@ -144,17 +104,12 @@ class DooitModel(BaseModel, BaseModelMixin):
 
         return self.swap_with(siblings[siblings.index(self) - 1])
 
-    def _add_sibling(self) -> Self:
+    def add_sibling(self) -> Self:
         raise NotImplementedError  # pragma: no cover
-
-    def add_sibling(self):
-        return self._add_sibling()
 
     def shift_down(self) -> bool:
         """
-        Shift the item one place down among its siblings
-
-        One place down the filing; see `shift_up` on what that is not.
+        Move one place down in the stored order
         """
 
         if self.is_last_sibling():

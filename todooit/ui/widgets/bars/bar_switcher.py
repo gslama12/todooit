@@ -1,14 +1,12 @@
-from typing import Callable, Optional
+from typing import Optional
 from textual.await_complete import AwaitComplete
 from textual.widget import Widget
 from textual.widgets import ContentSwitcher
-from todooit.api.model import DooitModel
 from todooit.ui.api.events.events import BarNotification, ShowConfirm
 from todooit.ui.widgets.bars._base import BarBase
 from .status_bar import StatusBar
 from .confirm_bar import ConfirmBar
 from .notification_bar import NotificationBar
-from .sort_bar import SortBar
 from .field_bar import FieldBar
 
 
@@ -41,7 +39,7 @@ class BarSwitcher(ContentSwitcher):
 
         return super().add_content(widget, id=id, set_current=set_current)
 
-    async def on_mount(self):
+    def on_mount(self):
         self.status_bar = StatusBar()
         self.add_content(
             widget=self.status_bar,
@@ -62,14 +60,6 @@ class BarSwitcher(ContentSwitcher):
             set_current=True,
         )
 
-    def switch_to_sort(self, model: DooitModel, callback: Callable):
-        sort_bar = SortBar(model, callback)
-        self.add_content(
-            widget=sort_bar,
-            id="sort_bar",
-            set_current=True,
-        )
-
     def switch_to_field(self, tree, column: str):
         field_bar = FieldBar(tree, column)
         self.add_content(
@@ -86,6 +76,6 @@ class BarSwitcher(ContentSwitcher):
             set_current=True,
         )
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         if self.current != "status_bar":
-            await self.visible_content.handle_keypress(key)
+            self.visible_content.handle_keypress(key)

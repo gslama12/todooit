@@ -3,15 +3,14 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
-from contextlib import contextmanager
 from datetime import datetime, timedelta
-from unittest.mock import patch
 
 from rich.style import Style as RichStyle
+from rich.styled import Styled
 from textual.style import Style
 
-from todooit.api import Todo
-from todooit.ui.widgets.renderers.base_renderer import GUIDE_BLANK, GUIDE_LAST_BRANCH
+from todooit.api import Todo, move_project_to_bin, restore_todo
+from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
 from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
@@ -19,6 +18,7 @@ from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     descriptions,
+    flashed,
     new_project,
     new_todo,
     notification_message,
@@ -27,27 +27,6 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
-
-
-@contextmanager
-def flashed():
-    """
-    Every row flashed while the block runs, as (pane, row) pairs
-
-    Read off the calls rather than off the pane: a flash fades on a timer of
-    its own, so a test that looks for it afterwards is reading a race it
-    sometimes loses. What is being checked is that the row was pointed out.
-    """
-
-    seen = []
-    flash_row = ModelTree.flash_row
-
-    def record(self, _id):
-        seen.append((self.id, _id))
-        flash_row(self, _id)
-
-    with patch.object(ModelTree, "flash_row", record):
-        yield seen
 
 
 async def settle(pilot):
@@ -101,7 +80,7 @@ def context_ids(tree):
     return [
         o.id
         for o in tree._options
-        if (o.id or "").startswith("dooit-todo-context-")
+        if (o.id or "").startswith("todooit-todo-context-")
     ]
 
 
@@ -129,7 +108,7 @@ async def test_today_draws_a_block_per_project():
         headings = [
             _id
             for _id in (o.id for o in tree._options)
-            if _id and _id.startswith("dooit-todo-group")
+            if _id and _id.startswith("todooit-todo-group")
         ]
         assert len(headings) == 2
 
@@ -207,7 +186,7 @@ async def test_today_draws_the_task_above_a_scheduled_step():
 
         today = visible_todos(app)
         assert descriptions(today) == ["step"]
-        assert context_ids(today) == [today._context_id(0, task)]
+        assert context_ids(today) == [context_id(0, task)]
 
         # The cursor opens on the work and cannot be walked onto the context
         assert today.current_model.description == "step"
@@ -250,9 +229,9 @@ async def test_a_guide_ends_at_the_last_row_the_pane_drew():
         assert planned.description == "planned"
         assert not planned.is_last_sibling()
 
-        guide, below = today._renderers[planned.uuid].tree_guides
-        assert guide == GUIDE_LAST_BRANCH
-        assert below == GUIDE_BLANK
+        row = today._rows[planned.uuid]
+        assert row.guides == GUIDE_LAST_BRANCH
+        assert row.below == GUIDE_BLANK
 
 
 async def test_upcoming_repeats_a_task_over_the_days_it_has_work_in():
@@ -283,9 +262,65 @@ async def test_upcoming_repeats_a_task_over_the_days_it_has_work_in():
         # that the two rows are not the same row
         task = Todo.from_id("Todo_1")
         assert context_ids(upcoming) == [
-            upcoming._context_id(0, task),
-            upcoming._context_id(1, task),
+            context_id(0, task),
+            context_id(1, task),
         ]
+
+
+async def plan_tax_return(pilot):
+    """"Tax return" planned for today, one step today and one tomorrow"""
+
+    await create_and_move_to_todo(pilot)
+    await pilot.press("n")
+    await commit_line(pilot, "Tax return")
+    await schedule(pilot, "today")
+
+    # Each step takes the task's day when it is added
+    await pilot.press("N")
+    await commit_line(pilot, "now")
+
+    await pilot.press("n")
+    await commit_line(pilot, "later")
+    await schedule(pilot, "tomorrow")
+
+    return Todo.from_id("Todo_1")
+
+
+async def test_today_draws_a_task_planned_today_as_work_with_only_todays_step():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        task = await plan_tax_return(pilot)
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        assert descriptions(today) == ["Tax return", "now"]
+        assert context_ids(today) == []
+
+        # A regular row, drawn the way any row is, not dimmed as context
+        prompt = today.prompt_for(task.uuid)
+        assert not (isinstance(prompt, Styled) and prompt.style == "dim")
+
+
+async def test_upcoming_draws_a_later_step_on_its_day_under_a_dimmed_task():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        task = await plan_tax_return(pilot)
+
+        await pilot.press("g", "u")
+        await pilot.pause()
+
+        upcoming = visible_todos(app)
+
+        # Tomorrow's step is not also drawn under the task today
+        assert descriptions(upcoming) == ["Tax return", "now", "later"]
+
+        (context,) = context_ids(upcoming)
+        assert context == context_id(1, task)
+
+        prompt = upcoming.prompt_for(context)
+        assert isinstance(prompt, Styled) and prompt.style == "dim"
 
 
 async def test_upcoming_opens_with_today():
@@ -369,7 +404,7 @@ async def test_today_marks_the_rows_that_slipped_into_it():
         assert today.row_mark(planned).plain == ""
 
         # And nothing added after the description either
-        assert today.row_note(missed).plain == ""
+        assert today.row_note(missed, today._rows[missed.uuid]).plain == ""
 
 
 def test_the_mark_is_the_day_the_row_was_planned_for():
@@ -445,7 +480,7 @@ async def test_upcoming_carries_a_slipped_row_into_today():
         assert upcoming.row_mark(soon).plain == ""
 
         # The project a row came out of is still the only thing after it
-        assert "project" in upcoming.row_note(missed).plain
+        assert "project" in upcoming.row_note(missed, upcoming._rows[missed.uuid]).plain
 
 
 async def test_completing_a_task_moves_it_to_completed():
@@ -553,6 +588,46 @@ async def test_unticking_a_step_in_completed_goes_to_the_step():
         assert visible_todos(app) is tree
         assert tree.current_model is step
         assert (tree.id, step.uuid) in flashes
+
+
+async def test_unticking_a_task_whose_project_was_dropped_rebuilds_it():
+    """
+    The log can hold a task whose project has since gone to the Bin;
+    unticking it rebuilds the project, says so, and goes there
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        project = app.api.vars.projects_tree.model.add_project()
+        project.description = "abandoned"
+        project.save()
+        todo = project.add_todo()
+        todo.description = "not quite done"
+        todo.save()
+        todo.toggle_complete()
+
+        move_project_to_bin(project)
+        restore_todo(todo)
+        app.api.vars.projects_tree.force_refresh()
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+
+        await pilot.press("c")
+        await settle(pilot)
+
+        revived = todo.parent_project
+        assert todo.is_pending
+        assert revived is not None
+        assert revived.description == "revived - abandoned"
+
+        assert visible_todos(app).model is revived
+        assert visible_todos(app).current_model is todo
+
+        message = notification_message(app)
+        assert message is not None and "abandoned" in message
 
 
 async def test_reticking_in_completed_stays_put():
@@ -730,7 +805,7 @@ async def test_a_new_step_goes_under_a_scheduled_step_too():
 
         # The task above is still drawn for context and nothing else
         task = [todo for todo in Todo.all() if todo.description == "task"][0]
-        assert context_ids(today) == [today._context_id(0, task)]
+        assert context_ids(today) == [context_id(0, task)]
 
 
 async def test_a_new_step_left_unnamed_is_dropped():
@@ -1085,3 +1160,37 @@ async def test_deleting_from_the_bin_leaves_no_ghost_row():
         pane = visible_todos(app)
         assert tree_options(pane) == []
         assert pane.highlighted is None
+
+
+async def test_a_fixed_pane_gathers_its_blocks_once_per_redraw(monkeypatch):
+    """
+    Gathering is a query per block, so a redraw reads it once and lays every
+    row out from that; nothing it draws goes back to the database for more
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "planned")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+        gathered = type(today.model).todo_groups
+        reads = []
+
+        def counted(project):
+            reads.append(project)
+            return gathered.fget(project)
+
+        monkeypatch.setattr(type(today.model), "todo_groups", property(counted))
+
+        today._refresh_and_restore_highlight()
+        await pilot.pause()
+
+        assert descriptions(today) == ["planned"]
+        assert len(reads) == 1

@@ -24,9 +24,7 @@ def fix_highlight(func: Callable) -> Callable:
                 self.highlight_id(highlighted_id)
 
         except OptionDoesNotExist:
-            # The row the cursor was on is gone, so its index is all there is
-            # to go back to — and what stands there now can be a rule or a
-            # heading, which is nothing to put a cursor on
+            # Row is gone; fall back to its index, which may now be a rule/heading
             self.highlighted = highlighted_index
             self._ensure_enabled_highlight()
 
@@ -53,13 +51,7 @@ def require_highlighted_node(func: Callable) -> Callable:
 
 
 def reject_fixed_node(message: str) -> Callable:
-    """
-    Turns an edit away when the cursor is on a fixed project
-
-    A fixed project belongs to the app rather than to the database: it can be
-    walked into and read, but there is nothing there to rename, move or drop.
-    The message is told which project it is talking about.
-    """
+    """Rejects the edit when the cursor is on a fixed (non-database) project, warning with `message`."""
 
     def decorator(func: Callable) -> Callable:
         def wrapper(self: "ModelTree", *args, **kwargs) -> Any:
@@ -79,14 +71,7 @@ def reject_fixed_node(message: str) -> Callable:
 
 
 def require_confirmation(func: Callable) -> Callable:
-    """
-    Puts the y/N question in front of an edit that nothing can be undone from
-
-    The question is built before the edit runs, never after: what it names is
-    the row under the cursor, and once the edit has been answered for that row
-    is gone and the name with it. Turned off, the edit still says what it did
-    — the confirmation was the only place it was ever going to be mentioned.
-    """
+    """Asks y/N before an irreversible edit; the question is built before running it, since the row it names may disappear after."""
 
     def wrapper(self: "ModelTree", *args, **kwargs) -> Any:
         question, confirmed, cancelled = self.delete_confirmation()

@@ -9,8 +9,8 @@ from todooit.utils.default_config import (
     project_color,
     project_palette,
 )
-from todooit.api.theme import DooitThemeBase, TokyoNight
-from todooit.ui.tui import Dooit
+from todooit.api.theme import TodooitThemeBase, TokyoNight
+from todooit.ui.tui import Todooit
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -24,7 +24,7 @@ from tests.test_ui.ui_base import (
 class _Api:
     """The one thing the palette asks the api for"""
 
-    def __init__(self, theme: DooitThemeBase):
+    def __init__(self, theme: TodooitThemeBase):
         self.vars = type("Vars", (), {"theme": theme})()
 
 
@@ -133,7 +133,7 @@ async def test_c_over_the_projects_does_not_reach_the_todos():
         todo = await new_todo(pilot, "ship it")
 
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         await pilot.press("j")
         await pilot.pause()

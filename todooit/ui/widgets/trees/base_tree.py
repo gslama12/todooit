@@ -7,26 +7,23 @@ from textual import events, on
 from ._decorators import require_highlighted_node
 
 if TYPE_CHECKING:  # pragma: no cover
-    from ....ui.tui import Dooit, DooitAPI
+    from ....ui.tui import Todooit, TodooitAPI
 
 
 class BaseTree(OptionList, can_focus=True, inherit_bindings=False):
-    # Whether each node is drawn with what hangs off it beneath it, keyed by
-    # uuid. A node nothing has been said about yet counts as expanded: a tree
-    # that opens closed hides the work it was opened to show, and asks to be
-    # walked open a row at a time before it says anything. Collapsing is the
-    # deliberate act, and only that writes a False here.
+    # Expanded state per node uuid; defaults to expanded so a tree isn't
+    # opened already hiding its own contents. Only collapsing sets False.
     expanded_nodes = defaultdict(lambda: True)
 
     @property
-    def api(self) -> "DooitAPI":
+    def api(self) -> "TodooitAPI":
         return self.tui.api
 
     @property
-    def tui(self) -> "Dooit":
-        from ....ui.tui import Dooit
+    def tui(self) -> "Todooit":
+        from ....ui.tui import Todooit
 
-        assert isinstance(self.app, Dooit)
+        assert isinstance(self.app, Todooit)
         return self.app
 
     @property

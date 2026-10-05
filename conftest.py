@@ -48,12 +48,12 @@ _textual_wait.SLEEP_IDLE = _IDLE_GRANULARITY / 20.0
 # rmdir's stylesheets/ outright on shutdown. Under `-n auto` that is several
 # processes writing, concatenating and deleting each other's files.
 #
-# This MUST happen before todooit.ui.tui is imported: `Dooit.CSS_PATH =
+# This MUST happen before todooit.ui.tui is imported: `Todooit.CSS_PATH =
 # CssManager().css_file` is evaluated at class-definition time and freezes the
 # cache path for the whole process. Everything else in todooit/paths.py
 # resolves at call time, so module level here is early enough.
 assert "todooit" not in sys.modules, (
-    "todooit was imported before the rootdir conftest ran; Dooit.CSS_PATH has "
+    "todooit was imported before the rootdir conftest ran; Todooit.CSS_PATH has "
     "already frozen the shared cache path."
 )
 
@@ -67,7 +67,7 @@ def pytest_configure(config):
     """Fail loudly if either of the two guarantees above did not hold"""
 
     import todooit
-    from todooit.ui.tui import Dooit
+    from todooit.ui.tui import Todooit
 
     # A throwaway venv's editable install points at whichever worktree it was
     # built from, and `python -m pytest` only lands on this one because -m
@@ -80,8 +80,8 @@ def pytest_configure(config):
 
     worker = getattr(config, "workerinput", {}).get("workerid")
     if worker:
-        assert worker in str(Dooit.CSS_PATH), (
-            f"worker {worker} froze CSS_PATH at {Dooit.CSS_PATH}; "
+        assert worker in str(Todooit.CSS_PATH), (
+            f"worker {worker} froze CSS_PATH at {Todooit.CSS_PATH}; "
             "PYTEST_XDIST_WORKER was not set when conftest.py was imported"
         )
 

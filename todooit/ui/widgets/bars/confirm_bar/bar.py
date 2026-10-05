@@ -7,13 +7,9 @@ from .._base import BarBase
 
 class ConfirmBar(BarBase):
     """
-    The y/N that guards an edit nothing can be undone from afterwards
-
-    The question and both of its answers are handed in whole. A row can be
-    deleted from a pane that is not the one it lives in, from a project that
-    is not on screen, or out of an edit that left it nameless -- so the bar
-    says which thing is about to go, and then says what became of it, rather
-    than asking whether the last keypress was meant.
+    The y/N that guards an irreversible edit. Question and both answer
+    messages are passed in whole, since the bar needs to name the specific
+    thing about to go (which may not be visible or even in the current pane).
     """
 
     DEFAULT_CSS = """
@@ -41,7 +37,7 @@ class ConfirmBar(BarBase):
         if not cancel:
             self.callback()
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         cancel = key.lower() != "y"
         self.dismiss(cancel)
 

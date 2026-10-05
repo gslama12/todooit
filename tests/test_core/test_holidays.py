@@ -4,7 +4,7 @@ The Austrian public holidays the calendar marks
 
 from datetime import date
 
-from todooit.utils import holiday_name, holidays
+from todooit.utils import holiday_name, holidays, last_working_day, next_month_end
 
 
 def test_the_fixed_ones_are_where_they_always_are():
@@ -48,3 +48,24 @@ def test_easter_sunday_is_left_out():
 
 def test_a_year_holds_the_thirteen_there_are():
     assert len(holidays(2026)) == 13
+
+
+def test_the_last_working_day_skips_the_weekend():
+    """31 October 2026 is a Saturday"""
+
+    assert last_working_day(2026, 10) == date(2026, 10, 30)
+    assert last_working_day(2026, 9) == date(2026, 9, 30)
+
+
+def test_the_last_working_day_skips_a_public_holiday():
+    """31 May 2029 is a Thursday, and Fronleichnam"""
+
+    assert last_working_day(2029, 5) == date(2029, 5, 30)
+
+
+def test_a_month_end_already_missed_is_next_months():
+    assert next_month_end(date(2026, 10, 5)) == date(2026, 10, 30)
+    assert next_month_end(date(2026, 10, 30)) == date(2026, 10, 30)
+    assert next_month_end(date(2026, 10, 31)) == date(2026, 11, 30)
+    assert next_month_end(date(2026, 10, 30), strictly_after=True) == date(2026, 11, 30)
+    assert next_month_end(date(2026, 12, 31), strictly_after=True) == date(2027, 1, 29)

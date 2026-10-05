@@ -1,38 +1,37 @@
 from functools import partial
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from rich.console import RenderableType
 from rich.markup import escape
 from rich.styled import Styled
 from textual import on
-from textual.color import Color
-from textual.strip import Strip
-from textual.style import Style
 from textual.widgets.option_list import Option
 
 from todooit.api import (
     Todo,
     Project,
     TodoGroup,
-    TodoRow,
     freeze_sort_order,
     move_todo_to_bin,
     restore_todo,
-    sort_todos,
 )
-from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
+from todooit.api.placement import home_of
+from todooit.ui.pane_layout import (
+    PaneRow,
+    drawn_children,
+    project_groups,
+    todo_rows,
+)
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
     SpawnMove,
     SpawnNote,
-    TodoChanged,
-    TodoRemoved,
 )
 from todooit.ui.api.events.events import TodoSelected
 from todooit.utils import blend, copy_text
 from .model_tree import GroupHeading, ModelTree
-from ._decorators import refresh_tree, require_highlighted_node
+from ._decorators import require_highlighted_node
 from ._render_dict import TodoRenderDict
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -42,9 +41,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 Model = Union[Todo, Project]
 
-# How far a group heading is pulled towards the background. The block it opens
-# has to be found without being read, so the name sits a step below the column
-# titles above it and a step above the hairline it runs into
+# How far a group heading fades towards the background — dimmer than the
+# column titles, brighter than its own hairline, so it's found without being read
 HEADING_FADE = 0.25
 
 
@@ -54,134 +52,25 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     show_header = True
     CHILDREN_ATTR = "todos"
 
-    # How far every other row is pulled from the pane background towards the
-    # lighter one behind it. Just enough to keep a row's columns tied together
-    # across the width of the pane, and well short of the step the highlight
-    # takes, so that the cursor never reads as banding.
-    #
-    # Only this pane bands its rows: a todo carries columns off to the right
-    # that have to be read back to their description, where a project is
-    # little more than its name.
-    ROW_SHADE = 0.4
-
-    # Whether a row is followed by the todos filed under it. A pane whose rows
-    # are whole tasks draws each with its steps under it, as far as it is
-    # expanded; one that gathers single todos from all over the tree draws the
-    # flat run of rows it collected, since the parents are not on screen.
-    show_children = True
-
     def __init__(self, model: Model) -> None:
         super().__init__(model, TodoRenderDict(self))
 
-        # Indices of the options the banding falls on, worked out block by
-        # block as the rows are built
-        self._shaded_rows: Set[int] = set()
-
-    @property
-    def row_shade(self) -> Color:
-        """The background the shaded half of the rows sits on"""
-
-        theme = self.api.vars.theme
-        return Color.parse(blend(theme.background1, theme.background2, self.ROW_SHADE))
-
-    @property
-    def _body_offset(self) -> int:
-        """Index of the first row that is a todo rather than the column header"""
-
-        if self._options and self._options[0].id == self.HEADER_ID:
-            return 1
-
-        return 0
-
-    def _is_shaded(self, index: int) -> bool:
-        """
-        Whether the option at `index` is one of the banded rows
-
-        Worked out while the rows are built rather than off the index, so that
-        a heading never counts as a row and every block starts unshaded.
-        """
-
-        if not self.api.vars.row_shading:
-            return False
-
-        return (index - self._body_offset) in self._shaded_rows
-
-    def _get_option_render(self, option: Option, style: Style) -> List[Strip]:
-        """
-        Bands the rows, leaving the highlighted one to the cursor
-
-        The shade is dropped for the highlighted row rather than drawn under
-        it, so that the cursor is the only background in play wherever it sits,
-        and for a row still flashing, which the pane behind this one mixes its
-        own background into.
-        """
-
-        index = self._option_to_index.get(option)
-        flashing = (option.id or "") in self._flashing
-
-        if (
-            not flashing
-            and index is not None
-            and index != self.highlighted
-            and self._is_shaded(index)
-        ):
-            style += Style(background=self.row_shade)
-
-        return super()._get_option_render(option, style)
-
-    # Whether the pane draws the todos that have been thrown away rather than
-    # the ones that have not. A binned todo is in the Bin and nowhere else, so
-    # every pane shows one side of this or the other, never both at once
-    shows_binned = False
-
     def visible_children(self, model: Model) -> List[Todo]:
-        """
-        The todos of this model that the pane has a row for
+        """Children this pane has a row for, in its order (see pane_layout)."""
 
-        A task is what moves: a completed todo filed straight under a project
-        has gone to the Completed project, is shown there with everything that
-        was finished along with it, and comes back here when it is unticked.
-        One thrown away has moved to the Bin the same way, and comes back the
-        same way.
-
-        A completed step of a task has gone nowhere. It stays under the todo
-        it belongs to, ticked off, for as long as there is anything left to do
-        in that todo — which is what makes the parent a task in progress
-        rather than a row that empties out as it is worked on.
-        """
-
-        if isinstance(model, Todo):
-            todos = list(model.todos)
-        else:
-            todos = [todo for todo in model.todos if todo.pending]
-
-        todos = [todo for todo in todos if todo.is_binned == self.shows_binned]
-
-        return sort_todos(todos, self.sort_mode)
+        return drawn_children(model, self.sort_mode)
 
     @property
     def sort_mode(self) -> Optional[str]:
-        """
-        The order this pane reads its rows in, or None to leave them filed
-
-        The steps of a task are ordered the same way the tasks are: a pane is
-        read one way down its whole length, or the order it is in stops
-        meaning anything halfway down it.
-        """
+        """The order this pane reads its rows in, or None to leave them filed. Steps sort the same way as tasks."""
 
         return self.api.vars.todo_sort
 
     def sort_by(self, mode: str) -> bool:
         """
-        Read the pane in a different order, and say whether it took
-
-        Every todos pane switches, not just this one: the switcher keeps one
-        per project, and an order picked here is the order the next project is
-        opened in. The cursor stays on the row it was on rather than on the
-        place in the pane that row used to be.
-
-        A pane that orders its own rows turns the order down instead, which is
-        what the answer is for.
+        Sets the order for every todos pane (not just this one — it's a global setting
+        applied per pane), keeping the cursor on the same row. Returns False if this
+        pane doesn't support sorting (its order is fixed).
         """
 
         self.api.vars.todo_sort = mode
@@ -193,17 +82,9 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
     def _drop_sort(self) -> None:
         """
-        Hands the order of the pane back before a row is moved by hand
-
-        A pane being read by priority draws its rows wherever the priorities
-        put them, so a row shifted up one place in the filing would come
-        straight back down to where the sort wants it and the key would look
-        like it had missed. The order the rows are in is written into the
-        filing first and the sort is then dropped, which leaves the pane
-        looking exactly as it did and the rows finally free to be moved.
-
-        The rows only rearrange again when an order is asked for again, with
-        one of the sort chords.
+        Before a manual reorder: bakes the current sorted order into the filing and
+        clears the sort mode. Otherwise a shifted row would snap straight back to
+        where the active sort puts it.
         """
 
         mode = self.sort_mode
@@ -214,9 +95,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         freeze_sort_order(mode)
         self.api.vars.todo_sort = None
 
-        # Every todos pane, the same way an order picked is taken by every
-        # pane: the switcher keeps one per project and they all read the
-        # setting that has just been cleared
+        # Global setting: every pane must re-read it now that it's cleared
         for tree in self.app.screen.query(TodosTree):
             if tree is not self:
                 tree._refresh_and_restore_highlight()
@@ -236,173 +115,40 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         self._drop_sort()
         super().shift_down()
 
-    def _heading_id(self, index: int) -> str:
-        return f"dooit-todo-group-{index}"
-
-    def _make_heading(self, label: str, space_above: bool) -> GroupHeading:
+    def make_heading(self, row: PaneRow) -> GroupHeading:
         theme = self.api.vars.theme
 
         return GroupHeading(
-            label=label,
+            label=row.label,
             label_style=blend(theme.foreground1, theme.background1, HEADING_FADE),
             rule_style=theme.background3,
-            space_above=space_above,
+            space_above=bool(row.block),
         )
+
+    def make_context(self, row: PaneRow) -> RenderableType:
+        """A dimmed, disabled rendering of a task shown only as context for its own steps below."""
+
+        return Styled(self.render_row(row), "dim")
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
-        """
-        The blocks of rows the pane draws
+        """The blocks of rows the pane draws (see pane_layout.project_groups)."""
 
-        A project shows the whole of the work filed under it, not just the part
-        of it that stopped at this level: its own todos open the pane, and
-        everything belonging to a project nested inside it follows in a block
-        per project. Otherwise a project that has been split into sub projects
-        reads as empty, and the work has to be hunted down a level at a time.
+        return project_groups(self.model, self.sort_mode)
 
-        A project with nothing under it is one unlabelled block, which is a
-        plain list of rows: the heading is what marks a block off from the one
-        before it, and the first block of a pane has nothing to be marked off
-        from.
-        """
+    def layout(self) -> List[PaneRow]:
+        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expaned)
 
-        groups = [TodoGroup(todos=self.visible_children(self.model))]
+    def option_for(self, row: PaneRow) -> Option:
+        """Headings and context rows are drawn but never land the cursor."""
 
-        if isinstance(self.model, Project):
-            groups.extend(self._sub_project_groups(self.model))
+        if row.is_heading:
+            return self.static_row(row.id, partial(self.make_heading, row))
 
-        # A project nobody has filed anything under yet is not a block, it is
-        # a heading with nothing beneath it
-        return [group for group in groups if group.todos]
+        if row.is_context:
+            return self.static_row(row.id, partial(self.make_context, row))
 
-    def _sub_project_groups(self, project: Project) -> List[TodoGroup]:
-        """
-        A block for every project nested under this one, however deep
-
-        Read top to bottom the way the projects pane is, so a block is found
-        where its project is over there. A block deeper than a child is headed
-        by its path down from here rather than by its name alone, which is
-        what keeps two sub projects that were given the same name apart.
-        """
-
-        groups: List[TodoGroup] = []
-
-        def walk(parent: Project, prefix: str) -> None:
-            for child in parent.projects:
-                label = f"{prefix}{child.description}"
-                groups.append(
-                    TodoGroup(todos=self.visible_children(child), label=label)
-                )
-                walk(child, f"{label}{PATH_SEPARATOR}")
-
-        walk(project, "")
-        return groups
-
-    def _body_options(self) -> List[Option]:
-        """
-        Every block of the pane, each under the name it belongs to
-        """
-
-        options: List[Option] = []
-        self._shaded_rows = set()
-
-        for index, group in enumerate(self.todo_groups):
-            if group.label:
-                options.append(
-                    self.static_row(
-                        self._heading_id(index),
-                        partial(self._make_heading, group.label, bool(index)),
-                    )
-                )
-
-            # Counted over the work alone, so that the banding of a block does
-            # not restart or skip a beat on the tasks drawn between its rows
-            row = 0
-
-            for todo, is_context in self._group_rows(group.rows):
-                if is_context:
-                    options.append(
-                        self.static_row(
-                            self._context_id(index, todo),
-                            partial(self._make_context, todo.uuid),
-                        )
-                    )
-                    continue
-
-                if row % 2:
-                    self._shaded_rows.add(len(options))
-
-                row += 1
-                options.append(Option("", id=self._renderers[todo.uuid].id))
-
-        return options
-
-    def _context_id(self, group: int, todo: Todo) -> str:
-        """
-        What names a context row, which is not the todo it draws
-
-        The same task can be the context of more than one block — a task with
-        a step on Monday and another on Tuesday is drawn over both of them —
-        and a row is named after the place it is in rather than after the todo
-        it is showing.
-        """
-
-        return f"dooit-todo-context-{group}-{todo.id}"
-
-    def _make_context(self, uuid: str) -> RenderableType:
-        """
-        A task drawn only to say what the work under it belongs to
-
-        The row it would be if it were the work itself, faded and out of
-        reach: the columns line up with the rows beneath it, and the cursor
-        never lands on a task the pane is not really showing.
-        """
-
-        return Styled(self._renderers[uuid].prompt, "dim")
-
-    def _group_rows(self, rows: List[TodoRow]) -> List[Tuple[Todo, bool]]:
-        """
-        The rows a block draws, in the order they are drawn in, each saying
-        whether it is there for context alone
-
-        A row that is the work is followed by whatever is filed under it, for
-        a pane that shows them, exactly as far as the row is expanded. A
-        context row is followed by the way down the block picked for it, which
-        is the work it was drawn for and nothing else.
-        """
-
-        drawn: List[Tuple[Todo, bool]] = []
-
-        for row in rows:
-            drawn.append((row.todo, row.is_context))
-
-            if row.is_context:
-                drawn.extend(self._group_rows(row.under))
-            else:
-                drawn.extend((todo, False) for todo in self._steps_of(row.todo))
-
-        return drawn
-
-    def _steps_of(self, todo: Todo) -> List[Todo]:
-        """
-        The todos drawn under a row, as far as the row is expanded
-        """
-
-        if not self.draws_rows_under(todo):
-            return []
-
-        rows: List[Todo] = []
-
-        for child in self.visible_children(todo):
-            rows.append(child)
-            rows.extend(self._steps_of(child))
-
-        return rows
-
-    def draws_rows_under(self, model: Any) -> bool:
-        """A pane that draws no steps at all has nothing under any of its rows"""
-
-        return self.show_children and super().draws_rows_under(model)
+        return super().option_for(row)
 
     def _get_parent(self, id: str) -> Optional[Todo]:
         return Todo.from_id(id).parent_todo
@@ -424,20 +170,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _create_child_node(self) -> Todo:
         return self.current_model.add_todo()
 
-    def _delete_current_model(self) -> None:
-        assert isinstance(self.current_model, Todo)
-        self.post_message(TodoRemoved(self.current_model))
-
-        return super()._delete_current_model()
-
     def _bin_node(self) -> bool:
-        """
-        Throws the highlighted task away, with everything filed under it
-
-        Nothing is lost by it: the task is in the Bin from here on, where it
-        can be looked at, put back, or dropped for good. Which is why the key
-        never asks first.
-        """
+        """Bins the highlighted task with everything under it. Reversible, so no confirmation needed."""
 
         todo = self.current_model
         assert isinstance(todo, Todo)
@@ -447,16 +181,10 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return False
 
         move_todo_to_bin(todo)
-        self.post_message(TodoChanged(todo))
         return True
 
     def _binned_message(self, subject: str) -> str:
-        """
-        Where a binned task went, and the two keys that walk back to it
-
-        The cursor does not follow it in, so the key that fetches one back is
-        no use where it was pressed: the Bin has to be opened first.
-        """
+        """The cursor doesn't follow into the Bin, so tell the user the two keys to get there and restore."""
 
         return f"Binned {subject} — [b]gb[/b] then [b]u[/b] puts it back"
 
@@ -468,9 +196,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         )
 
     def _restore_node(self) -> None:
-        """
-        Takes the highlighted task back out of the Bin
-        """
+        """Takes the highlighted task back out of the Bin."""
 
         todo = self.current_model
         assert isinstance(todo, Todo)
@@ -482,23 +208,15 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return
 
         revived = restore_todo(todo)
-        self.post_message(TodoChanged(todo))
         self.announce_revived(revived)
 
-        # The row is out of the Bin and gone from it, so the pane in front no
-        # longer has it: the app goes to where it landed rather than leaving
-        # the key looking like it did nothing
+        # Row is gone from the Bin pane, so go to wherever it landed
         self.post_message(RevealTodo(todo))
 
     def announce_revived(self, projects: List[Project]) -> None:
         """
-        Points out the projects that had to be rebuilt to take a task back
-
-        A task coming back out of the Bin or off the completion log lands
-        wherever it was filed, which can be a project nobody kept. It is built
-        again out of the name the task was carrying, and the projects pane
-        flashes it the same way this one flashes a recurring todo: the row it
-        appeared in is the only thing that says the key did anything at all.
+        Flashes and reports any projects that had to be rebuilt to give a restored
+        task (from the Bin or completion log) somewhere to land.
         """
 
         if not projects:
@@ -509,8 +227,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for project in projects:
             parent = project.parent_project
 
-            # A project rebuilt inside another one is only reachable if what it
-            # sits in is open, and what it sits in may have just been built too
+            # Ensure it's reachable — its own parent may also have just been rebuilt, and closed
             if parent is not None and not parent.is_root:
                 tree.expanded_nodes[parent.uuid] = True
 
@@ -519,34 +236,21 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for project in projects:
             tree.flash_row(project.uuid)
 
-        # Named after what was rebuilt, not after what came back: the task is
-        # already on screen with the cursor on it, and the row that appeared in
-        # the other pane is the part nothing else accounts for
+        # Named after the rebuilt project, not the task — the task itself is
+        # already visible with the cursor on it
         home = escape(projects[-1].description)
         self.post_message(
             BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
         )
 
     def _row_above(self, todo: Todo) -> Optional[Todo]:
-        """
-        The task drawn directly above this one, out of the ones beside it
-
-        Read off the pane rather than off the filing: a pane being read by
-        priority or by date draws the run in an order of its own, and the row
-        a key talks about is the row that is there to be seen.
-        """
+        """The task drawn directly above this one, read off the pane's own display order, not the filing order."""
 
         return self.row_beside(todo, -1)
 
     @require_highlighted_node
     def indent_node(self) -> None:
-        """
-        Makes the highlighted task a step of the task above it
-
-        The task it moves under is opened by the same key, so the row is
-        still there to be worked on rather than folded away out of sight the
-        moment it moves.
-        """
+        """Makes the highlighted task a step of the task above it, expanding that parent so the row stays visible."""
 
         todo = self.current_model
         assert isinstance(todo, Todo)
@@ -559,46 +263,45 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             )
             return
 
-        todo.indent(parent)
+        outcome = todo.indent(parent)
 
-        # Expanding refreshes the pane, which is what puts the row where it
-        # has just been filed; the cursor is carried onto it from there
+        # Expanding refreshes the pane, placing the row where it now belongs
         self._expand_node(parent.uuid)
-        self.post_message(TodoChanged(todo))
+
+        # Fitted to its new ancestors rather than refused: say what gave way
+        self.tell_outcome(outcome)
 
     @require_highlighted_node
-    @refresh_tree
     def unindent_node(self) -> None:
-        """
-        Takes the highlighted task out of the task it is a step of
-        """
+        """Takes the highlighted task out of the task it's a step of."""
 
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        if todo.unindent() is None:
+        outcome = todo.unindent()
+
+        if outcome is None:
             self.post_message(
                 BarNotification("This task is not a step of anything", "warning")
             )
             return
 
-        self.post_message(TodoChanged(todo))
+        self.tell_outcome(outcome)
 
     def toggle_complete(self):
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        was_scheduled_for = todo.scheduled
-
-        todo.toggle_complete()
+        outcome = todo.toggle_complete()
         self.refresh_options()
 
-        # A recurring todo is handed back pending with its next date already
-        # set, so the only thing the tick changed is the day it is planned for:
-        # the flash is what says so. Every other row says it for itself, by
-        # moving out of the pane.
-        if todo.scheduled != was_scheduled_for:
+        # An advanced todo stays open with a new date; flash it since the
+        # row doesn't otherwise move to show something changed
+        if outcome.advanced:
             self.flash_row(todo.uuid)
+
+        self.tell_outcome(outcome)
+        self.announce_revived(outcome.revived)
 
     def set_priority(self, priority: int):
         assert isinstance(self.current_model, Todo)
@@ -615,19 +318,13 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def show_note(self):
         assert isinstance(self.current_model, Todo)
 
-        # Posted rather than pushed from here: the screen package imports the
-        # trees, so reaching the other way would close the circle
+        # Posted rather than pushed: the screen package imports the trees,
+        # so calling it directly would create a circular import
         self.post_message(SpawnNote(self.current_model))
 
     @require_highlighted_node
     def move_node(self):
-        """
-        Asks which project the highlighted task is to be filed under
-
-        Which project that turns out to be is the move window's business, and
-        so is the move itself: the pane the task is leaving cannot say where it
-        is going, and after it has gone it is not this pane's row any more.
-        """
+        """Opens the move window to pick a new project for the highlighted task; the move itself is its job, not this pane's."""
 
         assert isinstance(self.current_model, Todo)
 
@@ -636,23 +333,15 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     @require_highlighted_node
     def goto_item(self):
         """
-        Goes to the highlighted task where it is filed, and points it out
-
-        A pane draws work that lives elsewhere: the fixed projects gather it
-        out of the whole tree, and a project draws a block for every project
-        nested under it. The row is the same task either way, so the key walks
-        over to it -- its project opened, the tasks above it unfolded, the row
-        flashed -- which is the arrival the finder makes.
-
-        Pressed on a row that is already at home it says so rather than
-        flashing the row under the cursor: the pane it would go to is the one
-        it is in.
+        Jumps to the highlighted todo's home (opened, ancestors unfolded,
+        row flashed) — relevant for fixed/gathered panes where the row lives elsewhere.
+        No-ops with a message if already at home.
         """
 
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        home = owning_project(todo)
+        home = home_of(todo)
 
         if home is not None and home.uuid == self.model.uuid:
             self.post_message(
@@ -668,9 +357,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         note = self.current_model.note
 
-        # A copy leaves nothing on screen to look at, and a task with no note
-        # looks exactly like one whose note was just taken - so both ends of
-        # it are said in the bar
+        # Nothing changes on screen either way, so both outcomes need a bar message
         if not note.strip():
             self.post_message(BarNotification("This task has no note", "warning"))
             return

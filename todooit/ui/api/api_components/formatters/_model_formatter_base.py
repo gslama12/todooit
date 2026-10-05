@@ -3,11 +3,11 @@ from typing import TYPE_CHECKING
 from .formatter_store import FormatterStore
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 class ModelFormatterBase:
-    def __init__(self, api: "DooitAPI") -> None:
+    def __init__(self, api: "TodooitAPI") -> None:
         self.api = api
         self.setup_formatters()
 

@@ -6,9 +6,8 @@
 | --- | --- |
 | `todooit/` | The app: a Textual TUI, todos in a tree of projects, SQLite via SQLAlchemy |
 | `todooit/api/` | The models and the operations on them |
-| `todooit/ui/` | Screens, trees, renderers and the config API |
-| `todooit/extras/` | Formatter and status-bar widget library, merged in from dooit-extras |
-| `todooit/utils/default_config.py` | The configuration: keybinds, formatters, bar, dashboard, colors |
+| `todooit/ui/` | Screens, trees, renderers and the config API, with ready-made bar widgets and formatters in `ui/api/` |
+| `todooit/utils/default_config.py` | The configuration: keybinds, formatters, bar, colors |
 | `tests/` | The test suite |
 | `site/` | This documentation site |
 

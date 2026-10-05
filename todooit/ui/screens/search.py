@@ -1,135 +1,145 @@
-"""
-The finder: every task in the database, narrowed down as it is typed
+"""Finder: searches every task in the DB, regardless of which pane is open, and
+hands back the one picked (`MainScreen.reveal_todo` navigates to it).
 
-The old search filtered the pane that happened to be in front -- it could only
-find what was already on screen, and finding it left the pane greyed out until
-escape was pressed. What a search is actually for here is the other thing: a
-task is somewhere in the tree, and the point is to get to it.
-
-So this looks through every task there is, whichever project it is filed under
-and whether or not it is still to be done, and what it hands back is the one
-that was picked. Where the app then goes is `MainScreen.reveal_todo`'s
-business.
+A query starting with `>` searches notes instead of descriptions; every
+occurrence is its own match, carrying the note line it was found on, so the
+note can open there.
 """
 
+import re
 from datetime import datetime
 from itertools import groupby
-from typing import Iterable, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
 
 from rich.cells import cell_len
 from rich.console import Group, RenderableType
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-from textual import events
-from textual.app import ComposeResult
-from textual.screen import ModalScreen
-from textual.widgets import Static
+from sqlalchemy import select
 
-from todooit.api import BIN, COMPLETED, Todo
-from todooit.api.fixed_projects import owning_project, project_path
-from todooit.api.theme import DooitThemeBase
-from todooit.ui.widgets.inputs._input import Input
+from todooit.api import BIN, COMPLETED, Todo, manager
+from todooit.api.fixed_projects import project_path
+from todooit.api.placement import home_of, project_of
 from todooit.ui.widgets.trees.model_tree import GroupHeading
 from todooit.utils import blend, day_label
+from todooit.utils.links import drawn_column, fold_links
 
-from .base import BaseScreen
+from .panel import DATE_ICON, FADE, PROJECT_ICON, PanelScreen
 
-# What the panel is titled, in the border, the way quick add is
+# Panel border title, as with quick-add
 PANEL_TITLE = "Find task"
+NOTES_TITLE = "Find in notes"
 
-# The glyph the query is typed after, the same one the one line entry uses:
-# both are a line typed over the app rather than a field in it
-PROMPT = "❯ "
-
-# The folder the projects pane draws its rows with, so the project a task was
-# found in is recognisably the row over there
-PROJECT_ICON = "󰉋"
+# Prefix that switches the search to notes instead of descriptions; only
+# meaningful at the very start of the query
+NOTE_PREFIX = ">"
 
 # The checkbox the tasks pane draws its rows with, empty and ticked
 CHECKBOX_EMPTY = "󰄱"
 CHECKBOX_TICKED = "󰄵"
 
-# The calendar a deadline is marked with in the date columns
-DATE_ICON = "󰃰"
-
-# How many matches are on screen at once. The rest are still there: the cursor
-# scrolls the window over them, and the border says where in the list it is
+# Matches on screen at once; the border shows position within the full list
 MAX_ROWS = 10
 
-# How far the things around a match are pulled towards the background: the
-# project it is in, and the line that stands in for the results while there
-# are none
-FADE = 0.45
+# Note matches take two lines (task + note line), so fewer fit than MAX_ROWS
+MAX_NOTE_ROWS = 5
 
-# How far a task that is no longer being worked on is pulled towards it. Far
-# enough that the block reads as gray at a glance, and not so far that it
-# cannot be read at all -- the same thing the projects pane does to the two
-# rows these come from
+# How much of a note line to keep before a match that has to be cut, to read
+# the word in context
+SNIPPET_LEAD = 24
+
+# How far a note's matched line is stepped in under its task
+SNIPPET_INDENT = "  "
+
+# Fade for a task no longer being worked on, matching the projects pane
 MUTED_FADE = 0.55
 
-# What the counter in the bottom border says: where the cursor is in the whole
-# list of matches, which is the only place the ones off screen are counted
+# Counter shown in the bottom border
 POSITION = "{} of {}"
 
 HINT = "↑↓  move      enter  go to task      esc  cancel"
+NOTES_HINT = "↑↓  move      enter  open note      esc  cancel"
 
-# What stands where the results go while there is nothing to put there
-EMPTY_QUERY = "Type to find a task"
+EMPTY_QUERY = f"Type to find a task, {NOTE_PREFIX} for notes"
 NO_MATCHES = "No task matches"
+EMPTY_NOTE_QUERY = "Type to find in notes"
+NO_NOTE_MATCHES = "No note matches"
 
-# The blocks the matches are drawn in, in the order they are drawn. What is
-# still to be done comes first and unheaded, since that is what the finder is
-# opened for; the other two are what became of a task, and each is headed by
-# the name of the pane it moved to
+# Markup a note line opens with (bullet, numbered item, quote, heading) --
+# stripped here since the note itself draws these as glyphs
+LINE_MARKER = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)]|>+|#+)\s+)*")
+
+# Draw order of match blocks: pending tasks first and unheaded (what the
+# finder is for), then completed/binned, each headed by its pane's name
 LIVE, DONE, BINNED = 0, 1, 2
 
 SECTION_LABELS = {DONE: COMPLETED.title, BINNED: BIN.title}
 
 
-def task_root(todo: Todo) -> Todo:
-    """
-    The task a todo belongs to: itself, unless it is a step of another one
-    """
-
-    node = todo
-
-    while node.parent_todo is not None:
-        node = node.parent_todo
-
-    return node
-
-
 def section_of(todo: Todo) -> int:
-    """
-    Which block a task is drawn in, which is also where it is to be found
+    """Which block a todo is drawn in: the one matching its home (see placement)."""
 
-    A task follows its family: a step is wherever the task it belongs to went,
-    since that is the pane it is drawn in. A finished step of a task still
-    being worked on has gone nowhere, and stays among the live rows.
-    """
+    home = home_of(todo)
 
-    if todo.is_binned:
+    if home is BIN:
         return BINNED
 
-    if not task_root(todo).pending:
+    if home is COMPLETED:
         return DONE
 
     return LIVE
 
 
-class Candidate(NamedTuple):
+class NoteHit(NamedTuple):
+    """Where in a note the query was found: row/column as the note itself counts
+    them, column being where the first typed word starts.
     """
-    A task, with everything the query is matched against worked out once
 
-    The list is built when the finder opens and read on every keystroke, so
-    the project paths are walked once rather than once per letter.
+    row: int
+    column: int
+    line: str
+
+
+class Candidate(NamedTuple):
+    """A task with everything matched against precomputed once (built when the
+    finder opens, read on every keystroke).
     """
 
     todo: Todo
     project: str
     haystack: str
     section: int
+    # Filled in on the matches of a search through the notes, and only there
+    hit: Optional[NoteHit] = None
+
+
+class Found(NamedTuple):
+    """What the finder hands back: the picked task, plus a note location if found there."""
+
+    todo: Todo
+    hit: Optional[NoteHit] = None
+
+
+def note_query(query: str) -> Optional[str]:
+    """The note search term, or None if the query isn't a note search."""
+
+    if not query.startswith(NOTE_PREFIX):
+        return None
+
+    return query[len(NOTE_PREFIX) :]
+
+
+def load_notes() -> Dict[int, str]:
+    """Every non-empty note, by the id of its task.
+
+    One query for all of them: `candidates()` builds its pool without notes,
+    which are loaded separately for the ">" search.
+    """
+
+    query = select(Todo.id, Todo.note).where(Todo.note != "")
+
+    return {id_: note for id_, note in manager.session.execute(query).all()}
 
 
 class Match(NamedTuple):
@@ -142,7 +152,7 @@ def candidates() -> List[Candidate]:
     result = []
 
     for todo in Todo.all():
-        project = owning_project(todo)
+        project = project_of(todo)
         path = project_path(project) if project else ""
         result.append(
             Candidate(
@@ -157,9 +167,7 @@ def candidates() -> List[Candidate]:
 
 
 def _due_key(todo: Todo) -> tuple:
-    """
-    Sorts the dated tasks by their deadline, and the undated ones after them
-    """
+    """Sort key: dated tasks by deadline, undated ones after."""
 
     if todo.due is None:
         return (1, datetime.max)
@@ -168,20 +176,12 @@ def _due_key(todo: Todo) -> tuple:
 
 
 def rank(candidate: Candidate, terms: Sequence[str]) -> Optional[tuple]:
-    """
-    How well a task answers the query, or None when it does not answer it
+    """How well a task answers the query (sort key), or None if it doesn't match.
 
-    Every word typed has to turn up somewhere -- in the description or in the
-    project path -- which is what lets a task be found by where it is as well
-    as by what it says ("api tests"). The work still to do comes first
-    whatever it says, since a finished task is usually being looked up rather
-    than looked for.
-
-    Within a block what decides the order is the first word alone: a
-    description that starts with it, then one with a word starting with it,
-    then one that merely contains it, then the tasks that only matched on
-    their project. And within a rank the nearest deadline leads, since two
-    tasks that read alike are told apart by when they are wanted.
+    Every term must appear in the description or project path, so a task can
+    be found by location too (e.g. "api tests"). Ordered by section (pending
+    first), then by how the first term matched (starts description > starts a
+    word > substring > project-only), then by nearest deadline.
     """
 
     if not all(term in candidate.haystack for term in terms):
@@ -202,10 +202,133 @@ def rank(candidate: Candidate, terms: Sequence[str]) -> Optional[tuple]:
     return (candidate.section, position, _due_key(candidate.todo), description)
 
 
+def note_hits(note: str, lead: str) -> List[NoteHit]:
+    """Every place in a note the term occurs, in reading order -- several on one
+    line each count, since each opens the note at a different column.
+    """
+
+    hits = []
+
+    for row, line in enumerate(note.split("\n")):
+        lower = line.lower()
+        column = lower.find(lead)
+
+        while column != -1:
+            hits.append(NoteHit(row, column, line))
+            column = lower.find(lead, column + len(lead))
+
+    return hits
+
+
+def rank_note(
+    candidate: Candidate, note: str, terms: Sequence[str]
+) -> Optional[Tuple[tuple, List[NoteHit]]]:
+    """Like `rank`, but matching against the note instead of the description.
+
+    Returns the sort key plus every occurrence of the first term (used as the
+    hit locations; later terms may be elsewhere in the note).
+    """
+
+    lower = note.lower()
+
+    if not all(term in lower for term in terms):
+        return None
+
+    lead = terms[0]
+    hits = note_hits(note, lead)
+
+    if not hits:  # pragma: no cover - the lead is in the note, so on a line
+        return None
+
+    words = re.findall(r"\w[\w'-]*|\S", lower)
+    position = 0 if any(word.startswith(lead) for word in words) else 1
+
+    description = candidate.todo.description.lower()
+    order = (candidate.section, position, _due_key(candidate.todo), description)
+
+    return order, hits
+
+
+def search_notes(
+    pool: Sequence[Candidate], notes: Dict[int, str], query: str
+) -> List[Candidate]:
+    """Every occurrence in the notes that answers the query, one match each: best
+    task first, and a task's own occurrences in the order they appear in its note.
+    """
+
+    terms = query.lower().split()
+
+    if not terms:
+        return []
+
+    matches = []
+
+    for candidate in pool:
+        note = notes.get(candidate.todo.id)
+
+        if not note:
+            continue
+
+        ranked = rank_note(candidate, note, terms)
+
+        if ranked is None:
+            continue
+
+        order, hits = ranked
+
+        # The task's id keeps a task's hits together even when two tasks rank
+        # alike (same title, no deadline)
+        for hit in hits:
+            matches.append(
+                Match(
+                    candidate._replace(hit=hit),
+                    order + (candidate.todo.id, hit.row, hit.column),
+                )
+            )
+
+    matches.sort(key=lambda match: match.order)
+    return [match.candidate for match in matches]
+
+
+def snippet(line: str, column: int, lead: int = SNIPPET_LEAD) -> str:
+    """A note line as shown under its task: leading markup dropped, links folded
+    to their names, and cut in front of a match too far along to fit.
+    """
+
+    marker = LINE_MARKER.match(line)
+    skipped = marker.end() if marker else 0
+
+    text = line[skipped:]
+    column = max(0, column - skipped)
+
+    # Folding shortens what comes before the match, so the column is carried
+    # across the way the note carries its cursor
+    folded, _ = fold_links(text)
+    column = drawn_column(text, column)
+
+    if column > lead:
+        folded = "…" + folded[column - lead :].lstrip()
+
+    return folded
+
+
+def picked_out(text: Text, terms: Sequence[str], style: Style) -> Text:
+    """Highlight every occurrence of each term, not just a leading match."""
+
+    lower = text.plain.lower()
+
+    for term in terms:
+        start = lower.find(term)
+
+        while start != -1:
+            text.stylize(style, start, start + len(term))
+            start = lower.find(term, start + len(term))
+
+    return text
+
+
 def search(pool: Sequence[Candidate], query: str) -> List[Candidate]:
-    """
-    The tasks that answer the query, best first
-    """
+    """The tasks that answer the query, best first."""
 
     terms = query.lower().split()
 
@@ -224,105 +347,86 @@ def search(pool: Sequence[Candidate], query: str) -> List[Candidate]:
     return [match.candidate for match in matches]
 
 
-class SearchScreen(BaseScreen, ModalScreen):
-    """
-    The panel the query is typed into, over a dimmed copy of the app
-
-    An overlay rather than a bar, for the same reason quick add is one: what
-    is being typed is a question, and the answer to it is a list that has to
-    go somewhere. The app stays visible behind it, since where the picked task
-    is about to be found is over there.
-    """
+class SearchScreen(PanelScreen):
+    PANEL_TITLE = PANEL_TITLE
+    HINT = HINT
 
     def __init__(self) -> None:
         super().__init__()
 
-        self._input = Input()
-        self._input.is_editing = True
-
         self._pool: List[Candidate] = []
         self._matches: List[Candidate] = []
 
-        # Which of the matches the cursor is on, counted through the whole
-        # list rather than through what is on screen. Always the first one
-        # after a keystroke: the list is reordered under it, so wherever the
-        # cursor had got to means nothing once the query has changed
+        # Fetched on the first note query, kept while the finder is open
+        self._notes: Optional[Dict[int, str]] = None
+
+        # The cursor, as an index into all matches; reset on every keystroke
         self._index = 0
 
-        # The match the window starts at, which is what the cursor pushes
-        # along when it walks past either end of it
+        # The first match on screen
         self._offset = 0
 
-    @property
-    def theme(self) -> DooitThemeBase:
-        return self.api.vars.theme
-
-    @property
-    def panel(self) -> Static:
-        return self.query_one("#search-panel", Static)
-
-    @property
-    def hint(self) -> Static:
-        return self.query_one("#search-hint", Static)
-
-    def compose(self) -> ComposeResult:
-        yield Static(id="search-panel")
-        yield Static(HINT, id="search-hint")
-
-    def on_mount(self) -> None:
-        self.panel.border_title = PANEL_TITLE
+    def _opened(self) -> None:
         self._pool = candidates()
-        self._redraw()
+
+    @property
+    def in_notes(self) -> bool:
+        """Whether what is typed is being looked for in the notes"""
+
+        return note_query(self._input.value) is not None
+
+    @property
+    def rows(self) -> int:
+        """How many matches are on screen at once"""
+
+        return MAX_NOTE_ROWS if self.in_notes else MAX_ROWS
+
+    @property
+    def terms(self) -> List[str]:
+        """The words typed, without the notes prefix"""
+
+        query = note_query(self._input.value)
+
+        if query is None:
+            query = self._input.value
+
+        return query.lower().split()
 
     # ------------------------------------------------------------------
     # Typing
     # ------------------------------------------------------------------
 
-    async def handle_key(self, event: events.Key) -> bool:
-        # Every key belongs to the query, including the ones the app binds
-        # elsewhere: this is a text field, and `q` is a letter in it
-        event.stop()
-
-        key = self.resolve_key(event)
-
+    def line_key(self, key: str) -> None:
         if key == "escape":
             self.dismiss(None)
-            return True
+            return
 
         if key == "enter":
             self.dismiss(self.selected)
-            return True
+            return
 
-        # The list is walked with the arrows, and with the keys a terminal
-        # walks a list with while the hands are still on the letters
         if key in ("down", "ctrl+n"):
             self._move(1)
-            return True
+            return
 
         if key in ("up", "ctrl+p"):
             self._move(-1)
-            return True
+            return
 
         self._input.keypress(key)
         self._research()
 
-        return True
-
     @property
-    def selected(self) -> Optional[Todo]:
+    def selected(self) -> Optional[Found]:
         if not self._matches:
             return None
 
-        return self._matches[self._index].todo
+        candidate = self._matches[self._index]
+
+        return Found(candidate.todo, candidate.hit)
 
     def _move(self, step: int) -> None:
-        """
-        Moves the cursor through every match, and the window along with it
-
-        The list is walked round rather than stopped at either end: what is
-        wanted is usually near the top, and a cursor sent up from there gets
-        to the bottom of the list in one key.
-        """
+        """Moves the cursor, wrapping at either end, and scrolls to keep it on screen"""
 
         if not self._matches:
             return
@@ -331,13 +435,22 @@ class SearchScreen(BaseScreen, ModalScreen):
 
         if self._index < self._offset:
             self._offset = self._index
-        elif self._index >= self._offset + MAX_ROWS:
-            self._offset = self._index - MAX_ROWS + 1
+        elif self._index >= self._offset + self.rows:
+            self._offset = self._index - self.rows + 1
 
         self._redraw()
 
     def _research(self) -> None:
-        self._matches = search(self._pool, self._input.value)
+        query = note_query(self._input.value)
+
+        if query is None:
+            self._matches = search(self._pool, self._input.value)
+        else:
+            if self._notes is None:
+                self._notes = load_notes()
+
+            self._matches = search_notes(self._pool, self._notes, query)
+
         self._index = 0
         self._offset = 0
         self._redraw()
@@ -347,43 +460,32 @@ class SearchScreen(BaseScreen, ModalScreen):
     # ------------------------------------------------------------------
 
     def _redraw(self) -> None:
+        in_notes = self.in_notes
+
+        self.panel.border_title = NOTES_TITLE if in_notes else PANEL_TITLE
+        self.hint.update(NOTES_HINT if in_notes else HINT)
         self.panel.update(Group(self._line(), Text(), self._results()))
 
-        # Where the cursor is in a list that mostly does not fit: without it a
-        # window scrolled halfway down says nothing about how much is left
+        # Shows position in the full list, since the window rarely shows all of it
         self.panel.border_subtitle = (
             POSITION.format(self._index + 1, len(self._matches))
             if self._matches
             else ""
         )
 
-    def _line(self) -> Text:
-        # The buffer draws itself rather than being handed over as a string,
-        # so that a selection made in it is highlighted here too
-        buffer = self._input.render_editing(self.theme)
-        buffer.style = Style(color=self.theme.foreground3)
-
-        return Text(PROMPT, style=Style(color=self.theme.primary, bold=True)) + buffer
-
-    def _faded(self, message: str) -> Text:
-        return Text(
-            message,
-            style=Style(
-                color=blend(self.theme.foreground1, self.theme.background2, FADE)
-            ),
-        )
-
     def _results(self) -> RenderableType:
-        if not self._input.value.strip():
-            return self._faded(EMPTY_QUERY)
+        in_notes = self.in_notes
+        terms = self.terms
+
+        if not terms:
+            return self._faded(EMPTY_NOTE_QUERY if in_notes else EMPTY_QUERY)
 
         if not self._matches:
-            return self._faded(NO_MATCHES)
+            return self._faded(NO_NOTE_MATCHES if in_notes else NO_MATCHES)
 
-        terms = self._input.value.lower().split()
         window = list(
             enumerate(
-                self._matches[self._offset : self._offset + MAX_ROWS],
+                self._matches[self._offset : self._offset + self.rows],
                 start=self._offset,
             )
         )
@@ -391,9 +493,8 @@ class SearchScreen(BaseScreen, ModalScreen):
 
         blocks: List[RenderableType] = []
 
-        # Grouped rather than sliced by section: a window scrolled into the
-        # middle of the list can hold the end of one block and the start of
-        # the next, and each still has to be drawn under its own name
+        # Grouped, not sliced by section: the visible window can straddle the
+        # end of one block and the start of the next
         for section, rows in groupby(window, key=lambda row: row[1].section):
             if section != LIVE:
                 blocks.append(self._heading(section, space_above=bool(blocks)))
@@ -403,29 +504,20 @@ class SearchScreen(BaseScreen, ModalScreen):
         return Group(*blocks)
 
     def _heading(self, section: int, space_above: bool) -> GroupHeading:
-        """
-        The name of a block, with a hairline running out to the panel edge
-
-        The same heading the tasks pane divides its blocks with, so a run of
-        rows under a name reads the same here as it does over there.
-        """
+        """Block heading, matching the one the tasks pane uses for its own sections."""
 
         theme = self.theme
 
         return GroupHeading(
             label=SECTION_LABELS[section],
-            label_style=blend(theme.foreground1, theme.background2, FADE),
+            label_style=self._faded_color(),
             rule_style=theme.background3,
             space_above=space_above,
         )
 
     def _column_widths(self, window: Iterable[Candidate]) -> Tuple[int, int]:
-        """
-        How wide the deadline and the project are drawn, across every block
-
-        Fixed here rather than left to each block's own table, or the columns
-        would step sideways at every heading: what a block holds says nothing
-        about where the columns of the panel are.
+        """Deadline/project column widths, fixed across all blocks so columns don't
+        shift sideways at each heading.
         """
 
         due = 0
@@ -443,9 +535,8 @@ class SearchScreen(BaseScreen, ModalScreen):
         terms: Sequence[str],
         widths: Tuple[int, int],
     ) -> Table:
-        # Filled to the width of the panel rather than to the longest row, so
-        # that the project a task is in lines up down the right hand side and
-        # the cursor is a band rather than a ragged patch
+        # Expanded to the panel width (not just the longest row) so the project
+        # column lines up and the cursor highlight is a full band
         table = Table.grid(expand=True, padding=(0, 1))
         table.add_column(width=1)
         table.add_column(ratio=1, no_wrap=True, overflow="ellipsis")
@@ -453,13 +544,21 @@ class SearchScreen(BaseScreen, ModalScreen):
         table.add_column(justify="right", no_wrap=True, width=widths[1])
 
         for index, candidate in rows:
+            style = self._row_style(index)
+
             table.add_row(
                 self._status(candidate),
-                self._description(candidate, terms),
+                # No highlight when found via note: the terms aren't in the title
+                self._description(candidate, [] if candidate.hit else terms),
                 self._due(candidate.todo),
                 self._project(candidate),
-                style=self._row_style(index),
+                style=style,
             )
+
+            if candidate.hit is not None:
+                table.add_row(
+                    Text(), self._snippet(candidate, terms), Text(), Text(), style=style
+                )
 
         return table
 
@@ -470,16 +569,12 @@ class SearchScreen(BaseScreen, ModalScreen):
         return Style(bgcolor=self.theme.background3)
 
     def _muted(self, color: str) -> str:
-        """A color as a task nobody is working on any more wears it"""
+        """Fade a color the way a task no longer being worked on is drawn."""
 
         return blend(color, self.theme.background2, MUTED_FADE)
 
     def _status(self, candidate: Candidate) -> Text:
-        """
-        The checkbox the row wears in the pane, in the color its priority
-        gives it there -- and gray, like everything else on the row, once the
-        task is done with
-        """
+        """Checkbox in the priority color the pane gives it, or gray once done with."""
 
         theme = self.theme
         todo = candidate.todo
@@ -499,39 +594,39 @@ class SearchScreen(BaseScreen, ModalScreen):
         )
 
     def _description(self, candidate: Candidate, terms: Sequence[str]) -> Text:
-        """
-        What the task says, with what was typed picked out of it
-
-        The words are marked wherever they landed rather than only at the
-        front, which is what shows why a row is in the list at all when the
-        match is halfway down a long description.
-        """
+        """Task description with every matched term highlighted, not just a leading one."""
 
         theme = self.theme
         live = candidate.section == LIVE
         color = theme.foreground2 if live else self._muted(theme.foreground1)
         accent = theme.primary if live else self._muted(theme.primary)
 
-        description = candidate.todo.description
-        text = Text(description, style=Style(color=color))
-        lower = description.lower()
-        style = Style(color=accent, bold=True)
+        text = Text(candidate.todo.description, style=Style(color=color))
 
-        for term in terms:
-            start = lower.find(term)
+        return picked_out(text, terms, Style(color=accent, bold=True))
 
-            while start != -1:
-                text.stylize(style, start, start + len(term))
-                start = lower.find(term, start + len(term))
+    def _snippet(self, candidate: Candidate, terms: Sequence[str]) -> Text:
+        """The note line the task was matched on, drawn dimmer than the row above it."""
 
-        return text
+        hit = candidate.hit
+        assert hit is not None
+
+        theme = self.theme
+        live = candidate.section == LIVE
+        color = self._faded_color()
+        accent = theme.primary if live else self._muted(theme.primary)
+
+        if not live:
+            color = self._muted(theme.foreground1)
+
+        text = Text(snippet(hit.line, hit.column), style=Style(color=color))
+        text = picked_out(text, terms, Style(color=accent, bold=True))
+
+        # Indented so it reads as belonging under the task's title
+        return Text(SNIPPET_INDENT) + text
 
     def _due(self, todo: Todo) -> Text:
-        """
-        The deadline, if the task has one: overdue in red and still ahead in
-        yellow, the way the date columns are colored. A task that is over with
-        is late for nothing, so its date is drawn gray with the rest of it.
-        """
+        """Deadline colored red if overdue, yellow otherwise; gray for a done task."""
 
         if todo.due is None:
             return Text()

@@ -60,8 +60,8 @@ def paste_text(app: Optional["App"] = None) -> str:
     """
     What is on the clipboard, or "" if there is nothing to be had
 
-    Falls back to textual's own clipboard, which holds whatever dooit last
-    copied, so a copy and paste inside dooit works even on a host with no
+    Falls back to textual's own clipboard, which holds whatever todooit last
+    copied, so a copy and paste inside todooit works even on a host with no
     clipboard tool at all.
     """
 

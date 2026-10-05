@@ -1,5 +1,5 @@
 from tests.test_ui.ui_base import run_pilot
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from todooit.ui.api import loader
 import tempfile
 from pathlib import Path
@@ -8,8 +8,8 @@ from pathlib import Path
 async def test_loader():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         temp_folder = Path(tempfile.TemporaryDirectory().name)
 
         incorrect_path = temp_folder / "incorrect_path"
-        assert not loader.load_file(app.api.plugin_manager, incorrect_path)
+        assert not loader.load_file(app.api.config_manager, incorrect_path)

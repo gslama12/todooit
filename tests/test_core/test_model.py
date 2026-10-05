@@ -94,19 +94,3 @@ def test_shifts_across_a_run_filed_at_one_index(create_project):
     first, second = projects[0].siblings[:2]
     assert first.shift_down()
     assert [p.id for p in first.siblings][:2] == [second.id, first.id]
-
-
-def test_sort_field(create_project):
-    names = ["a", "b", "c", "d", "e"][::-1]
-    p = [create_project(name) for name in names][0]
-
-    p.sort_siblings("description")
-    assert [i.description for i in p.siblings] == sorted(names)
-
-
-def test_sort_reverse(create_project):
-    names = ["a", "b", "c", "d", "e"]
-    p = [create_project(name) for name in names][0]
-
-    p.reverse_siblings()
-    assert [i.description for i in p.siblings] == names[::-1]

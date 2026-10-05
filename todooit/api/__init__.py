@@ -1,4 +1,5 @@
-from .model import DooitModel, BaseModel
+from .model import TodooitModel, BaseModel
+from .cadence import Cadence
 from .todo import (
     SORT_KEYS,
     Todo,
@@ -19,7 +20,6 @@ from .fixed_projects import (
     fixed_project_from_id,
     fixed_project_from_key,
     fixed_projects,
-    register_fixed_project,
     binned_tasks,
 )
 from .recycle import (
@@ -30,18 +30,15 @@ from .recycle import (
     restore_todo,
     revive_home,
 )
-from .history import History, Restored
+from .history import ChangedRows, History
+from . import lifecycle
 from .manager import manager
-from .hooks import fix_hooks, validation_hooks, update_hooks
+from .hooks import fix_hooks, validation_hooks
 
 
 def drop_blank_models() -> None:
     """
-    Drops every childless item whose description is blank
-
-    Items are created before they are named, so quitting mid-edit can leave one
-    behind with nothing in it. Anything holding children is left alone, so that
-    a stray blank name can never take todos down with it.
+    Delete childless items with a blank description (left over from quitting mid-edit)
     """
 
     def is_blank(model) -> bool:
@@ -58,7 +55,8 @@ def drop_blank_models() -> None:
 
 __all__ = [
     "BaseModel",
-    "DooitModel",
+    "TodooitModel",
+    "Cadence",
     "Todo",
     "TodoSortModeType",
     "SORT_KEYS",
@@ -83,13 +81,12 @@ __all__ = [
     "fixed_project_from_id",
     "fixed_project_from_key",
     "fixed_projects",
-    "register_fixed_project",
     "binned_tasks",
+    "ChangedRows",
     "History",
-    "Restored",
     "manager",
+    "lifecycle",
     "drop_blank_models",
     "fix_hooks",
     "validation_hooks",
-    "update_hooks",
 ]

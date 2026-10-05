@@ -1,38 +1,74 @@
 """
-The help screen: the keybinds of the config, grouped the way it groups them
+The help overlay: the keybinds of the config, grouped the way it groups them
 """
 
-from todooit.ui.api.events import SpawnHelp
+from textual.screen import ModalScreen
+
 from todooit.ui.screens import HelpScreen, MainScreen
-from todooit.ui.screens.help import DooitKeyTable
+from todooit.ui.screens.help import TodooitKeyTable
 from tests.test_ui.ui_base import boot, run_pilot
 
 
-async def test_help_screen_mount():
+async def test_help_is_an_overlay_like_the_others():
+    """
+    Spawned fresh over the main screen, the way the note and the finder are,
+    rather than switched to as a named screen of its own
+    """
+
     async with run_pilot() as pilot:
         # Settled first: the startup jump to Today lands as a message, and one
-        # arriving while the help screen is on top finds no projects pane to
-        # move the cursor in
+        # arriving while the help is on top finds no projects pane to move
+        # the cursor in
         app = await boot(pilot)
 
-        app.api.keys.set("X", app.api.no_op)  # test cover no_op
-        app.api.keys.set("Z", app.api.move_up, group="test")  # group test
+        assert "help" not in app.SCREENS
 
-        # test if help screen is mounted
-        await app.push_screen("help")
-        assert isinstance(app.screen, HelpScreen)
+        # A keybind to a no-op and one in a group of its own both get a row
+        app.api.keys.set("X", app.api.no_op)
+        app.api.keys.set("Z", app.api.move_up, group="test")
 
-        await app.push_screen("main")
-
-        # test with keybinding
         await pilot.press("?")
-        assert isinstance(app.screen, HelpScreen)
-        await app.push_screen("main")
+        await pilot.pause()
 
-        # test function
-        assert isinstance(app.screen, MainScreen)
-        await app.screen.spawn_help(SpawnHelp())
+        first = app.screen
+        assert isinstance(first, HelpScreen)
+        assert isinstance(first, ModalScreen)
+        assert first.panel.border_title == "Key Bindings"
+        assert "Z" in dict(first.query_one(TodooitKeyTable)._rows("test"))
+
+        # The panes stay behind it, dimmed rather than gone
+        assert isinstance(app.screen_stack[-2], MainScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        # Through the api this time, which is what the keybind calls
+        app.api.show_help()
+        await pilot.pause()
         assert isinstance(app.screen, HelpScreen)
+        assert app.screen is not first
+
+
+async def test_help_swallows_every_other_key():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        main = app.screen
+
+        await pilot.press("?")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        # `?` does not toggle it shut, and keys that do something behind it
+        # -- a new project, quitting -- reach nothing
+        for key in ("?", "q", "a", "enter", "space"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert isinstance(app.screen, HelpScreen), key
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is main
+        assert app.todooit_mode == "NORMAL"
 
 
 async def test_help_lists_the_config_groups_in_order():
@@ -51,8 +87,9 @@ async def test_every_visible_keybind_has_a_row():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
-        await app.push_screen("help")
-        table = app.screen.query_one(DooitKeyTable)
+        await pilot.press("?")
+        await pilot.pause()
+        table = app.screen.query_one(TodooitKeyTable)
 
         rows = {
             label: description
@@ -76,7 +113,6 @@ async def test_every_visible_keybind_has_a_row():
         assert "SP" not in rows
 
         # Named keys are written without their angle brackets
-        assert "ctrl+q" in rows
         assert "ctrl+c" in rows
 
 
@@ -84,8 +120,9 @@ async def test_hidden_keybinds_stay_out_of_the_help():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
-        await app.push_screen("help")
-        table = app.screen.query_one(DooitKeyTable)
+        await pilot.press("?")
+        await pilot.pause()
+        table = app.screen.query_one(TodooitKeyTable)
 
         labels = [
             label
@@ -95,3 +132,69 @@ async def test_hidden_keybinds_stay_out_of_the_help():
 
         # `?` itself is hidden: the key that opened the window is not news
         assert "?" not in labels
+
+
+async def test_the_help_stays_open_until_escape():
+    """
+    `?` opens a window that stays, the way the note and the finder do
+
+    It used to be a hold-to-show overlay that closed itself as soon as `?`
+    stopped repeating, which left nothing to scroll a listing taller than the
+    screen with: every key that would have moved it also ended it.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        assert isinstance(app.screen, HelpScreen)
+
+        # Nothing held down, and a scroll key pressed where the close timer
+        # used to be waiting
+        for _ in range(5):
+            await pilot.pause()
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert isinstance(app.screen, HelpScreen)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, MainScreen)
+
+
+async def test_help_scrolls_with_the_navigation_keys():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        await pilot.pause()
+
+        assert isinstance(app.screen, HelpScreen)
+        # The panel scrolls, not the screen: the hint under it stays put
+        screen = app.screen.panel
+
+        # The listing is taller than the window it opens in; a test that
+        # scrolls a window with nothing under the fold proves nothing
+        assert screen.max_scroll_y > 0
+
+        await pilot.press("l")
+        await pilot.pause()
+        assert screen.scroll_target_y > 0
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert screen.scroll_target_y == 0
+
+        await pilot.press("G")
+        await pilot.pause()
+        assert screen.scroll_target_y == screen.max_scroll_y
+
+        # One `g` on its own waits for the second rather than jumping
+        await pilot.press("g")
+        await pilot.pause()
+        assert screen.scroll_target_y == screen.max_scroll_y
+
+        await pilot.press("g")
+        await pilot.pause()
+        assert screen.scroll_target_y == 0

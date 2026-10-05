@@ -296,7 +296,7 @@ def spawn(argv: Sequence[str]) -> bool:
     Run something and forget about it; False when it could not be started
 
     Detached, with all three streams tied off: whatever is spawned must not
-    write into the terminal dooit is drawing in, and must not keep a handle on
+    write into the terminal todooit is drawing in, and must not keep a handle on
     it either.
     """
 

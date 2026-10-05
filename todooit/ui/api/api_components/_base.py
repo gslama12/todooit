@@ -1,4 +1,2 @@
 class ApiComponent:
-    """
-    Base class for API Components
-    """
+    """Base class for API Components."""

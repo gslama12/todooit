@@ -2,6 +2,10 @@ from rich.console import RenderableType
 from todooit.ui.api.events.events import NotificationType
 from .._base import BarBase
 
+# Seconds a notification stays up before giving the bar back; a key dismisses
+# it sooner. Warnings and errors ask to be read, so they stay longer.
+SHOWN_FOR = {"info": 3, "warning": 5, "error": 5}
+
 
 class NotificationBar(BarBase):
     DEFAULT_CSS = """
@@ -31,9 +35,9 @@ class NotificationBar(BarBase):
 
     def on_mount(self):
         if self.auto_exit:
-            self.app.set_interval(1, self.remove)
+            self.app.set_timer(SHOWN_FOR[self.level], self.remove)
 
-    async def handle_keypress(self, key: str) -> None:
+    def handle_keypress(self, key: str) -> None:
         self.remove()
 
     def render(self) -> RenderableType:

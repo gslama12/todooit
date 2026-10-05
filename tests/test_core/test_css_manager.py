@@ -1,10 +1,10 @@
 from pathlib import Path
-from todooit.api.theme import DooitThemeBase
+from todooit.api.theme import TodooitThemeBase
 from todooit.utils import CssManager
 from tempfile import TemporaryDirectory
 
 
-class TestTheme(DooitThemeBase):
+class TestTheme(TodooitThemeBase):
     _name = "test_theme"
 
 
@@ -20,7 +20,7 @@ def test_css_manager():
     assert manager.theme.__class__ is TestTheme
 
     # reset
-    manager.set_theme(DooitThemeBase)
+    manager.set_theme(TodooitThemeBase)
     assert manager.theme is not TestTheme
 
     # via name

@@ -9,10 +9,6 @@ into a tree of projects, navigated with vim-like keybindings, stored in
 SQLite via SQLAlchemy, and configured through a scriptable Python config
 file. Both source histories are preserved in this repo's git log.
 
-- `todooit/` — the app itself (was `dooit/dooit`)
-- `todooit/extras/` — companion widget/formatter library (was `dooit_extras`),
-  trimmed to what the config uses
-
 ## Goal
 
 Extend todooit in **appearance and functionality**. Upstream parity is not a
@@ -20,7 +16,7 @@ constraint — this is a personal project meant to be customized.
 
 - Config-level changes (keybinds, formatters, layout, bar, colors) →
   `todooit/utils/default_config.py`. There is no `~/.config` file — the
-  plugin manager always loads `default_config.py`, so that file *is* the
+  config manager always loads `default_config.py`, so that file *is* the
   user's config.
 - Structural/rendering changes → the package itself, e.g.
   `todooit/ui/widgets/renderers/base_renderer.py`, `todooit/ui/api/`.
@@ -50,6 +46,7 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
   run; never touch the live instance or another worktree's.
 - If you are on windows, all git commands (including `git worktree add`/`repair`) and all shell work in this repo must run under WSL, **never** Windows Git Bash/MinGW, even if the Bash tool defaults there. If a `Bash` tool call resets cwd to a `c:\...` path, that call ran outside WSL - repeat it as `wsl -e bash -lc "..."`.
 - If you are on a Mac or Linux machine, you can use the regular shell.
+
 
 ### Helper scripts
 
@@ -92,14 +89,15 @@ todooit's data is separate from any dooit install (paths resolved in
 - CSS cache: `~/.cache/todooit`
 - config dir: `~/.config/todooit` (unused, see above)
 
-Seeded 2026-09-09 from the old dooit database; the two have diverged since.
-Nothing here touches `~/.local/share/dooit/`.
+todooit uses a different database schema than dooit and is therefore not
+compatible with a dooit database.
 
 **Dev instance:** `TODOOIT_HOME=<dir>` relocates DB/cache/config into one
 self-contained directory, so development never touches the live data. Unset,
 `todooit` is the real instance. `todooit --dev` is shorthand for
 `~/.local/share/todooit-dev`, but an explicit `TODOOIT_HOME` always wins over
 it — which is what gives each worktree an instance of its own.
+
 
 ### Worktree instances
 
@@ -136,6 +134,7 @@ Two things that are easy to get wrong:
   has no attribute 'group'`) that `uv sync` will not repair, because the
   recorded metadata still looks complete. A `.venv` inside a worktree is a
   leftover from the old layout; ignore it.
+
 
 ## Testing a change
 
@@ -183,6 +182,7 @@ the root `conftest.py` overwrites it with a per-process directory under
 `/tmp/todooit-tests/` before `todooit` is imported, which is also what keeps
 parallel workers from writing over each other's CSS cache.
 
+
 ### Which tests to run
 
 **Only run tests relevant to the change** — not the whole suite — for small
@@ -210,6 +210,7 @@ Two things the suite now relies on, worth keeping true:
 - **Never wait on the clock.** The app's own timers are stretched out of the
   way during tests, and a test that sleeps or counts on a debounce firing will
   fail under load. Wait for a state instead — `boot()`, or a helper like it.
+
 
 ## Every change ships a demo
 
@@ -245,6 +246,7 @@ other way, copy it to `/tmp` first.
 If a schema change leaves the instance database stale, throw it away instead of
 migrating it by hand: `rm -rf "$TODOOIT_HOME"`, then re-seed. It is disposable
 by design, which is the whole point of one per worktree.
+
 
 ## Every new feature needs tests
 

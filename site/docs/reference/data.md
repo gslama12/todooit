@@ -14,6 +14,8 @@ exact paths follow the platform. On Linux and WSL:
 `todooit config-loc` prints the config path on your machine.
 
 Nothing here touches a dooit install — todooit has its own directories.
+todooit uses a different database schema than dooit and is therefore not
+compatible with a dooit database.
 
 ## One self-contained instance
 
@@ -36,15 +38,14 @@ without touching your real todos.
 
 ## The database
 
-SQLite through SQLAlchemy. The schema is created on first connect, and older
-databases are migrated in place on startup: columns that were added later
-(`scheduled`, `note`, `attachments`, `completed_at`, the agent flag, the Bin
-columns, project color) are bolted on when they are missing, and the indexes are laid after.
+SQLite through SQLAlchemy. The schema, indexes included, is created from the
+models on first connect. Existing tables are never altered, so there are no
+migrations: a database has to match the current schema.
 
-::: tip Two todooits on one database
-The app polls the database file's modification time once a second. A write
-from somewhere else is picked up and every pane redrawn. Those rows are not
-treated as a change made here, so `ctrl+z` will not take them back.
+::: tip Writing to the database from outside
+The app reads the database when it starts and does not watch it afterwards.
+Rows written by another process while it is running (a script using
+`todooit.api`, a second todooit) show up after a restart.
 :::
 
 ## Backing up

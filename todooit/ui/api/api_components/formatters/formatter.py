@@ -4,10 +4,10 @@ from .._base import ApiComponent
 from .model_formatters import TodoFormatter, ProjectFormatter
 
 if TYPE_CHECKING:  # pragma: no cover
-    from todooit.ui.api.dooit_api import DooitAPI
+    from todooit.ui.api.todooit_api import TodooitAPI
 
 
 class Formatter(ApiComponent):
-    def __init__(self, api: "DooitAPI") -> None:
+    def __init__(self, api: "TodooitAPI") -> None:
         self.todos = TodoFormatter(api)
         self.projects = ProjectFormatter(api)

@@ -3,13 +3,13 @@ from rich.text import Text
 from rich.style import Style
 from todooit.api.project import Project
 from todooit.ui.api.api_components.formatters import FormatterStore
-from todooit.ui.api.dooit_api import DooitAPI
+from todooit.ui.api.todooit_api import TodooitAPI
 from todooit.ui.api import extra_formatter
 from tests.test_ui.ui_base import run_pilot
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 
 
-def set_italic(value: str, _: Project, api: DooitAPI) -> Optional[str]:
+def set_italic(value: str, _: Project, api: TodooitAPI) -> Optional[str]:
     text_value = Text(value)
     text_value.highlight_words(
         ["test"],
@@ -32,14 +32,14 @@ def add_icon_skip_multiple(value: str, _: Project) -> Optional[str]:
         return f"(icon) {value}"
 
 
-def setup(api: DooitAPI):
+def setup(api: TodooitAPI):
     store = FormatterStore(lambda: None, api)
     p1 = Project(description="this is a test description")
     p2 = Project(description="another description 123")
     return store, p1, p2
 
 
-def italic_test(api: DooitAPI) -> str:
+def italic_test(api: TodooitAPI) -> str:
     """The word "test" as `set_italic` marks it, in the theme's own red
 
     Rich normalizes hex colors to lowercase on the way through a Style, so
@@ -53,7 +53,7 @@ def italic_test(api: DooitAPI) -> str:
 async def test_no_formatting():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         store, p1, p2 = setup(app.api)
 
         formatted = store.format_value(p1.description, p1)
@@ -66,7 +66,7 @@ async def test_no_formatting():
 async def test_basic_formatting():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         store, p1, p2 = setup(app.api)
 
         store.add(set_italic)
@@ -80,7 +80,7 @@ async def test_basic_formatting():
 async def test_multiple_formatting():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         store, p1, p2 = setup(app.api)
 
         store.add(set_italic)
@@ -95,7 +95,7 @@ async def test_multiple_formatting():
 async def test_multiple_formatting_skip():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         store, p1, p2 = setup(app.api)
         p2.description = "another description 123 test"
 
@@ -111,7 +111,7 @@ async def test_multiple_formatting_skip():
 async def test_multiple_formatting_toggle():
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
         store, p1, _ = setup(app.api)
 
         p1.description += " 123"
@@ -155,7 +155,7 @@ async def test_a_batch_redraws_once_however_many_formatters_it_holds():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         fired = []
         store = FormatterStore(lambda: fired.append(1), app.api)
@@ -175,7 +175,7 @@ async def test_a_formatter_added_outside_a_batch_redraws_at_once():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         fired = []
         store = FormatterStore(lambda: fired.append(1), app.api)
@@ -194,7 +194,7 @@ async def test_a_batch_keeps_every_distinct_trigger():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         todos, projects = [], []
         todo_store = FormatterStore(lambda: todos.append(1), app.api)
@@ -216,7 +216,7 @@ async def test_a_raising_handler_still_closes_the_batch():
 
     async with run_pilot() as pilot:
         app = pilot.app
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         fired = []
         store = FormatterStore(lambda: fired.append(1), app.api)

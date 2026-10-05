@@ -5,7 +5,7 @@ Ctrl+z and ctrl+y over the two panes: taking a key back, and pressing it again
 from textual.pilot import Pilot
 
 from todooit.api import BIN, Project, Todo
-from todooit.ui.tui import Dooit
+from todooit.ui.tui import Todooit
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -239,7 +239,7 @@ async def test_the_way_forward_closes_once_something_else_is_typed():
 async def test_a_pane_nobody_has_touched_has_nothing_to_take_back():
     async with run_pilot() as pilot:
         app = await boot(pilot)
-        assert isinstance(app, Dooit)
+        assert isinstance(app, Todooit)
 
         await undo(pilot)
 

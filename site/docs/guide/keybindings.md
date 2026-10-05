@@ -7,6 +7,10 @@ Hold `?` in the app for the same list, grouped the same way.
 The **Pane** column says where a binding works. Bindings with no pane of their
 own work over both.
 
+On a Mac, every `ctrl` binding below also works with `cmd`, once the terminal
+passes `cmd` on. See [Cmd shortcuts on macOS](/guide/installation#cmd-shortcuts-on-macos)
+for the WezTerm setup.
+
 ## Navigation
 
 | Key | What it does | Pane |
@@ -70,10 +74,9 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 | --- | --- | --- |
 | `/` | Find a task anywhere in the tree and jump to it | both |
 | `o` | Open the first link written in the highlighted row | both |
-| `q` | Toggle the shading of alternate rows in the todos pane | both |
 | `SP` / `SD` / `SS` | Sort the todos by priority / due date / scheduled date | both |
 | `?` | Show the help screen (while held) | both |
-| `ctrl+q` | Quit | both |
+| `q` | Quit | both |
 
 ## Inside an edit
 

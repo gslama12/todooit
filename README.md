@@ -48,7 +48,7 @@ Other environment managers and the terminal setup are in the
 
 ## Configuration
 
-Keybinds, colors, columns, the status bar and the dashboard are all set in Python
+Keybinds, colors, columns and the status bar are all set in Python
 in `todooit/utils/default_config.py`, and your own file on top of it overrides any
 of them — see [Configuration](https://gslama12.github.io/todooit/reference/configuration).
 

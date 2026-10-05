@@ -3,10 +3,7 @@ from textual import on
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, fixed_projects, move_project_to_bin
-from todooit.ui.api.events import (
-    ProjectRemoved,
-    ProjectSelected,
-)
+from todooit.ui.api.events import ProjectSelected
 from .model_tree import ColumnRule, ModelTree
 from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
@@ -27,11 +24,10 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     # A project's description is just what it's called
     COLUMN_TITLES = {"description": "Name"}
 
-    # The rules that keep the fixed projects apart from the stored ones. Same
-    # hairline the column titles sit on, so the blocks outside them read as
-    # part of the pane's own furniture rather than as one more project
-    FIXED_RULE_ID = "dooit-fixed-projects-rule"
-    BOTTOM_RULE_ID = "dooit-bottom-projects-rule"
+    # Rules separating fixed projects from stored ones, drawn with the same
+    # hairline as the column header so they read as pane furniture, not a project
+    FIXED_RULE_ID = "todooit-fixed-projects-rule"
+    BOTTOM_RULE_ID = "todooit-bottom-projects-rule"
 
     FIXED_MESSAGE = "[b]{}[/b] is a fixed project and can't be changed"
 
@@ -42,14 +38,9 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
     def _body_options(self) -> List[Option]:
         """
-        The fixed projects first, then everything the database holds, then the
-        fixed projects that belong at the foot of the pane
-
-        Each block is divided from the next by a rule, which is only drawn when
-        there is something on the far side of it to divide from. The pinned
-        block is pushed all the way down by the blank lines over its rule, so
-        that it sits on the floor of the pane rather than under the last
-        project.
+        Fixed projects, then stored projects, then bottom-pinned fixed projects.
+        A rule divides each block, but only when there's something on both sides.
+        The bottom block is pushed to the pane's floor via blank lines above its rule.
         """
 
         top: List[Option] = []
@@ -59,7 +50,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
             option = Option("", id=self._renderers[project.uuid].id)
             (bottom if project.pinned_bottom else top).append(option)
 
-        stored = self._model_options()
+        stored = super()._body_options()
         options = list(top)
 
         if top and stored:
@@ -84,13 +75,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         return ColumnRule(self.api.vars.theme.background3, space_above=self._bottom_gap)
 
     def _sync_bottom_gap(self) -> None:
-        """
-        Sizes the blank space that holds the pinned block against the floor
-
-        Whatever the pane has room for beyond the rows already in it, which is
-        nothing at all once they fill it: from there on the block is simply the
-        last thing in the list, and scrolled down to like anything else.
-        """
+        """Sizes the blank space holding the pinned block against the pane floor (0 once rows fill it)."""
 
         if self.BOTTOM_RULE_ID not in self._static_rows:
             return
@@ -103,8 +88,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         if len(heights) != len(self._options):
             return
 
-        # The rule's own hairline is part of what is filled; only the blank
-        # lines above it are the gap being sized here
+        # Subtract the previous gap so only real rows (incl. the rule's hairline) count as filled
         filled = sum(heights.values()) - self._bottom_gap
         gap = max(0, height - filled)
 
@@ -117,46 +101,27 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         self._sync_bottom_gap()
 
     def _remeasure_bottom_gap(self) -> None:
-        """
-        Sizes the gap again, a frame after whatever moved the floor
-
-        The gap is only as good as the pane it was measured against, and the
-        events that change that pane all arrive before the layout that follows
-        them. So the measurement waits for the frame to be drawn rather than
-        reading a size that is already on its way out.
-        """
+        """Re-measures a frame later, since layout from a resizing event settles after this call runs."""
 
         self.call_after_refresh(self._sync_bottom_gap)
 
     def notify_style_update(self) -> None:
-        # The app's stylesheet can land *after* the pane has been handed its
-        # first size -- on the first window opened in a process it usually
-        # does, since the CSS is still being compiled when the layout runs.
-        # Until it arrives the pane is wearing OptionList's own padding, which
-        # is a column either side rather than a line above and below, so it
-        # reports two more rows of floor than it will actually have. A gap
-        # measured against that is two lines too long, which is exactly enough
-        # to push the pinned block off the bottom and raise a scrollbar over a
-        # pane that fits. Nothing resizes when the styles land -- the border
-        # keeps the widget the same shape from the outside, so no resize event
-        # is coming -- which makes this the only word the pane gets that its
-        # own floor has moved.
+        # On first launch the app's CSS can land after the pane's first size,
+        # while it's still using OptionList's default padding (2 rows more
+        # than the real border), overstating the floor by 2 lines. That's
+        # enough to push the pinned block off-screen. No resize event follows
+        # (the border keeps the same outer shape), so this is the only signal
+        # we get that the floor changed.
         super().notify_style_update()
         self._remeasure_bottom_gap()
 
     def on_resize(self, _) -> None:
-        # A pane that got taller or shorter has a different amount of floor to
-        # hold the pinned block against
         self._sync_bottom_gap()
 
     def _stored_indices(self) -> List[int]:
         """
-        The rows of the pane that stand for a project the database holds
-
-        The fixed blocks top and tail the pane and each of them already has a
-        key that jumps straight to it, so they are left out here: the top and
-        the bottom of the pane, as far as moving around it goes, are the first
-        and the last stored project.
+        Pane rows for database-held projects, excluding the fixed blocks (top/bottom
+        of pane already jump there via their own keys).
         """
 
         indices: List[int] = []
@@ -194,16 +159,8 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def set_color(self, color: int) -> None:
         """
-        Puts the highlighted project's tree in a palette slot, or takes it out
-
-        The key that colored a project is the one that uncolors it: pressing
-        the slot the project is already in clears it, so nothing extra has to
-        be learnt to undo a color that turned out to be the wrong one.
-
-        The color labels the whole tree, so the row it is typed over is only
-        the way into that tree: the project at the top of it and everything
-        filed under it are repainted together, and the pane redraws in full
-        rather than just the one row.
+        Sets the highlighted project's (sub)tree to a palette slot, or clears it if
+        already that color. Colors the whole subtree, so the pane redraws in full.
         """
 
         project = self.current_model
@@ -229,8 +186,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
     def add_project(self) -> str:
         project = self.model.add_project()
-        renderer = self._renderers[project.uuid]
-        self.add_option(Option(renderer.prompt, id=renderer.id))
+        self.add_option(Option(self.prompt_for(project.uuid), id=project.uuid))
         return project.uuid
 
     def _create_child_node(self) -> Project:
@@ -239,24 +195,14 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def _add_first_item(self) -> Project:
         return self.model.add_project()
 
-    def _delete_current_model(self) -> None:
-        self.post_message(ProjectRemoved(self.current_model))
-        return super()._delete_current_model()
-
     def _bin_node(self) -> bool:
         """
-        Throws the highlighted project away, keeping what was filed in it
-
-        The project row is the only part that actually goes: every task under
-        it, and under the projects nested inside it, lands in the Bin carrying
-        the path it came from. Restoring one of them from there builds the
-        project back out of that path, so dropping a project is a decision
-        that can be walked back one task at a time.
+        Drops the highlighted project, but not its tasks: they move to the Bin
+        carrying their origin path, so restoring one rebuilds the project.
         """
 
         project = self.current_model
 
-        self.post_message(ProjectRemoved(project))
         self._renderers.pop(project.uuid, None)
         self.expanded_nodes.pop(project.uuid, None)
 
@@ -264,13 +210,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         return True
 
     def _binned_message(self, subject: str) -> str:
-        """
-        Where a dropped project went, which is not one place
-
-        The project row itself is simply gone; what it was holding is in the
-        Bin, and fetching one of those back is what builds the project again.
-        So the tasks are what the bar points at — when there were any.
-        """
+        """Points at the Bin (its tasks, not the dropped project itself) when there were tasks to move."""
 
         if self._current_has_children:
             return f"Dropped {subject} — its tasks are in the Bin"
@@ -306,17 +246,8 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def shift_down(self):
         return super().shift_down()
 
-    @reject_fixed_node(FIXED_MESSAGE)
-    def start_sort(self):
-        return super().start_sort()
-
     def _new_sibling(self) -> Optional[Project]:
-        """
-        The empty project a new sibling starts out as
-
-        A fixed project has no siblings to be added to, so from there the new
-        project goes to the top level, which is where the stored ones begin.
-        """
+        """A fixed project has no siblings, so a new sibling there goes to the top level instead."""
 
         if self.is_fixed_node:
             if self.is_editing:

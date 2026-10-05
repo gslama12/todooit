@@ -2,7 +2,7 @@
 Moving around: pane focus, cursor keys, and the jumps to the fixed projects
 """
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -10,6 +10,7 @@ from tests.test_ui.ui_base import (
     descriptions,
     highlighted_index,
     new_project,
+    press_writing,
     reveal_project,
     run_pilot,
     visible_todos,
@@ -156,34 +157,14 @@ async def test_selecting_a_project_shows_its_pane():
         assert visible_todos(app).model.uuid == second.uuid
 
 
-async def test_row_shading_toggle():
+async def test_q_quits():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
-        assert app.api.vars.row_shading is False
-
-        await pilot.press("q")
-        await pilot.pause()
-        assert app.api.vars.row_shading is True
-
-        await pilot.press("q")
-        await pilot.pause()
-        assert app.api.vars.row_shading is False
-
-
-async def test_shaded_rows_alternate():
-    async with run_pilot() as pilot:
-        tree = await create_and_move_to_todo(pilot)
-
-        for name in ("one", "two", "three", "four"):
-            await pilot.press("n")
-            await commit_line(pilot, name)
-
         await pilot.press("q")
         await pilot.pause()
 
-        # Every other row, starting unshaded
-        assert tree._shaded_rows == {1, 3}
+        assert not app.is_running
 
 
 async def test_a_pane_out_of_sight_catches_up_when_it_comes_forward():
@@ -221,9 +202,12 @@ async def test_a_pane_out_of_sight_catches_up_when_it_comes_forward():
 
         # Renaming the todo in the pane behind marks it rather than redrawing
         todo = first.todos[0]
-        todo.description = "renamed"
-        todo.save()
-        await pilot.pause()
+
+        def rename() -> None:
+            todo.description = "renamed"
+            todo.save()
+
+        await press_writing(pilot, rename)
 
         assert first_pane._needs_refresh
 

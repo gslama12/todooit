@@ -22,13 +22,6 @@ def test_sibling_methods(create_project):
     assert index_ids == [0, 1, 2, 3, 4]
 
 
-def test_parent_kind(create_project):
-    project1 = create_project()
-    project2 = create_project(parent_project=project1)
-
-    assert project2.has_same_parent_kind
-
-
 def test_sibling_add(create_project):
     p1 = create_project()
 
@@ -58,19 +51,6 @@ def test_todo_add(create_project):
 
     assert len(todo.siblings) == 2
     assert todo.order_index == 1
-
-
-def test_comparable_fields():
-    """
-    What the sort bar offers to order a project's siblings by
-
-    Color is in there on purpose: coloring projects is how they get grouped,
-    and sorting by it is what puts a group together.
-    """
-
-    fields = Project.comparable_fields()
-    expected_fields = ["description", "color"]
-    assert fields == expected_fields
 
 
 def test_nest_level(create_project):
@@ -125,4 +105,3 @@ def test_total_projects(create_project):
 
     assert p.total_projects == 2
     assert inner.total_projects == 1
-
