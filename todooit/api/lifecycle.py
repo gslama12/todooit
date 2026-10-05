@@ -12,10 +12,11 @@ can show ("advanced to Mon 12 Oct, 2 steps moved with it").
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Union
 
+from .cadence import Cadence
 from .manager import manager
 from .placement import root_of
 from .recycle import revive_home
@@ -218,7 +219,7 @@ def set_due(todo: Todo, when: Optional[datetime]) -> Outcome:
     return outcome
 
 
-def set_recurrence(todo: Todo, every: Optional[timedelta]) -> Outcome:
+def set_recurrence(todo: Todo, every: Optional[Cadence]) -> Outcome:
     """
     Make a todo come back every interval, or stop it recurring
 
@@ -466,7 +467,7 @@ def _advance(todo: Todo, stamp: datetime, outcome: Outcome) -> None:
 
     assert todo.recurrence is not None
 
-    new_date = (todo.scheduled or stamp) + todo.recurrence
+    new_date, todo.recurrence = todo.recurrence.after(todo.scheduled or stamp)
     todo.scheduled = new_date
     outcome.advanced_to = new_date
 

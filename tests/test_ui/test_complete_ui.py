@@ -7,7 +7,7 @@ something happened) and the status bar says what the completion meant.
 
 from datetime import date, timedelta
 
-from todooit.api import Todo, manager
+from todooit.api import Cadence, Todo, manager
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -43,6 +43,30 @@ async def test_completing_a_recurring_todo_flashes_it_and_names_its_new_day():
         assert notification_message(pilot.app) == f"advanced to {day}"
 
 
+async def test_a_monthly_todo_typed_as_1m_advances_a_calendar_month():
+    """`1m` is a month, not a minute"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "Billing request")
+        await pilot.press("s")
+        await commit_line(pilot, "2026-01-31")
+        await pilot.press("r")
+        await commit_line(pilot, "1m")
+
+        bills = tree.current_model
+        assert isinstance(bills, Todo)
+        assert bills.recurrence == Cadence(1, "months")
+
+        await pilot.press("c")
+        await pilot.pause()
+
+        assert bills.scheduled.date() == date(2026, 2, 28)
+        assert notification_message(pilot.app) == "advanced to Sat 28 Feb"
+
+
 async def test_completing_a_todo_that_ends_recurrences_says_so():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
@@ -55,7 +79,7 @@ async def test_completing_a_todo_that_ends_recurrences_says_so():
         # A step that recurs on its own, written straight to the model
         water = garden.add_todo()
         water.description = "Water plants"
-        water.recurrence = timedelta(days=3)
+        water.recurrence = Cadence(3, "days")
         water.save()
 
         with flashed() as flashes:
@@ -227,14 +251,14 @@ async def test_a_recurrence_on_a_parent_says_which_step_recurrences_it_ended():
         await pilot.press("r")
         await commit_line(pilot, "3d")
         water = tree.current_model
-        assert isinstance(water, Todo) and water.recurrence == timedelta(days=3)
+        assert isinstance(water, Todo) and water.recurrence == Cadence(3, "days")
 
         await pilot.press("k")
         assert tree.current_model is garden
         await pilot.press("r")
         await commit_line(pilot, "1w")
 
-        assert garden.recurrence == timedelta(weeks=1)
+        assert garden.recurrence == Cadence(1, "weeks")
         assert water.recurrence is None
         assert notification_message(pilot.app) == "recurrence ended on 1 step"
 
@@ -255,7 +279,7 @@ async def indent_stretch_under_weekly_review(pilot):
     await pilot.press("r")
     await commit_line(pilot, "1d")
     stretch = tree.current_model
-    assert isinstance(stretch, Todo) and stretch.recurrence == timedelta(days=1)
+    assert isinstance(stretch, Todo) and stretch.recurrence == Cadence(1, "days")
 
     await pilot.press("I")
     await pilot.pause()
@@ -288,4 +312,4 @@ async def test_one_undo_takes_back_an_indent_and_its_overrides():
         manager.session.expire_all()
         assert stretch.parent_todo is None
         assert stretch.parent_project is review.parent_project
-        assert stretch.recurrence == timedelta(days=1)
+        assert stretch.recurrence == Cadence(1, "days")

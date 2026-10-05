@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Callable, Optional, Tuple
 from rich.style import Style
-from todooit.api import Todo, Project
+from todooit.api import Cadence, Todo, Project
 from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
 from todooit.ui.api.formatter_presets import (
@@ -15,7 +15,6 @@ from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import TodoWidget, ProjectWidget
 from todooit.ui.api.events import ModeChanged, Startup
 from todooit.ui.widgets.bars import StatusBarWidget
-from todooit.ui.widgets.inputs.model_inputs import Recurrence
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
 from rich.text import Text
 
@@ -237,11 +236,11 @@ def todo_note_formatter(note: str, todo: Todo, api: TodooitAPI) -> str:
     return f"[{api.vars.theme.foreground3}]{NOTE_ICON}[/]"
 
 
-def todo_recurrence_formatter(recurrence: Optional[timedelta], _):
+def todo_recurrence_formatter(recurrence: Optional[Cadence], _):
     if recurrence is None:
         return ""
 
-    return Recurrence.timedelta_to_simple_string(recurrence)
+    return str(recurrence)
 
 
 # How far a completed row's text is pulled towards the background. Far enough

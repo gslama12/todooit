@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from pytest import raises
 from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Project, Todo
+from todooit.api import Cadence, Project, Todo
 from tests.test_core.core_base import *  # noqa
 
 
@@ -152,7 +152,7 @@ def test_recurrence_change(create_project, create_todo):
     p = create_project()
     t = p.add_todo()
     t.scheduled = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    t.recurrence = timedelta(days=1)
+    t.recurrence = Cadence(1, "days")
     t.save()
     assert t.scheduled == datetime.strptime("2021-01-01", "%Y-%m-%d")
     t.toggle_complete()
@@ -166,7 +166,7 @@ def test_recurrence_takes_over_the_due_date(create_project):
     p = create_project()
     t = p.add_todo()
     t.due = datetime.strptime("2021-01-01", "%Y-%m-%d")
-    t.recurrence = timedelta(weeks=1)
+    t.recurrence = Cadence(1, "weeks")
     t.save()
 
     assert t.due is None
@@ -180,7 +180,7 @@ def test_recurrence_drops_a_due_date_it_cannot_use(create_project):
     t = p.add_todo()
     t.due = datetime.strptime("2021-01-01", "%Y-%m-%d")
     t.scheduled = datetime.strptime("2021-02-01", "%Y-%m-%d")
-    t.recurrence = timedelta(weeks=1)
+    t.recurrence = Cadence(1, "weeks")
     t.save()
 
     assert t.due is None

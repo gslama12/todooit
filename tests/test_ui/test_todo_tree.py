@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 
 from pytest import raises
 
-from todooit.api import Todo
+from todooit.api import Cadence, Todo
 from todooit.api.exceptions import NoNodeError
 from todooit.ui.api.widgets import TodoWidget
 from todooit.ui.tui import Todooit
@@ -339,7 +339,7 @@ async def test_due_refused_on_recurring_todo():
 
         todo = tree.current_model
         assert isinstance(todo, Todo)
-        assert todo.recurrence == timedelta(weeks=1)
+        assert todo.recurrence == Cadence(1, "weeks")
 
         await pilot.press("d")
         await commit_line(pilot, "tomorrow")
@@ -454,7 +454,7 @@ async def test_recurrence_change():
         await pilot.press("r")
         await commit_line(pilot, "1d")
 
-        assert todo.recurrence == timedelta(days=1)
+        assert todo.recurrence == Cadence(1, "days")
 
 
 async def test_completing_a_recurring_todo_advances_it():

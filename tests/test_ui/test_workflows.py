@@ -5,7 +5,7 @@ of real use strings them together
 
 from datetime import date, timedelta
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Project, Todo
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
 from todooit.ui.screens.search import SearchScreen
 from tests.test_ui.ui_base import (
     boot,
@@ -305,7 +305,7 @@ async def test_a_recurring_chore_through_the_day():
         await commit_line(pilot, "1d")
 
         todo = Todo.all()[0]
-        assert todo.recurrence == timedelta(days=1)
+        assert todo.recurrence == Cadence(1, "days")
         assert TODAY.todos == [todo]
 
         await pilot.press("g", "t")
@@ -341,7 +341,7 @@ async def test_priority_on_a_repeating_task_leaves_its_day_alone():
         await commit_line(pilot, "1w")
 
         task = Todo.all()[0]
-        assert task.recurrence == timedelta(days=7)
+        assert task.recurrence == Cadence(1, "weeks")
 
         # Ticked off: it repeats, so it comes round again instead of being
         # left completed

@@ -50,8 +50,8 @@ DAY_PARTS = {
     "night": time(22),
 }
 
-# `m` is minutes rather than months, so that this agrees with the recurrence
-# field's own `1m`/`2h`/`3d`/`4w` legend. Months are spelled `mo`.
+# `m` is minutes rather than months here, since a date can be minutes away.
+# Months are spelled `mo`. (The recurrence field has no minutes, so its `m` is a month.)
 UNITS = {
     "m": "minutes",
     "min": "minutes",

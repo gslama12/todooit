@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import update
 
-from todooit.api import Todo, lifecycle, manager, move_todo_to_bin
+from todooit.api import Cadence, Todo, lifecycle, manager, move_todo_to_bin
 from tests.test_core.core_base import *  # noqa: F401,F403
 
 MONDAY = datetime(2026, 10, 5, 9, 0)
@@ -28,7 +28,7 @@ def garden_season(project) -> Todo:
     water = parent.add_todo()
     water.description = "Water plants"
     water.scheduled = MONDAY
-    water.recurrence = timedelta(days=3)
+    water.recurrence = Cadence(3, "days")
     water.save()
 
     seeds = parent.add_todo()
@@ -44,7 +44,7 @@ def weekly_review(project) -> Todo:
     parent = project.add_todo()
     parent.description = "Weekly review"
     parent.scheduled = MONDAY
-    parent.recurrence = timedelta(weeks=1)
+    parent.recurrence = Cadence(1, "weeks")
     parent.save()
 
     for description in ("Clear the inbox", "Plan next week"):
@@ -138,7 +138,7 @@ def test_completing_a_recurring_todo_advances_it(create_project):
     assert review.is_pending
     assert review.completed_at is None
     assert review.scheduled == MONDAY + timedelta(weeks=1)
-    assert review.recurrence == timedelta(weeks=1)
+    assert review.recurrence == Cadence(1, "weeks")
 
 
 def test_advancing_reopens_the_whole_checklist(create_project):
@@ -171,7 +171,7 @@ def test_advancing_moves_steps_planned_before_the_new_date_onto_it(create_projec
 
 def test_a_recurring_todo_with_no_date_advances_from_now(create_project):
     todo = create_project().add_todo()
-    todo.recurrence = timedelta(days=1)
+    todo.recurrence = Cadence(1, "days")
     todo.save()
 
     before = datetime.now()
@@ -401,7 +401,7 @@ def completed_garden_with_a_legacy_recurring_step(project) -> Todo:
     water = steps_of(garden)["Water plants"]
 
     manager.session.execute(
-        update(Todo).where(Todo.id == water.id).values(recurrence=timedelta(days=3))
+        update(Todo).where(Todo.id == water.id).values(recurrence=Cadence(3, "days"))
     )
     manager.commit()
 
@@ -763,7 +763,7 @@ def test_a_due_date_on_a_recurring_todo_is_refused(create_project):
         "A recurring todo has no due date; set its scheduled date instead"
     )
     assert review.due is None
-    assert review.recurrence == timedelta(weeks=1)
+    assert review.recurrence == Cadence(1, "weeks")
 
 
 # ------------------------------------------------------------------
@@ -873,12 +873,12 @@ def test_a_recurrence_wipes_every_recurrence_below_it(create_project):
     water = steps_of(garden)["Water plants"]
     hose = water.add_todo()
     hose.description = "Coil the hose"
-    hose.recurrence = timedelta(days=1)
+    hose.recurrence = Cadence(1, "days")
     hose.save()
 
-    lifecycle.set_recurrence(garden, timedelta(weeks=1))
+    lifecycle.set_recurrence(garden, Cadence(1, "weeks"))
 
-    assert garden.recurrence == timedelta(weeks=1)
+    assert garden.recurrence == Cadence(1, "weeks")
     assert water.recurrence is None
     assert hose.recurrence is None
 
@@ -890,7 +890,7 @@ def test_wiped_recurrences_are_reported(create_project):
     lifecycle.schedule(garden, MONDAY)
     water = steps_of(garden)["Water plants"]
 
-    outcome = lifecycle.set_recurrence(garden, timedelta(weeks=1))
+    outcome = lifecycle.set_recurrence(garden, Cadence(1, "weeks"))
 
     assert [(o.todo, o.what) for o in outcome.overrides] == [
         (water, lifecycle.Change.ENDED)
@@ -901,7 +901,7 @@ def test_wiped_recurrences_are_reported(create_project):
 def test_a_recurrence_with_nothing_below_says_nothing(create_project):
     todo = create_project().add_todo()
 
-    assert not lifecycle.set_recurrence(todo, timedelta(days=2))
+    assert not lifecycle.set_recurrence(todo, Cadence(2, "days"))
 
 
 def test_a_recurrence_under_a_recurring_grandparent_is_refused(create_project):
@@ -916,7 +916,7 @@ def test_a_recurrence_under_a_recurring_grandparent_is_refused(create_project):
     rent.save()
 
     with pytest.raises(lifecycle.Refusal) as refusal:
-        lifecycle.set_recurrence(rent, timedelta(weeks=4))
+        lifecycle.set_recurrence(rent, Cadence(4, "weeks"))
 
     assert str(refusal.value) == (
         "Can't recur: its ancestor \"Weekly review\" already recurs"
@@ -934,7 +934,7 @@ def test_a_recurrence_under_a_due_dated_ancestor_is_refused(create_project):
     manager.session.commit()
 
     with pytest.raises(lifecycle.Refusal) as refusal:
-        lifecycle.set_recurrence(scan, timedelta(days=1))
+        lifecycle.set_recurrence(scan, Cadence(1, "days"))
 
     # The nearest one: the deadline reached "Collect receipts" too (the ceiling)
     assert str(refusal.value) == (
@@ -950,7 +950,7 @@ def test_a_recurrence_turns_the_due_date_into_the_scheduled_date(create_project)
     todo = create_project().add_todo()
     lifecycle.set_due(todo, FRIDAY)
 
-    lifecycle.set_recurrence(todo, timedelta(weeks=1))
+    lifecycle.set_recurrence(todo, Cadence(1, "weeks"))
 
     assert todo.scheduled == FRIDAY
     assert todo.due is None
@@ -965,7 +965,7 @@ def test_a_recurrence_keeps_the_scheduled_date_and_drops_the_due_date(
     lifecycle.schedule(todo, MONDAY)
     lifecycle.set_due(todo, FRIDAY)
 
-    lifecycle.set_recurrence(todo, timedelta(weeks=1))
+    lifecycle.set_recurrence(todo, Cadence(1, "weeks"))
 
     assert todo.scheduled == MONDAY
     assert todo.due is None
@@ -979,7 +979,7 @@ def test_a_recurrence_on_an_undated_todo_starts_it_today(create_project):
     lifecycle.schedule(seeds, None)
     assert garden.scheduled is None and seeds.scheduled is None
 
-    outcome = lifecycle.set_recurrence(garden, timedelta(weeks=1))
+    outcome = lifecycle.set_recurrence(garden, Cadence(1, "weeks"))
 
     today = datetime.now().date()
     assert garden.scheduled is not None and garden.scheduled.date() == today
@@ -1114,7 +1114,7 @@ def test_an_indented_todo_stops_recurring_under_a_recurring_ancestor(create_proj
     review = weekly_review(project)
     inbox = steps_of(review)["Clear the inbox"]
     stretch = loose_todo(
-        project, "Stretch", scheduled=MONDAY, recurrence=timedelta(days=1)
+        project, "Stretch", scheduled=MONDAY, recurrence=Cadence(1, "days")
     )
 
     outcome = stretch.indent(inbox)
@@ -1122,7 +1122,7 @@ def test_an_indented_todo_stops_recurring_under_a_recurring_ancestor(create_proj
     assert stretch.parent_todo == inbox
     assert stretch.recurrence is None
     assert stretch.scheduled == MONDAY
-    assert review.recurrence == timedelta(weeks=1)
+    assert review.recurrence == Cadence(1, "weeks")
     assert outcome.summary() == "stopped recurring"
 
 
@@ -1203,7 +1203,7 @@ def test_placing_writes_everything_in_one_commit(create_project):
     project = create_project()
     tax = tax_return(project)
     lifecycle.set_due(tax, WEDNESDAY)
-    forms = loose_todo(project, "Print forms", recurrence=timedelta(days=1))
+    forms = loose_todo(project, "Print forms", recurrence=Cadence(1, "days"))
     before = manager.revision
 
     forms.indent(tax)

@@ -1,9 +1,10 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import List
 from sqlalchemy import ForeignKey, Index, select, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+from .cadence import Cadence, CadenceType
 from .model import TodooitModel
 from .manager import manager
 
@@ -94,7 +95,7 @@ class Todo(TodooitModel):
     scheduled: Mapped[Optional[datetime]] = mapped_column(default=None)
     # Marker: the todo has been handed off to an AI agent
     agent: Mapped[bool] = mapped_column(default=False)
-    recurrence: Mapped[Optional[timedelta]] = mapped_column(default=None)
+    recurrence: Mapped[Optional[Cadence]] = mapped_column(CadenceType, default=None)
     priority: Mapped[int] = mapped_column(default=0)
     pending: Mapped[bool] = mapped_column(default=True)
     completed_at: Mapped[Optional[datetime]] = mapped_column(default=None)

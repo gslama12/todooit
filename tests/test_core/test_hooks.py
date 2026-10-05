@@ -1,4 +1,6 @@
-from datetime import datetime, timedelta
+from datetime import datetime
+
+from todooit.api import Cadence
 
 from tests.test_core.core_base import *  # noqa
 
@@ -15,7 +17,7 @@ def test_recurrence_forces_pending(create_project):
     t.toggle_complete()
     assert t.is_completed
 
-    t.recurrence = timedelta(days=7)
+    t.recurrence = Cadence(1, "weeks")
     t.save()
 
     assert t.is_pending
@@ -31,7 +33,7 @@ def test_a_recurrence_turns_the_deadline_into_the_day_at_once(create_project):
     t = create_project().add_todo()
     t.due = FRIDAY
 
-    t.recurrence = timedelta(days=7)
+    t.recurrence = Cadence(1, "weeks")
 
     assert t.due is None
     assert t.scheduled == FRIDAY
@@ -42,7 +44,7 @@ def test_a_recurrence_keeps_an_existing_day(create_project):
     t.scheduled = MONDAY
     t.due = FRIDAY
 
-    t.recurrence = timedelta(days=7)
+    t.recurrence = Cadence(1, "weeks")
 
     assert t.due is None
     assert t.scheduled == MONDAY
@@ -52,7 +54,7 @@ def test_a_deadline_given_to_a_recurring_todo_becomes_its_day(create_project):
     """Whatever the order its fields are written in"""
 
     t = create_project().add_todo()
-    t.recurrence = timedelta(days=7)
+    t.recurrence = Cadence(1, "weeks")
 
     t.due = FRIDAY
 
