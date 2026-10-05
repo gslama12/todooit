@@ -50,7 +50,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
             option = Option("", id=self._renderers[project.uuid].id)
             (bottom if project.pinned_bottom else top).append(option)
 
-        stored = self._model_options()
+        stored = super()._body_options()
         options = list(top)
 
         if top and stored:
@@ -186,8 +186,7 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
     def add_project(self) -> str:
         project = self.model.add_project()
-        renderer = self._renderers[project.uuid]
-        self.add_option(Option(renderer.prompt, id=renderer.id))
+        self.add_option(Option(self.prompt_for(project.uuid), id=project.uuid))
         return project.uuid
 
     def _create_child_node(self) -> Project:

@@ -2,7 +2,7 @@
 Moving around: pane focus, cursor keys, and the jumps to the fixed projects
 """
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -184,7 +184,12 @@ async def test_shaded_rows_alternate():
         await pilot.pause()
 
         # Every other row, starting unshaded
-        assert tree._shaded_rows == {1, 3}
+        shaded = [
+            Todo.from_id(row.uuid).description
+            for row in tree._rows.values()
+            if row.shaded
+        ]
+        assert shaded == ["two", "four"]
 
 
 async def test_a_pane_out_of_sight_catches_up_when_it_comes_forward():

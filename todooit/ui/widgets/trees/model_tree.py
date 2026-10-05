@@ -30,6 +30,7 @@ from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
 from todooit.api import Todo, Project
 from todooit.api.lifecycle import Outcome, Refusal
+from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
 from todooit.ui.api.events import (
     ModeChanged,
     SpawnCalendar,
@@ -156,10 +157,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     # What a row is called when the bar has to refer to one with no name
     NODE_NOUN: str = "item"
 
-    # Whether nested rows draw guides back to their parent. Off for panes that
-    # gather rows from across the tree, since the parent isn't on screen
-    show_guides: bool = True
-
     # Rounded caps either side of the border title, matching the pane's rounded border
     TITLE_CAP_LEFT = "\ue0b6"
     TITLE_CAP_RIGHT = "\ue0b4"
@@ -177,6 +174,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self._model = model
         self._renderers: RenderDictType = render_dict
         self._static_rows: Dict[str, Callable[[], RenderableType]] = {}
+
+        # The rows the last refresh laid out, by option id
+        self._rows: Dict[str, PaneRow] = {}
 
         # Rows still fading, each with the steps it has left to go
         self._flashing: Dict[str, int] = {}
@@ -309,14 +309,18 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         if make is not None:
             return make()
 
-        return self._renderers[_id].prompt
+        # A row added since the last layout (or outside it) draws plain
+        return self.render_row(self._rows.get(_id) or plain_row(_id))
+
+    def render_row(self, row: PaneRow) -> RenderableType:
+        return self._renderers[row.uuid].make_renderable(row)
 
     def row_mark(self, model: ModelType) -> Text:
         """Marker drawn before a row's description; empty by default, overridden by panes that flag specific rows."""
 
         return Text()
 
-    def row_note(self, model: ModelType) -> Text:
+    def row_note(self, model: ModelType, row: PaneRow) -> Text:
         """Note drawn after a row's description; empty by default, overridden by panes gathering rows from elsewhere."""
 
         return Text()
@@ -436,57 +440,39 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     def is_node_expaned(self, _id: str) -> bool:
         return self.expanded_nodes[_id]
 
-    def is_row_root(self, model: Any) -> bool:
-        """Whether a row starts a family here (where guides stop) rather than hanging off a drawn parent."""
-
-        return not model.nest_level
-
-    def is_last_row(self, model: Any) -> bool:
-        """
-        Whether this row is the last drawn beside its siblings — checked against what
-        this pane actually drew, not the filing order, since a pane can leave rows
-        out or reorder them.
-        """
-
-        parent = model.parent
-
-        if parent is None:
-            return model.is_last_sibling()
-
-        drawn = self.visible_children(parent)
-
-        return not drawn or drawn[-1].uuid == model.uuid
-
-    def draws_rows_under(self, model: Any) -> bool:
-        """Whether this row's guide line continues down to drawn children — false if collapsed or childless here."""
-
-        return self.is_node_expaned(model.uuid) and bool(self.visible_children(model))
-
     def visible_children(self, model: Any) -> List:
         """The children of a model this pane draws a row for (all of them, by default)."""
 
         return getattr(model, self.CHILDREN_ATTR)
 
-    def _model_options(self) -> List[Option]:
-        """One row per model, each expanded node followed by the rows under it."""
+    def layout(self) -> List[PaneRow]:
+        """The rows this pane draws, finished (see pane_layout). Overridden by panes that draw blocks."""
 
-        options: List[Option] = []
+        return tree_rows(
+            self.visible_children(self.model),
+            self.visible_children,
+            self.is_node_expaned,
+        )
 
-        def add_children_recurse(model: ModelType):
-            for child in self.visible_children(model):
-                render = self._renderers[child.uuid]
-                options.append(Option("", id=render.id))
+    def option_for(self, row: PaneRow) -> Option:
+        """The option a laid-out row is drawn as."""
 
-                if self.is_node_expaned(child.uuid):
-                    add_children_recurse(child)
-
-        add_children_recurse(self.model)
-        return options
+        return Option("", id=row.id)
 
     def _body_options(self) -> List[Option]:
-        """Every row of the pane except the column titles. Overridden by panes drawing more than their own root's models."""
+        """Every row of the pane except the column titles."""
 
-        return self._model_options()
+        rows = self.layout()
+
+        for row in rows:
+            self._rows[row.id] = row
+
+            # Renderers made up front, so column widths measure every row
+            # rather than just those drawn so far
+            if row.uuid:
+                self._renderers[row.uuid]
+
+        return [self.option_for(row) for row in rows]
 
     def _build_options(self) -> List[Option]:
         options = self._body_options()
@@ -520,6 +506,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         highlighted = self.highlighted
         self.clear_options()
         self._static_rows.clear()
+        self._rows.clear()
 
         options = self._build_options()
         has_nodes = any(not self.is_static_row(option.id) for option in options)
@@ -836,6 +823,13 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         and column-width measurement walks all of them — a leftover renderer for a
         deleted model would look the model up and fail.
         """
+
+        ids = set(ids)
+
+        # Context rows are laid out under ids of their own
+        for _id, row in list(self._rows.items()):
+            if row.uuid in ids:
+                del self._rows[_id]
 
         for _id in ids:
             self._renderers.pop(_id, None)

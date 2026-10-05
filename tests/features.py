@@ -24,6 +24,7 @@ FEATURE_BY_MODULE = {
     "test_hooks": "hooks",
     "test_lifecycle": "lifecycle",
     "test_placement": "placement",
+    "test_pane_layout": "layout",
     "test_quick_add": "quickadd",
     "test_links": "links",
     "test_files": "notes",

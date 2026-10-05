@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Generic, List, Tuple, TypeVar, Union
+from typing import TYPE_CHECKING, Generic, List, TypeVar, Union
 from rich._wrap import divide_line
 from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -8,6 +8,7 @@ from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 from todooit.api import Todo, Project
+from todooit.ui.pane_layout import GUIDE_DROP, GUIDE_VERTICAL, PaneRow
 from todooit.utils import blend
 from ..inputs.simple_input import SimpleInput
 
@@ -16,19 +17,8 @@ ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 # Padding on each side of a column; neighbouring columns get double this.
 COLUMN_PADDING = 2
 
-# File-tree-style guides drawn left of a nested item, all the same width
-# (one level of indent).
-GUIDE_BRANCH = "├── "
-GUIDE_LAST_BRANCH = "╰── "
-GUIDE_VERTICAL = "│   "
-GUIDE_BLANK = "    "
-
 # Folded rather than cut short, so overflow keeps whole words.
 DESCRIPTION_OVERFLOW = "fold"
-
-# GUIDE_VERTICAL without its trailing gap: carries the line down through a
-# wrapped row to the column its children turn out of.
-GUIDE_DROP = GUIDE_VERTICAL[0]
 
 # How far guides are faded towards the pane background (still readable, but
 # behind the text they indent).
@@ -226,10 +216,6 @@ class BaseRenderer(Generic[ModelType]):
         return self.tree.render_layout
 
     @property
-    def prompt(self) -> RenderableType:
-        return self.make_renderable()
-
-    @property
     def model(self) -> ModelType:
         raise NotImplementedError  # pragma: no cover
 
@@ -264,51 +250,6 @@ class BaseRenderer(Generic[ModelType]):
         theme = self.theme
         return Style(color=blend(theme.foreground1, theme.background1, GUIDE_FADE))
 
-    @property
-    def tree_guides(self) -> Tuple[str, str]:
-        """
-        File-tree guides for this item: (first line, every line below).
-
-        The innermost level is this item's own elbow; ancestors above it just
-        say whether their line continues past this row or ran out of
-        siblings. Stops at the pane's row root, not necessarily the tree root.
-        """
-
-        if not self.tree.show_guides:
-            return "", ""
-
-        node = self.model
-        pieces: List[str] = []
-        last_here = True
-
-        while node.nest_level and not self.tree.is_row_root(node):
-            last = self.tree.is_last_row(node)
-
-            if pieces:
-                pieces.append(GUIDE_BLANK if last else GUIDE_VERTICAL)
-            else:
-                last_here = last
-                pieces.append(GUIDE_LAST_BRANCH if last else GUIDE_BRANCH)
-
-            node = node.parent
-
-        if not pieces:
-            return "", ""
-
-        pieces.reverse()
-        below = pieces[:-1] + [GUIDE_BLANK if last_here else GUIDE_VERTICAL]
-
-        return "".join(pieces), "".join(below)
-
-    @property
-    def child_connector(self) -> str:
-        """Guide line from this row's first column down to its children, if any."""
-
-        if not self.tree.show_guides:
-            return ""
-
-        return GUIDE_DROP if self.tree.draws_rows_under(self.model) else ""
-
     def _with_row_mark(self, rendered: RenderableType) -> RenderableType:
         """Prefix a pane's mark onto the description, so it reads before the row."""
 
@@ -319,12 +260,12 @@ class BaseRenderer(Generic[ModelType]):
 
         return mark + rendered if isinstance(rendered, Text) else rendered
 
-    def _with_row_note(self, rendered: RenderableType) -> RenderableType:
+    def _with_row_note(self, rendered: RenderableType, row: PaneRow) -> RenderableType:
         """
         The description with whatever the pane has to say about the row after it
         """
 
-        note = self.tree.row_note(self.model)
+        note = self.tree.row_note(self.model, row)
 
         if not note.cell_len:
             return rendered
@@ -336,19 +277,21 @@ class BaseRenderer(Generic[ModelType]):
 
         return cell
 
-    def make_renderable(self) -> RenderableType:
+    def make_renderable(self, row: PaneRow) -> RenderableType:
+        """Draws the model as the pane laid out `row`: its guides, and the line into what's under it"""
+
         layout = self.table_layout
 
-        first_guide, below_guide = self.tree_guides
+        first_guide, below_guide = row.guides, row.below
         guided = bool(first_guide)
-        connector = self.child_connector
+        connector = GUIDE_DROP if row.drops else ""
 
         # A guided row's edge padding lives in the margin instead; the table
         # only draws it for unguided rows.
         table = Table.grid(
             expand=True, padding=(0, COLUMN_PADDING), pad_edge=not guided
         )
-        row = []
+        cells = []
 
         for index, item in enumerate(layout):
             attr = item.value
@@ -376,7 +319,7 @@ class BaseRenderer(Generic[ModelType]):
             # and is excluded from the width check above since it's the
             # pane's addition, not the field's.
             if attr == "description" and not component.is_editing:
-                rendered = self._with_row_note(rendered)
+                rendered = self._with_row_note(rendered, row)
 
             # Only a row with children hangs its description in (leaving a
             # column for the guide line down to them); others wrap flush.
@@ -395,9 +338,9 @@ class BaseRenderer(Generic[ModelType]):
 
                 table.add_column(attr, width=width)
 
-            row.append(rendered)
+            cells.append(rendered)
 
-        table.add_row(*row)
+        table.add_row(*cells)
 
         if not guided and not connector:
             return table

@@ -13,13 +13,14 @@ from typing import List
 
 from rich.console import Console
 
-from todooit.api import Project, Todo, move_todo_to_bin
-from todooit.ui.widgets.renderers.base_renderer import (
+from todooit.api import Todo, move_todo_to_bin
+from todooit.ui.pane_layout import (
     GUIDE_BLANK,
     GUIDE_BRANCH,
     GUIDE_DROP,
     GUIDE_LAST_BRANCH,
     GUIDE_VERTICAL,
+    context_id,
 )
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
@@ -63,13 +64,13 @@ def row_lines(tree: ModelTree, model, width: int = PANE_WIDTH) -> List[str]:
     console = Console(width=width, no_color=True, legacy_windows=False)
 
     with console.capture() as capture:
-        console.print(tree._renderers[model.uuid].prompt, end="")
+        console.print(tree.prompt_for(model.uuid), end="")
 
     return ANSI.sub("", capture.get()).rstrip("\n").split("\n")
 
 
 def guides_of(tree: ModelTree, model) -> str:
-    return tree._renderers[model.uuid].tree_guides[0]
+    return tree._rows[model.uuid].guides
 
 
 async def seed_steps(pilot) -> Todo:
@@ -348,17 +349,14 @@ async def test_a_wrapped_project_keeps_the_guides_under_it():
         app = await boot(pilot)
         tree = app.project_tree
 
-        parent = Project()
-        parent.save()
+        parent = tree.model.add_project()
         parent.description = "a parent project"
         parent.save()
 
-        child = Project()
-        child.save()
+        child = parent.add_project()
         child.description = (
             "a sub project whose name runs on well past the end of the pane"
         )
-        child.parent_project = parent
         child.save()
 
         tree._refresh_and_restore_highlight()
@@ -392,15 +390,12 @@ async def test_a_project_with_children_carries_the_drop_through_its_name():
         app = await boot(pilot)
         tree = app.project_tree
 
-        parent = Project()
-        parent.save()
+        parent = tree.model.add_project()
         parent.description = "a parent project whose name runs past the end of the pane"
         parent.save()
 
-        child = Project()
-        child.save()
+        child = parent.add_project()
         child.description = "a sub project"
-        child.parent_project = parent
         child.save()
 
         tree._refresh_and_restore_highlight()
@@ -500,7 +495,7 @@ async def test_a_task_in_two_day_blocks_takes_its_guides_from_each():
             return ANSI.sub("", capture.get()).rstrip("\n").split("\n")
 
         work = lines(task.uuid)
-        context = lines(upcoming._context_id(1, task))
+        context = lines(context_id(1, task))
         assert len(work) > 1 and len(context) > 1
 
         assert all(line[drop_column(0)] == " " for line in work[1:])

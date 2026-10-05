@@ -182,11 +182,11 @@ async def test_todo_tree_layout():
         await pilot.press("n")
         await commit_line(pilot, "nixos")
 
-        table = tree.current.make_renderable()
+        table = tree.render_row(tree._rows[tree.current.id])
         assert table.columns[0].header == "status"
 
         app.api.layouts.todo_layout = [TodoWidget.description]
-        table = tree.current.make_renderable()
+        table = tree.render_row(tree._rows[tree.current.id])
         assert table.columns[0].header == "description"
 
 

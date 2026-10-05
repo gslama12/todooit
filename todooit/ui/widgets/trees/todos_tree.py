@@ -1,5 +1,5 @@
 from functools import partial
-from typing import TYPE_CHECKING, Any, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 from rich.console import RenderableType
 from rich.markup import escape
@@ -14,14 +14,17 @@ from todooit.api import (
     Todo,
     Project,
     TodoGroup,
-    TodoRow,
     freeze_sort_order,
     move_todo_to_bin,
     restore_todo,
-    sort_todos,
 )
-from todooit.api.fixed_projects import PATH_SEPARATOR
 from todooit.api.placement import home_of
+from todooit.ui.pane_layout import (
+    PaneRow,
+    drawn_children,
+    project_groups,
+    todo_rows,
+)
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
@@ -57,15 +60,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     # to the right that need tying back to the description; projects don't.
     ROW_SHADE = 0.4
 
-    # Whether a row is followed by its own children. True for whole-task
-    # panes; a pane that gathers loose todos (parents off-screen) draws a flat list.
-    show_children = True
-
     def __init__(self, model: Model) -> None:
         super().__init__(model, TodoRenderDict(self))
-
-        # Indices where shading falls, computed block by block while building rows
-        self._shaded_rows: Set[int] = set()
 
     @property
     def row_shade(self) -> Color:
@@ -74,22 +70,14 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         theme = self.api.vars.theme
         return Color.parse(blend(theme.background1, theme.background2, self.ROW_SHADE))
 
-    @property
-    def _body_offset(self) -> int:
-        """Index of the first row that is a todo rather than the column header"""
-
-        if self._options and self._options[0].id == self.HEADER_ID:
-            return 1
-
-        return 0
-
-    def _is_shaded(self, index: int) -> bool:
-        """Whether the option at `index` is a banded row (precomputed, so headings never count and blocks restart unshaded)."""
+    def _is_shaded(self, option: Option) -> bool:
+        """Whether a row is banded (laid out per block, so headings never count and blocks restart unshaded)."""
 
         if not self.api.vars.row_shading:
             return False
 
-        return (index - self._body_offset) in self._shaded_rows
+        row = self._rows.get(option.id or "")
+        return row is not None and row.shaded
 
     def _get_option_render(self, option: Option, style: Style) -> List[Strip]:
         """Bands rows, skipping the highlighted one (cursor owns its background) and any still flashing."""
@@ -101,24 +89,16 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             not flashing
             and index is not None
             and index != self.highlighted
-            and self._is_shaded(index)
+            and self._is_shaded(option)
         ):
             style += Style(background=self.row_shade)
 
         return super()._get_option_render(option, style)
 
     def visible_children(self, model: Model) -> List[Todo]:
-        """
-        Children this pane has a row for: those living where their parent row
-        does (see placement). A project draws only the todos whose home it is;
-        a row draws the steps that share its home, so a completed step stays
-        under its open parent while a step binned on its own leaves for the Bin.
-        """
+        """Children this pane has a row for, in its order (see pane_layout)."""
 
-        home = model if isinstance(model, Project) else home_of(model)
-        todos = [todo for todo in model.todos if home_of(todo) is home]
-
-        return sort_todos(todos, self.sort_mode)
+        return drawn_children(model, self.sort_mode)
 
     @property
     def sort_mode(self) -> Optional[str]:
@@ -175,140 +155,40 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         self._drop_sort()
         super().shift_down()
 
-    def _heading_id(self, index: int) -> str:
-        return f"todooit-todo-group-{index}"
-
-    def _make_heading(self, label: str, space_above: bool) -> GroupHeading:
+    def make_heading(self, row: PaneRow) -> GroupHeading:
         theme = self.api.vars.theme
 
         return GroupHeading(
-            label=label,
+            label=row.label,
             label_style=blend(theme.foreground1, theme.background1, HEADING_FADE),
             rule_style=theme.background3,
-            space_above=space_above,
+            space_above=bool(row.block),
         )
+
+    def make_context(self, row: PaneRow) -> RenderableType:
+        """A dimmed, disabled rendering of a task shown only as context for its own steps below."""
+
+        return Styled(self.render_row(row), "dim")
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
-        """
-        The blocks of rows the pane draws: this project's own todos first (unlabelled),
-        then a labelled block per nested sub-project (however deep), so work isn't
-        hidden just because it lives one level down. Empty blocks are dropped.
-        """
+        """The blocks of rows the pane draws (see pane_layout.project_groups)."""
 
-        groups = [TodoGroup(todos=self.visible_children(self.model))]
+        return project_groups(self.model, self.sort_mode)
 
-        if isinstance(self.model, Project):
-            groups.extend(self._sub_project_groups(self.model))
+    def layout(self) -> List[PaneRow]:
+        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expaned)
 
-        return [group for group in groups if group.todos]
+    def option_for(self, row: PaneRow) -> Option:
+        """Headings and context rows are drawn but never land the cursor."""
 
-    def _sub_project_groups(self, project: Project) -> List[TodoGroup]:
-        """
-        A block per nested sub-project, in projects-pane order, labelled by its
-        full path down from here (not just its own name) to disambiguate
-        same-named sub-projects at different depths.
-        """
+        if row.is_heading:
+            return self.static_row(row.id, partial(self.make_heading, row))
 
-        groups: List[TodoGroup] = []
+        if row.is_context:
+            return self.static_row(row.id, partial(self.make_context, row))
 
-        def walk(parent: Project, prefix: str) -> None:
-            for child in parent.projects:
-                label = f"{prefix}{child.description}"
-                groups.append(
-                    TodoGroup(todos=self.visible_children(child), label=label)
-                )
-                walk(child, f"{label}{PATH_SEPARATOR}")
-
-        walk(project, "")
-        return groups
-
-    def _body_options(self) -> List[Option]:
-        """Every block of the pane, each under its own heading."""
-
-        options: List[Option] = []
-        self._shaded_rows = set()
-
-        for index, group in enumerate(self.todo_groups):
-            if group.label:
-                options.append(
-                    self.static_row(
-                        self._heading_id(index),
-                        partial(self._make_heading, group.label, bool(index)),
-                    )
-                )
-
-            # Counts real rows only, so context/heading rows don't disturb the banding
-            row = 0
-
-            for todo, is_context in self._group_rows(group.rows):
-                if is_context:
-                    options.append(
-                        self.static_row(
-                            self._context_id(index, todo),
-                            partial(self._make_context, index, todo.uuid),
-                        )
-                    )
-                    continue
-
-                if row % 2:
-                    self._shaded_rows.add(len(options))
-
-                row += 1
-                options.append(Option("", id=self._renderers[todo.uuid].id))
-
-        return options
-
-    def _context_id(self, group: int, todo: Todo) -> str:
-        """
-        Id for a context row, keyed by its position rather than the todo — the same
-        task can be context for more than one block (e.g. steps on different days).
-        """
-
-        return f"todooit-todo-context-{group}-{todo.id}"
-
-    def _make_context(self, group: int, uuid: str) -> RenderableType:
-        """A dimmed, disabled rendering of a task shown only as context for its own steps below."""
-
-        return Styled(self._renderers[uuid].prompt, "dim")
-
-    def _group_rows(self, rows: List[TodoRow]) -> List[Tuple[Todo, bool]]:
-        """
-        The rows a block draws in order, each flagged as context-only or not. A row
-        that draws its own steps is followed by its expanded children; a row the
-        block picked steps for only by those, and a context row always shows them.
-        """
-
-        drawn: List[Tuple[Todo, bool]] = []
-
-        for row in rows:
-            drawn.append((row.todo, row.is_context))
-
-            if row.under is None:
-                drawn.extend((todo, False) for todo in self._steps_of(row.todo))
-            elif row.is_context or self.is_node_expaned(row.todo.uuid):
-                drawn.extend(self._group_rows(row.under))
-
-        return drawn
-
-    def _steps_of(self, todo: Todo) -> List[Todo]:
-        """The todos drawn under a row, as far as it's expanded."""
-
-        if not self.draws_rows_under(todo):
-            return []
-
-        rows: List[Todo] = []
-
-        for child in self.visible_children(todo):
-            rows.append(child)
-            rows.extend(self._steps_of(child))
-
-        return rows
-
-    def draws_rows_under(self, model: Any) -> bool:
-        """A pane that never draws children has nothing under any row."""
-
-        return self.show_children and super().draws_rows_under(model)
+        return super().option_for(row)
 
     def _get_parent(self, id: str) -> Optional[Todo]:
         return Todo.from_id(id).parent_todo

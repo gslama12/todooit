@@ -1,14 +1,14 @@
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, List, Optional
 
 from rich.style import Style
 from rich.text import Text
-from textual.widgets.option_list import Option
 
-from todooit.api import FixedProject, Todo, TodoGroup, TodoRow
+from todooit.api import FixedProject, Todo, TodoGroup
 from todooit.api.fixed_projects import PATH_SEPARATOR
 from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
+from todooit.ui.pane_layout import PaneRow
 from todooit.ui.api.widgets import TodoWidget
 from todooit.utils import blend
 from .todos_tree import TodosTree
@@ -48,122 +48,16 @@ class FixedTodosTree(TodosTree):
     says where it came from.
     """
 
-    # A row that draws its own steps (the log, the bin) does so exactly as its
-    # own project would; a day pane picks the steps each row draws instead
-    show_children = True
-    show_guides = True
-
-    def __init__(self, model: FixedProject) -> None:
-        super().__init__(model)
-
-        # uuids of rows that open a block: where guides stop and owner names start
-        self._row_roots: Set[str] = set()
-
-        # A todo can be drawn in several blocks (as work in one, as context in
-        # others), each time with other rows beside and under it, so what the
-        # guides read is kept per (block, uuid) rather than per todo.
-
-        # Is this row the last drawn beside its siblings in its block?
-        self._last_rows: Dict[Tuple[int, str], bool] = {}
-
-        # Did the block pick anything to draw under this row?
-        self._rows_under: Dict[Tuple[int, str], bool] = {}
-
-        # The rows drawn as context, and the one block each work row is in
-        self._context_rows: Set[Tuple[int, str]] = set()
-        self._work_block: Dict[str, int] = {}
-
-        # The block of the row being drawn right now, while it is drawn
-        self._drawing_block: Optional[int] = None
-
     @property
     def model(self) -> FixedProject:
         return self._model
 
-    def _body_options(self) -> List[Option]:
-        self._row_roots = set()
-        self._last_rows = {}
-        self._rows_under = {}
-        self._context_rows = set()
-        self._work_block = {}
-
-        for index, group in enumerate(self.todo_groups):
-            self._row_roots.update(row.todo.uuid for row in group.rows)
-            self._note_drawn(index, group.rows)
-
-        return super()._body_options()
-
-    def _note_drawn(self, block: int, rows: List[TodoRow]) -> None:
-        """Records where each row the block picked falls, for the guides."""
-
-        for row in rows:
-            if row.under is None:
-                continue
-
-            key = (block, row.todo.uuid)
-
-            if row.is_context:
-                self._context_rows.add(key)
-            else:
-                self._work_block[row.todo.uuid] = block
-
-            self._rows_under[key] = bool(row.under)
-
-            for index, child in enumerate(row.under):
-                self._last_rows[(block, child.todo.uuid)] = index == len(row.under) - 1
-
-            self._note_drawn(block, row.under)
-
-    def _in_block(self, block: Optional[int], make: Callable[[], Any]) -> Any:
-        """Draws a row with the guides of the block it is drawn in."""
-
-        self._drawing_block = block
-
-        try:
-            return make()
-        finally:
-            self._drawing_block = None
-
-    def _occurrence(self, model: Any) -> Tuple[Optional[int], str]:
-        block = self._drawing_block
-
-        if block is None:
-            block = self._work_block.get(model.uuid)
-
-        return block, model.uuid
-
-    def prompt_for(self, _id: str) -> Any:
-        block = self._work_block.get(_id)
-
-        if block is None:
-            return super().prompt_for(_id)
-
-        return self._in_block(block, lambda: super(FixedTodosTree, self).prompt_for(_id))
-
-    def _make_context(self, group: int, uuid: str) -> Any:
-        return self._in_block(group, lambda: super(FixedTodosTree, self)._make_context(group, uuid))
-
-    def is_row_root(self, model: Any) -> bool:
-        return model.uuid in self._row_roots or not model.nest_level
-
-    def is_last_row(self, model: Any) -> bool:
-        last = self._last_rows.get(self._occurrence(model))
-
-        return super().is_last_row(model) if last is None else last
-
-    def draws_rows_under(self, model: Any) -> bool:
-        key = self._occurrence(model)
-        under = self._rows_under.get(key)
-
-        if under is None:
-            return super().draws_rows_under(model)
-
-        return under and (key in self._context_rows or self.is_node_expaned(model.uuid))
-
     def _get_parent(self, id: str) -> Optional[Todo]:
         """The parent row, only if this pane also drew it — a gathered row's real parent may be off-screen."""
 
-        if self.is_row_root(Todo.from_id(id)):
+        row = self._rows.get(id)
+
+        if row is not None and row.is_root:
             return None
 
         return super()._get_parent(id)
@@ -251,7 +145,7 @@ class FixedTodosTree(TodosTree):
         # Assembled, not styled whole, so red stays on the mark, not the description
         return Text.assemble((mark, Style(color=theme.red)))
 
-    def row_note(self, model) -> Text:
+    def row_note(self, model, row: PaneRow) -> Text:
         """
         Shows the source project's name after a row's description, for fixed projects
         grouped by something other than project (those already say it via headings).
@@ -262,7 +156,7 @@ class FixedTodosTree(TodosTree):
         if not self.model.show_owning_project or not isinstance(model, Todo):
             return Text()
 
-        if not self.is_row_root(model):
+        if not row.is_root:
             return Text()
 
         name = self._owner_name(model)
