@@ -16,6 +16,7 @@ from todooit.ui.screens.search import (
     NO_NOTE_MATCHES,
     PANEL_TITLE,
     SearchScreen,
+    note_hits,
     snippet,
 )
 from todooit.ui.tui import Todooit
@@ -323,6 +324,53 @@ async def test_note_matches_rank_a_word_start_first():
         await pilot.press(*list(" grocer"))
         await pilot.pause()
         assert [match.todo.description for match in screen._matches] == ["apps"]
+
+
+def test_note_hits_finds_every_occurrence():
+    note = "Invoice sent\nnothing here\n- the invoice, and the invoice again"
+
+    assert [(hit.row, hit.column) for hit in note_hits(note, "invoice")] == [
+        (0, 0),
+        (2, 6),
+        (2, 23),
+    ]
+    assert note_hits(note, "missing") == []
+
+
+async def test_every_occurrence_in_a_note_is_listed():
+    async with run_pilot() as pilot:
+        await seed(pilot)
+        write_notes(
+            {
+                "apps": "invoice one\nsomething else\n- invoice two and invoice three",
+                "apple": "the invoice",
+            }
+        )
+        screen = await open_search(pilot)
+        await type_note_query(pilot, "invoice")
+
+        # Each occurrence is a match of its own, a task's kept together and
+        # in the order they come in its note
+        assert [
+            (match.todo.description, match.hit.row, match.hit.column)
+            for match in screen._matches
+        ] == [
+            ("apple", 0, 4),
+            ("apps", 0, 0),
+            ("apps", 2, 2),
+            ("apps", 2, 18),
+        ]
+        assert screen.panel.border_subtitle == "1 of 4"
+
+        # Picking a later one opens the note there, not on the first
+        await pilot.press("down", "down", "down", "enter")
+        await pilot.pause()
+        await pilot.pause()
+
+        note = pilot.app.screen
+        assert isinstance(note, NoteScreen)
+        assert note.todo.description == "apps"
+        assert note.editor.cursor_location == (2, 18)
 
 
 async def test_note_matches_keep_the_blocks():

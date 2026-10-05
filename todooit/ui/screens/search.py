@@ -1,8 +1,9 @@
 """Finder: searches every task in the DB, regardless of which pane is open, and
 hands back the one picked (`MainScreen.reveal_todo` navigates to it).
 
-A query starting with `>` searches notes instead of descriptions; the match
-also carries the note line it was found on, so the note can open there.
+A query starting with `>` searches notes instead of descriptions; every
+occurrence is its own match, carrying the note line it was found on, so the
+note can open there.
 """
 
 import re
@@ -201,13 +202,31 @@ def rank(candidate: Candidate, terms: Sequence[str]) -> Optional[tuple]:
     return (candidate.section, position, _due_key(candidate.todo), description)
 
 
+def note_hits(note: str, lead: str) -> List[NoteHit]:
+    """Every place in a note the term occurs, in reading order -- several on one
+    line each count, since each opens the note at a different column.
+    """
+
+    hits = []
+
+    for row, line in enumerate(note.split("\n")):
+        lower = line.lower()
+        column = lower.find(lead)
+
+        while column != -1:
+            hits.append(NoteHit(row, column, line))
+            column = lower.find(lead, column + len(lead))
+
+    return hits
+
+
 def rank_note(
     candidate: Candidate, note: str, terms: Sequence[str]
-) -> Optional[Tuple[tuple, NoteHit]]:
+) -> Optional[Tuple[tuple, List[NoteHit]]]:
     """Like `rank`, but matching against the note instead of the description.
 
-    Returns the sort key plus the first line containing the first term (used
-    as the hit location; later terms may be elsewhere in the note).
+    Returns the sort key plus every occurrence of the first term (used as the
+    hit locations; later terms may be elsewhere in the note).
     """
 
     lower = note.lower()
@@ -216,17 +235,9 @@ def rank_note(
         return None
 
     lead = terms[0]
-    lines = note.split("\n")
-    hit = None
+    hits = note_hits(note, lead)
 
-    for row, line in enumerate(lines):
-        column = line.lower().find(lead)
-
-        if column != -1:
-            hit = NoteHit(row, column, line)
-            break
-
-    if hit is None:  # pragma: no cover - the lead is in the note, so on a line
+    if not hits:  # pragma: no cover - the lead is in the note, so on a line
         return None
 
     words = re.findall(r"\w[\w'-]*|\S", lower)
@@ -235,13 +246,15 @@ def rank_note(
     description = candidate.todo.description.lower()
     order = (candidate.section, position, _due_key(candidate.todo), description)
 
-    return order, hit
+    return order, hits
 
 
 def search_notes(
     pool: Sequence[Candidate], notes: Dict[int, str], query: str
 ) -> List[Candidate]:
-    """Tasks whose notes answer the query, best first, each with its matched line."""
+    """Every occurrence in the notes that answers the query, one match each: best
+    task first, and a task's own occurrences in the order they appear in its note.
+    """
 
     terms = query.lower().split()
 
@@ -258,9 +271,20 @@ def search_notes(
 
         ranked = rank_note(candidate, note, terms)
 
-        if ranked is not None:
-            order, hit = ranked
-            matches.append(Match(candidate._replace(hit=hit), order))
+        if ranked is None:
+            continue
+
+        order, hits = ranked
+
+        # The task's id keeps a task's hits together even when two tasks rank
+        # alike (same title, no deadline)
+        for hit in hits:
+            matches.append(
+                Match(
+                    candidate._replace(hit=hit),
+                    order + (candidate.todo.id, hit.row, hit.column),
+                )
+            )
 
     matches.sort(key=lambda match: match.order)
     return [match.candidate for match in matches]
