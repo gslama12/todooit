@@ -61,6 +61,19 @@ isolated instance; `todooit --dev` is shorthand for one at
 `~/.local/share/todooit-dev`, handy for trying changes out without touching your
 real todos.
 
+### Coming from dooit
+
+```bash
+uv run python migration/db_migration.py            # reads ~/.local/share/dooit/dooit.db
+uv run python migration/db_migration.py --dry-run  # what would move, nothing written
+```
+
+This copies a dooit v3 database into todooit's. The dooit file is opened
+read-only, and an existing todooit database is only replaced with `--force`,
+which backs it up first. Effort is dropped, and minute recurrences round up to
+hours. Details are in
+[Migrating from dooit](https://gslama12.github.io/todooit/reference/data#migrating-from-dooit).
+
 ## Contributing
 
 ```bash

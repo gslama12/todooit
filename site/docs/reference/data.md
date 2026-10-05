@@ -14,8 +14,8 @@ exact paths follow the platform. On Linux and WSL:
 `todooit config-loc` prints the config path on your machine.
 
 Nothing here touches a dooit install — todooit has its own directories.
-todooit uses a different database schema than dooit and is therefore not
-compatible with a dooit database.
+todooit uses a different database schema than dooit, so it can't open a dooit
+database directly. [Migrate it](#migrating-from-dooit) once instead.
 
 ## One self-contained instance
 
@@ -40,13 +40,68 @@ without touching your real todos.
 
 SQLite through SQLAlchemy. The schema, indexes included, is created from the
 models on first connect. Existing tables are never altered, so there are no
-migrations: a database has to match the current schema.
+migrations between todooit versions: a database has to match the current
+schema. The one exception is a dooit database,
+[migrated once](#migrating-from-dooit) into a new file.
 
 ::: tip Writing to the database from outside
 The app reads the database when it starts and does not watch it afterwards.
 Rows written by another process while it is running (a script using
 `todooit.api`, a second todooit) show up after a restart.
 :::
+
+## Migrating from dooit
+
+`migration/db_migration.py` copies a [dooit](https://github.com/dooit-org/dooit)
+v3 database into a new todooit database. Run it from a checkout of the repo:
+
+```bash
+uv run python migration/db_migration.py                     # dooit's own ~/.local/share/dooit/dooit.db
+uv run python migration/db_migration.py path/to/dooit.db    # any other dooit database
+uv run python migration/db_migration.py --dry-run           # report only, write nothing
+```
+
+It writes the database todooit opens: `$TODOOIT_HOME/todooit.db` when
+`TODOOIT_HOME` is set, otherwise `~/.local/share/todooit/todooit.db`. To try a
+migration without touching your real todos, point it at a separate instance:
+
+```bash
+TODOOIT_HOME=~/scratch/todooit uv run python migration/db_migration.py
+TODOOIT_HOME=~/scratch/todooit todooit
+```
+
+**Safety**
+
+- The dooit database is opened read-only and never changed.
+- If a todooit database already exists, the script refuses to run. With
+  `--force` it moves the existing file aside to `todooit.db.bak-<timestamp>`
+  in the same directory, then writes the new one.
+- The new database is built in a temporary file and only renamed into place
+  once it's complete, so a failed run leaves nothing behind.
+- Only dooit v3 databases are accepted (v3.0 to v3.3.4 share one schema).
+  Anything else, including a todooit database, is rejected without writing
+  anything.
+
+**What carries over**
+
+| dooit | todooit |
+| --- | --- |
+| workspaces | projects, with the same tree, names and order |
+| todos and their steps | todos and steps, with the same descriptions, order and status |
+| urgency 1 / 2 / 3 / 4 | priority none / p3 / p2 / p1 |
+| due date | due date |
+| recurrence | a cadence (`3d`, `2w`, `5h`); the todo's due date becomes its scheduled date, since a recurring todo has no due date |
+
+**What doesn't**
+
+- **Effort** has no todooit equivalent and is dropped. The summary counts how
+  many todos had one.
+- **Recurrence in minutes.** dooit's `m` meant minutes. todooit has no minutes,
+  and its `m` is a month. An interval that isn't a whole number of hours is
+  rounded up to whole hours (at least `1h`), and the script prints a warning
+  naming each todo it changed.
+- **Completion dates.** dooit never recorded when a todo was completed, so
+  completed todos have none and sort last in Completed.
 
 ## Backing up
 

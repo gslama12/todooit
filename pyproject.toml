@@ -84,6 +84,7 @@ markers = [
   "lifecycle: the todo lifecycle and the one refresh signal",
   "placement: where a todo lives (its home, root and bin row)",
   "layout: the rows a pane draws (guides, blocks, context rows, banding)",
+  "migration: migrating a dooit database (migration/db_migration.py)",
 ]
 
 [tool.ruff.lint]

@@ -39,8 +39,9 @@ also exist as their own worktrees (`<repo>.git/dev`, `<repo>.git/main`).
   worktree, reuse that one instead of creating a new one.
 - Commiting change or removing a worktree (`git worktree remove`) is **not allowed**.
 - Don't read/edit files outside the current worktree unless asked.
-- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are not shared between worktrees. DB migrations *are* shared project-wide (`docs/db.md`) - be careful running
-  destructive ones from a feature worktree.
+- `node_modules`, `.env`, `.venv` build artifacts, and dev-server ports are not shared between worktrees. The live database
+  *is* shared project-wide (`site/docs/reference/data.md`) - never point
+  anything destructive at it from a feature worktree.
 - Every worktree gets its **own todooit instance** (database, cache and venv)
   — see [Worktree instances](#worktree-instances). Use it for everything you
   run; never touch the live instance or another worktree's.
@@ -89,8 +90,10 @@ todooit's data is separate from any dooit install (paths resolved in
 - CSS cache: `~/.cache/todooit`
 - config dir: `~/.config/todooit` (unused, see above)
 
-todooit uses a different database schema than dooit and is therefore not
-compatible with a dooit database.
+todooit uses a different database schema than dooit, so it can't open a dooit
+database directly. `migration/db_migration.py` copies a dooit v3 database into
+a new todooit one. It lives outside the package on purpose: migration code
+imports `todooit`, never the other way round.
 
 **Dev instance:** `TODOOIT_HOME=<dir>` relocates DB/cache/config into one
 self-contained directory, so development never touches the live data. Unset,

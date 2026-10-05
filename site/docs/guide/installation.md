@@ -141,6 +141,13 @@ todooit
 
 :::
 
+## Coming from dooit
+
+`uv run python migration/db_migration.py` copies your dooit database into
+todooit. Your dooit database is left as it is. See
+[Migrating from dooit](/reference/data#migrating-from-dooit) for what carries
+over.
+
 ## Try it without touching your todos
 
 ```bash

@@ -36,6 +36,7 @@ FEATURE_BY_MODULE = {
     "test_theme_css": "theming",
     "test_paths": "persistence",
     "test_sync": "persistence",
+    "test_db_migration": "migration",
     # tests/test_ui
     "test_startup": "shell",
     "test_navigation": "shell",
