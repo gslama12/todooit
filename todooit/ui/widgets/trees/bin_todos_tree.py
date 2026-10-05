@@ -8,8 +8,6 @@ class BinTodosTree(FixedTodosTree):
     Nothing here can be ticked off — only restored or deleted for good.
     """
 
-    shows_binned = True
-
     # A binned task can't be worked on, so it can't be broken into new steps either
     takes_new_steps = False
 

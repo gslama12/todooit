@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from ..utils.day_names import day_label
 from .manager import manager
+from .placement import project_of
 from .project import Project
 from .todo import Todo, priority_key
 
@@ -57,18 +58,6 @@ class TodoGroup:
     def __post_init__(self) -> None:
         if not self.rows:
             self.rows = [TodoRow(todo) for todo in self.todos]
-
-
-def owning_project(todo: Todo) -> Optional[Project]:
-    """
-    The project a todo belongs to, however deeply nested
-    """
-
-    node = todo
-    while node.parent_project is None and node.parent_todo is not None:
-        node = node.parent_todo
-
-    return node.parent_project
 
 
 def _day_rows(gathered: List[Todo]) -> List[TodoRow]:
@@ -312,7 +301,7 @@ class TodayProject(FixedProject):
         projects: Dict[int, Project] = {}
 
         for todo in _scheduled(before=end):
-            project = owning_project(todo)
+            project = project_of(todo)
 
             if project is None:  # pragma: no cover
                 continue

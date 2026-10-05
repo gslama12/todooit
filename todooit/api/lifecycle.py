@@ -17,6 +17,8 @@ from enum import Enum
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Union
 
 from .manager import manager
+from .placement import root_of
+from .recycle import revive_home
 from .todo import Todo
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -76,6 +78,8 @@ class Outcome:
     # The new scheduled date, when completing advanced a recurring todo
     advanced_to: Optional[datetime] = None
     overrides: List[Override] = field(default_factory=list)
+    # Projects rebuilt to give a reopened orphan somewhere to live
+    revived: List["Project"] = field(default_factory=list)
 
     @property
     def advanced(self) -> bool:
@@ -149,13 +153,15 @@ def reopen(todo: Todo) -> Outcome:
     """
     Reopen a todo's whole family and all its ancestors
 
-    Nothing a completion removed comes back: undo is for that.
+    Nothing a completion removed comes back: undo is for that. A task whose
+    project was dropped while it sat completed is filed back under its origin
+    path, so an open todo always has a project to live in.
     """
 
     _reopen_all([*todo.ancestors, *todo.family])
 
     manager.save(todo)
-    return Outcome(todo)
+    return Outcome(todo, revived=revive_home(root_of(todo)))
 
 
 def schedule(todo: Todo, when: Optional[datetime]) -> Outcome:

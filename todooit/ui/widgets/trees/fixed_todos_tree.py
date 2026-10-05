@@ -6,7 +6,8 @@ from rich.text import Text
 from textual.widgets.option_list import Option
 
 from todooit.api import FixedProject, Todo, TodoGroup, TodoRow
-from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
+from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
 from todooit.ui.api.widgets import TodoWidget
 from todooit.utils import blend
@@ -278,7 +279,7 @@ class FixedTodosTree(TodosTree):
     def _owner_name(todo: Todo) -> str:
         """The name of the project a row belongs to, whether or not it still exists."""
 
-        project = owning_project(todo)
+        project = project_of(todo)
 
         if project is not None:
             return project.description

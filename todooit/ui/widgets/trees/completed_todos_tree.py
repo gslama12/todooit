@@ -1,17 +1,7 @@
-from todooit.api import Todo, revive_home
+from todooit.api import Todo
+from todooit.api.placement import root_of
 from todooit.ui.api.events import RevealTodo
 from .fixed_todos_tree import FixedTodosTree
-
-
-def family_root(todo: Todo) -> Todo:
-    """The top-level task a todo belongs to: itself, or whatever it's a step of."""
-
-    node = todo
-
-    while node.parent_todo is not None:
-        node = node.parent_todo
-
-    return node
 
 
 class CompletedTodosTree(FixedTodosTree):
@@ -41,14 +31,10 @@ class CompletedTodosTree(FixedTodosTree):
 
         super().toggle_complete()
 
-        root = family_root(todo)
+        root = root_of(todo)
 
         # Ticked off again rather than unticked: stays in the log
         if not root.is_pending:
             return
-
-        # Its project may have been dropped while it sat here; rebuild it to
-        # give the now-pending task somewhere to live
-        self.announce_revived(revive_home(root))
 
         self.post_message(RevealTodo(todo))

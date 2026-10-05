@@ -9,7 +9,7 @@ from rich.style import Style as RichStyle
 from rich.styled import Styled
 from textual.style import Style
 
-from todooit.api import Todo
+from todooit.api import Todo, move_project_to_bin, restore_todo
 from todooit.ui.widgets.renderers.base_renderer import GUIDE_BLANK, GUIDE_LAST_BRANCH
 from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 from todooit.ui.widgets.trees.model_tree import ModelTree
@@ -588,6 +588,46 @@ async def test_unticking_a_step_in_completed_goes_to_the_step():
         assert visible_todos(app) is tree
         assert tree.current_model is step
         assert (tree.id, step.uuid) in flashes
+
+
+async def test_unticking_a_task_whose_project_was_dropped_rebuilds_it():
+    """
+    The log can hold a task whose project has since gone to the Bin;
+    unticking it rebuilds the project, says so, and goes there
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        project = app.api.vars.projects_tree.model.add_project()
+        project.description = "abandoned"
+        project.save()
+        todo = project.add_todo()
+        todo.description = "not quite done"
+        todo.save()
+        todo.toggle_complete()
+
+        move_project_to_bin(project)
+        restore_todo(todo)
+        app.api.vars.projects_tree.force_refresh()
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+
+        await pilot.press("c")
+        await settle(pilot)
+
+        revived = todo.parent_project
+        assert todo.is_pending
+        assert revived is not None
+        assert revived.description == "revived - abandoned"
+
+        assert visible_todos(app).model is revived
+        assert visible_todos(app).current_model is todo
+
+        message = notification_message(app)
+        assert message is not None and "abandoned" in message
 
 
 async def test_reticking_in_completed_stays_put():

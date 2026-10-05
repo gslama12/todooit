@@ -82,6 +82,7 @@ markers = [
   "editing: inline editing and the cursor",
   "config: the config API, loader and keys",
   "lifecycle: the todo lifecycle and the one refresh signal",
+  "placement: where a todo lives (its home, root and bin row)",
 ]
 
 [tool.ruff.lint]

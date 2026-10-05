@@ -12,6 +12,7 @@ from typing import List, Optional
 
 from .fixed_projects import PATH_SEPARATOR, binned_tasks, project_path
 from .manager import manager
+from .placement import bin_row_of
 from .project import Project
 from .todo import Todo
 
@@ -35,19 +36,6 @@ def move_todo_to_bin(todo: Todo) -> None:
     todo.save()
 
 
-def binned_root(todo: Todo) -> Todo:
-    """
-    The topmost binned ancestor of a binned todo (the row the Bin shows)
-    """
-
-    node = todo
-
-    while node.parent_todo is not None and node.parent_todo.is_binned:
-        node = node.parent_todo
-
-    return node
-
-
 def restore_todo(todo: Todo) -> List[Project]:
     """
     Restore a binned todo's whole task; returns any projects that had to be rebuilt
@@ -55,7 +43,7 @@ def restore_todo(todo: Todo) -> List[Project]:
     Completed tasks stay orphaned (they live in the Completed log) until unticked.
     """
 
-    todo = binned_root(todo)
+    todo = bin_row_of(todo)
 
     for node in todo.family:
         node.binned_at = None

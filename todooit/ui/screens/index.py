@@ -6,8 +6,6 @@ from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher, Static
 from todooit.api import (
-    BIN,
-    COMPLETED,
     TODAY,
     ChangedRows,
     Todo,
@@ -30,8 +28,8 @@ from todooit.ui.api.events import (
     SpawnSearch,
     BarNotification,
 )
-from todooit.api.fixed_projects import owning_project, project_path
-from todooit.ui.api.events.events import ProjectType
+from todooit.api.fixed_projects import project_path
+from todooit.api.placement import home_of
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
 from todooit.ui.widgets import BarSwitcher, ModelTree
 from .base import BaseScreen
@@ -40,7 +38,7 @@ from .help import HelpScreen
 from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
-from .search import Found, SearchScreen, task_root
+from .search import Found, SearchScreen
 
 
 # Max rows a history step flashes individually; past this, the bar's count
@@ -352,7 +350,7 @@ class MainScreen(BaseScreen):
         on redraw, which would otherwise snap the tasks pane back to a stale project.
         """
 
-        project = self.pane_of(todo)
+        project = home_of(todo)
 
         if project is None:  # pragma: no cover
             return
@@ -369,10 +367,8 @@ class MainScreen(BaseScreen):
 
         tree = await self.show_project(project)
 
-        step = todo.parent_todo
-        while step is not None:
+        for step in todo.ancestors:
             tree.expanded_nodes[step.uuid] = True
-            step = step.parent_todo
 
         tree.force_refresh()
         self.app.set_focus(tree)
@@ -382,33 +378,15 @@ class MainScreen(BaseScreen):
         self.point_at(tree, todo)
 
     @staticmethod
-    def pane_of(todo: Todo) -> Optional[ProjectType]:
-        """Pane a task is found in: its own project while pending, else the fixed
-        Completed/Bin pane it moved to.
-        """
-
-        if todo.is_binned:
-            return BIN
-
-        if not task_root(todo).pending:
-            return COMPLETED
-
-        return owning_project(todo)
-
-    @staticmethod
     def point_at(tree: TodosTree, todo: Todo) -> None:
         """Put the cursor on a task, or the nearest ancestor drawn in the pane
         (fixed panes gather whole tasks, not their steps).
         """
 
-        node: Optional[Todo] = todo
-
-        while node is not None:
+        for node in [todo, *todo.ancestors]:
             if tree.highlight_id_if_shown(node.uuid):
                 tree.flash_row(node.uuid)
                 return
-
-            node = node.parent_todo
 
     @on(StartFieldEdit)
     def start_field_edit(self, event: StartFieldEdit):

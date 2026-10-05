@@ -12,7 +12,8 @@ from rich.style import Style
 from rich.text import Text
 
 from todooit.api import Project, Todo
-from todooit.api.fixed_projects import owning_project, project_path
+from todooit.api.fixed_projects import project_path
+from todooit.api.placement import project_of
 from todooit.utils.project_complete import Token
 
 from .panel import HINT_GAP, PROJECT_ICON, PanelScreen
@@ -147,7 +148,7 @@ class MoveScreen(ProjectCompletion, PanelScreen):
         return Text(f"{PROJECT_ICON} {name}", style=Style(color=color))
 
     def _where_it_is(self) -> str:
-        project = owning_project(self.todo)
+        project = project_of(self.todo)
 
         return project_path(project) if project else NOWHERE
 

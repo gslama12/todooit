@@ -20,7 +20,8 @@ from todooit.api import (
     restore_todo,
     sort_todos,
 )
-from todooit.api.fixed_projects import PATH_SEPARATOR, owning_project
+from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api.placement import home_of
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
@@ -106,23 +107,16 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return super()._get_option_render(option, style)
 
-    # Whether this pane draws binned todos or non-binned ones — a todo is in
-    # exactly one bucket, so panes never show both
-    shows_binned = False
-
     def visible_children(self, model: Model) -> List[Todo]:
         """
-        Children this pane has a row for. A top-level completed/binned todo has moved
-        to Completed/the Bin respectively; a completed *step* stays put under its
-        still-pending parent.
+        Children this pane has a row for: those living where their parent row
+        does (see placement). A project draws only the todos whose home it is;
+        a row draws the steps that share its home, so a completed step stays
+        under its open parent while a step binned on its own leaves for the Bin.
         """
 
-        if isinstance(model, Todo):
-            todos = list(model.todos)
-        else:
-            todos = [todo for todo in model.todos if todo.pending]
-
-        todos = [todo for todo in todos if todo.is_binned == self.shows_binned]
+        home = model if isinstance(model, Project) else home_of(model)
+        todos = [todo for todo in model.todos if home_of(todo) is home]
 
         return sort_todos(todos, self.sort_mode)
 
@@ -467,6 +461,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             self.flash_row(todo.uuid)
 
         self.tell_outcome(outcome)
+        self.announce_revived(outcome.revived)
 
     def set_priority(self, priority: int):
         assert isinstance(self.current_model, Todo)
@@ -498,7 +493,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     @require_highlighted_node
     def goto_item(self):
         """
-        Jumps to the highlighted task's real home project (opened, ancestors unfolded,
+        Jumps to the highlighted todo's home (opened, ancestors unfolded,
         row flashed) — relevant for fixed/gathered panes where the row lives elsewhere.
         No-ops with a message if already at home.
         """
@@ -506,7 +501,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         todo = self.current_model
         assert isinstance(todo, Todo)
 
-        home = owning_project(todo)
+        home = home_of(todo)
 
         if home is not None and home.uuid == self.model.uuid:
             self.post_message(

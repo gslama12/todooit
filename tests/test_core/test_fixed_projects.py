@@ -20,7 +20,6 @@ from todooit.api.fixed_projects import (
     fixed_project_from_id,
     fixed_project_from_key,
     fixed_projects,
-    owning_project,
     project_path,
 )
 from tests.test_core.core_base import *  # noqa
@@ -58,16 +57,6 @@ def test_fixed_projects_cannot_be_mistaken_for_stored_ones():
     assert COMPLETED.pinned_bottom and BIN.pinned_bottom
     assert COMPLETED.muted and BIN.muted
     assert not TODAY.pinned_bottom
-
-
-def test_owning_project(create_project):
-    p = create_project("home")
-    task = p.add_todo()
-    step = task.add_todo()
-    sub_step = step.add_todo()
-
-    assert owning_project(task) == p
-    assert owning_project(sub_step) == p
 
 
 def test_project_path(create_project):
