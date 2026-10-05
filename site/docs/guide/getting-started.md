@@ -49,7 +49,7 @@ c        tick it off
   — see [Search, move & clipboard](/guide/search-move).
 - `xx` throws a task away and `ctrl+z` takes back the last change — see
   [Undo & the Bin](/guide/undo-bin).
-- `ctrl+q` quits. `ctrl+c` is a copy here, as it is everywhere else.
+- `q` quits. `ctrl+c` is a copy here, as it is everywhere else.
 
 The whole list of keys is on [Keybindings](/guide/keybindings), and `?` shows
 the same list in the app.

@@ -4,8 +4,8 @@ Pane layout: the rows a pane draws, finished
 Turns what a pane shows (a project's todos, a fixed project's blocks, the
 project tree) into the rows it draws, in order, in one pass: headings, context
 rows and model rows, each with its tree guides, whether a line drops from it
-into rows below, whether it starts a family, and whether it is banded. The
-trees only paint these rows; nothing here knows about Textual.
+into rows below and whether it starts a family. The trees only paint these
+rows; nothing here knows about Textual.
 """
 
 from dataclasses import dataclass, field
@@ -56,7 +56,6 @@ class PaneRow:
     below: str = ""
     drops: bool = False
     is_root: bool = True
-    shaded: bool = False
 
     @property
     def is_heading(self) -> bool:
@@ -185,7 +184,7 @@ def _guides(prefix: str, depth: int, last: bool) -> Tuple[str, str]:
 def _flatten(nodes: List[_Node], block: int, out: List[PaneRow]) -> None:
     """Appends a block's nodes depth first, each row's guides read off its drawn siblings"""
 
-    _walk(nodes, block, "", 0, out, [0])
+    _walk(nodes, block, "", 0, out)
 
 
 def _walk(
@@ -194,18 +193,12 @@ def _walk(
     prefix: str,
     depth: int,
     out: List[PaneRow],
-    banded: List[int],
 ) -> None:
     for index, node in enumerate(nodes):
         last = index == len(nodes) - 1
         guides, below = _guides(prefix, depth, last)
 
-        if node.is_context:
-            _id, shaded = context_id(block, node.model), False
-        else:
-            # Counts real rows only, so context rows don't disturb the banding
-            _id, shaded = node.model.uuid, bool(banded[0] % 2)
-            banded[0] += 1
+        _id = context_id(block, node.model) if node.is_context else node.model.uuid
 
         out.append(
             PaneRow(
@@ -217,11 +210,10 @@ def _walk(
                 below=below,
                 drops=bool(node.under),
                 is_root=not depth,
-                shaded=shaded,
             )
         )
 
-        _walk(node.under, block, below, depth + 1, out, banded)
+        _walk(node.under, block, below, depth + 1, out)
 
 
 def todo_rows(

@@ -5,9 +5,6 @@ from rich.console import RenderableType
 from rich.markup import escape
 from rich.styled import Styled
 from textual import on
-from textual.color import Color
-from textual.strip import Strip
-from textual.style import Style
 from textual.widgets.option_list import Option
 
 from todooit.api import (
@@ -55,45 +52,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     show_header = True
     CHILDREN_ATTR = "todos"
 
-    # Alternating row shading strength, subtle enough to stay below the
-    # cursor highlight. Only todos rows band — they have columns trailing off
-    # to the right that need tying back to the description; projects don't.
-    ROW_SHADE = 0.4
-
     def __init__(self, model: Model) -> None:
         super().__init__(model, TodoRenderDict(self))
-
-    @property
-    def row_shade(self) -> Color:
-        """The background the shaded half of the rows sits on"""
-
-        theme = self.api.vars.theme
-        return Color.parse(blend(theme.background1, theme.background2, self.ROW_SHADE))
-
-    def _is_shaded(self, option: Option) -> bool:
-        """Whether a row is banded (laid out per block, so headings never count and blocks restart unshaded)."""
-
-        if not self.api.vars.row_shading:
-            return False
-
-        row = self._rows.get(option.id or "")
-        return row is not None and row.shaded
-
-    def _get_option_render(self, option: Option, style: Style) -> List[Strip]:
-        """Bands rows, skipping the highlighted one (cursor owns its background) and any still flashing."""
-
-        index = self._option_to_index.get(option)
-        flashing = (option.id or "") in self._flashing
-
-        if (
-            not flashing
-            and index is not None
-            and index != self.highlighted
-            and self._is_shaded(option)
-        ):
-            style += Style(background=self.row_shade)
-
-        return super()._get_option_render(option, style)
 
     def visible_children(self, model: Model) -> List[Todo]:
         """Children this pane has a row for, in its order (see pane_layout)."""

@@ -74,10 +74,9 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 | --- | --- | --- |
 | `/` | Find a task anywhere in the tree and jump to it | both |
 | `o` | Open the first link written in the highlighted row | both |
-| `q` | Toggle the shading of alternate rows in the todos pane | both |
 | `SP` / `SD` / `SS` | Sort the todos by priority / due date / scheduled date | both |
 | `?` | Show the help screen (while held) | both |
-| `ctrl+q` | Quit | both |
+| `q` | Quit | both |
 
 ## Inside an edit
 

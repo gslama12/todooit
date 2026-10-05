@@ -157,39 +157,14 @@ async def test_selecting_a_project_shows_its_pane():
         assert visible_todos(app).model.uuid == second.uuid
 
 
-async def test_row_shading_toggle():
+async def test_q_quits():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
-        assert app.api.vars.row_shading is False
-
-        await pilot.press("q")
-        await pilot.pause()
-        assert app.api.vars.row_shading is True
-
-        await pilot.press("q")
-        await pilot.pause()
-        assert app.api.vars.row_shading is False
-
-
-async def test_shaded_rows_alternate():
-    async with run_pilot() as pilot:
-        tree = await create_and_move_to_todo(pilot)
-
-        for name in ("one", "two", "three", "four"):
-            await pilot.press("n")
-            await commit_line(pilot, name)
-
         await pilot.press("q")
         await pilot.pause()
 
-        # Every other row, starting unshaded
-        shaded = [
-            Todo.from_id(row.uuid).description
-            for row in tree._rows.values()
-            if row.shaded
-        ]
-        assert shaded == ["two", "four"]
+        assert not app.is_running
 
 
 async def test_a_pane_out_of_sight_catches_up_when_it_comes_forward():

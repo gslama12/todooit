@@ -169,28 +169,6 @@ def test_a_step_binned_on_its_own_leaves_its_family(create_project):
     assert rows[1].guides == GUIDE_LAST_BRANCH
 
 
-def test_banding_skips_every_other_row_and_restarts_per_block(create_project):
-    p = create_project("work")
-    sub = create_project("sub", parent_project=p)
-
-    for project, names in ((p, "abc"), (sub, "de")):
-        for name in names:
-            todo = project.add_todo()
-            todo.description = name
-            todo.save()
-
-    rows = project_pane(p)
-
-    assert [(named([row])[0], row.shaded) for row in rows] == [
-        ("a", False),
-        ("b", True),
-        ("c", False),
-        ("sub", False),
-        ("d", False),
-        ("e", True),
-    ]
-
-
 def test_sub_projects_are_blocks_under_their_path(create_project):
     p = create_project("work")
     sub = create_project("sub", parent_project=p)
@@ -236,10 +214,7 @@ def test_a_context_row_shows_the_work_under_it_even_collapsed(create_project):
     assert context.kind == CONTEXT
     assert context.id == context_id(0, made["task"])
     assert context.drops and context.is_root
-    assert not context.shaded
 
-    # Banding counts the work only
-    assert not rows[2].shaded
     assert rows[2].guides == GUIDE_LAST_BRANCH
 
 

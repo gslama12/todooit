@@ -646,10 +646,8 @@ def key_setup(api: TodooitAPI, _):
     # front: what a search is for here is a task somewhere else in the tree,
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
-    api.keys.set("q", api.toggle_row_shading, group=VIEW)
-    # The one way out of todooit: ctrl+c is a copy here, as it is everywhere
-    # else, and nothing else quits
-    api.keys.set("<ctrl+q>", api.quit, group=VIEW)
+    # The way out of todooit: ctrl+c is a copy here, as it is everywhere else
+    api.keys.set("q", api.quit, group=VIEW)
 
     # The order a project is read in, typed as one chord per order: shifted
     # "S" then the shifted initial of the thing sorted by. Shifted, so that

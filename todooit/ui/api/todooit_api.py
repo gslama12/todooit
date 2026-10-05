@@ -426,14 +426,6 @@ class TodooitAPI:
         # move, so confirm via the bar.
         self.notify(f"Todos sorted by [b]{SORT_LABELS[mode]}[/b]")
 
-    def toggle_row_shading(self):
-        """Toggle the shading of alternate rows in the todos pane"""
-
-        self.vars.row_shading = not self.vars.row_shading
-
-        # Every todos pane redraws, not just the focused one: it's a shared setting.
-        self.app.screen.query(TodosTree).refresh()
-
     def show_note(self):
         """Show and edit the note of the todo"""
         if isinstance(self.focused, TodosTree):

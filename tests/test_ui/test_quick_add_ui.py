@@ -165,13 +165,11 @@ async def test_quick_add_rejects_an_unreadable_line():
 
 
 async def test_quick_add_app_keys_are_letters_here():
-    """`q` toggles shading in the app; in the line it is just a letter"""
+    """`q` quits the app; in the line it is just a letter"""
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
         await new_project(pilot, "inbox")
-
-        shading = app.api.vars.row_shading
 
         await open_quick_add(pilot)
         await pilot.press(*list("quiet quality quest"))
@@ -180,7 +178,7 @@ async def test_quick_add_app_keys_are_letters_here():
 
         (todo,) = Todo.all()
         assert todo.description == "quiet quality quest"
-        assert app.api.vars.row_shading == shading
+        assert app.is_running
 
 
 async def test_quick_add_leaves_the_cursor_on_the_task():

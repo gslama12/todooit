@@ -80,7 +80,6 @@ See [Undo & the Bin](/guide/undo-bin).
 | Key | What it does |
 | --- | --- |
 | `SP` / `SD` / `SS` | Sort the tasks by priority / due date / scheduled date |
-| `q` | Toggle alternating row shading |
 
 Tasks are read by priority to begin with. Moving a row by hand drops the pane
 out of any sort, so the row stays where you put it. Fixed projects order their

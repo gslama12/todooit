@@ -32,7 +32,7 @@ from todooit.ui.api.events import Startup
 
 @subscribe(Startup)
 def setup(api: TodooitAPI, event):
-    api.vars.row_shading = True
+    api.vars.always_expand_todos = True
 ```
 
 | Decorator | When it runs |
@@ -183,7 +183,6 @@ them but `cyan` are also written out as stylesheet variables (`$primary`, …).
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `todo_sort` | `"priority"` | `"priority"`, `"due"`, `"scheduled"` or `None` for filing order |
-| `row_shading` | `False` | Tint alternating task rows |
 | `always_expand_projects` | `False` | Draw projects expanded |
 | `always_expand_todos` | `False` | Draw tasks expanded |
 | `show_confirm` | `True` | Ask before a delete that cannot be undone |

@@ -113,7 +113,6 @@ async def test_every_visible_keybind_has_a_row():
         assert "SP" not in rows
 
         # Named keys are written without their angle brackets
-        assert "ctrl+q" in rows
         assert "ctrl+c" in rows
 
 
