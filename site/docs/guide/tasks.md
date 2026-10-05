@@ -56,6 +56,8 @@ but any step may be planned for a later day.
 | Clear a task's day | Its steps keep theirs |
 | Clear a step's day inside a planned task | The step takes the task's day again |
 | Tick off a repeating step | It moves to its next day; the task keeps its own |
+| Move a task while a step is ticked off | The ticked-off step keeps its day |
+| Reopen that step | It moves up to the task's day again, if it is earlier |
 
 Whenever planning one row moves others, the status bar says so, and `ctrl+z` takes
 it all back.
@@ -71,6 +73,8 @@ A task's due date is a ceiling: any step may be due earlier, none later.
 | Give a step a due date later than its task's | Refused with a warning; the step keeps its date |
 | Clear a task's due date | Its steps keep theirs |
 | Clear a step's due date inside a task that has one | The step takes the task's due date again |
+| Change a task's due date while a step is ticked off | The ticked-off step keeps its due date |
+| Reopen that step | Its due date comes down to the task's again, if it is later |
 
 A refusal shows as a warning in the status bar, not an error: it is a rule
 holding, and nothing was changed.

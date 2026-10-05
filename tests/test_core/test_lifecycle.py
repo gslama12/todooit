@@ -1209,3 +1209,137 @@ def test_placing_writes_everything_in_one_commit(create_project):
     forms.indent(tax)
 
     assert manager.revision == before + 1
+
+
+# ------------------------------------------------------------------
+# A completed step keeps its dates: a parent's new date, floor or ceiling
+# passes it by, and the rules catch up with it when it is reopened
+# ------------------------------------------------------------------
+
+SATURDAY = datetime(2026, 10, 10, 9, 0)
+
+
+def test_moving_a_parent_leaves_a_completed_step_on_the_old_date(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, WEDNESDAY)
+    lifecycle.complete(steps["Collect receipts"])
+
+    outcome = lifecycle.schedule(tax, MONDAY)
+
+    assert steps["Collect receipts"].scheduled == WEDNESDAY
+    assert steps["Scan receipts"].scheduled == WEDNESDAY
+    assert steps["File online"].scheduled == MONDAY
+    assert outcome.summary() == "1 step moved with it"
+
+
+def test_a_later_floor_passes_a_completed_step_by(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.complete(steps["Collect receipts"])
+
+    lifecycle.schedule(tax, FRIDAY)
+
+    assert steps["Collect receipts"].scheduled == MONDAY
+    assert steps["Scan receipts"].scheduled == MONDAY
+    assert steps["File online"].scheduled == FRIDAY
+
+
+def test_moving_a_deadline_leaves_a_completed_step_due_on_the_old_date(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.set_due(tax, FRIDAY)
+    lifecycle.complete(steps["Collect receipts"])
+
+    lifecycle.set_due(tax, WEDNESDAY)
+
+    assert steps["Collect receipts"].due == FRIDAY
+    assert steps["Scan receipts"].due == FRIDAY
+    assert steps["File online"].due == WEDNESDAY
+
+
+def test_clearing_a_parents_dates_leaves_a_completed_step_its_own(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.set_due(tax, FRIDAY)
+    lifecycle.complete(steps["File online"])
+
+    lifecycle.schedule(tax, None)
+    lifecycle.set_due(tax, None)
+
+    assert steps["File online"].scheduled == MONDAY
+    assert steps["File online"].due == FRIDAY
+    assert steps["Collect receipts"].scheduled is None
+    assert steps["Collect receipts"].due is None
+
+
+def test_a_reopened_step_rises_to_its_parents_floor(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.complete(steps["Collect receipts"])
+    lifecycle.schedule(tax, FRIDAY)
+
+    outcome = lifecycle.reopen(steps["Collect receipts"])
+
+    assert steps["Collect receipts"].scheduled == FRIDAY
+    assert steps["Scan receipts"].scheduled == FRIDAY
+    assert outcome.summary() == "moved to Fri 9 Oct, 1 step moved with it"
+
+
+def test_a_reopened_step_comes_down_to_its_parents_ceiling(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.set_due(tax, FRIDAY)
+    lifecycle.complete(steps["Collect receipts"])
+    lifecycle.set_due(tax, WEDNESDAY)
+
+    lifecycle.reopen(steps["Scan receipts"])
+
+    assert steps["Collect receipts"].due == WEDNESDAY
+    assert steps["Scan receipts"].due == WEDNESDAY
+
+
+def test_a_reopened_step_planned_later_keeps_its_day(create_project):
+    """Reopening applies the floor, not the parent's date: a later step stays"""
+
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.schedule(steps["File online"], SATURDAY)
+    lifecycle.complete(steps["File online"])
+    lifecycle.schedule(tax, WEDNESDAY)
+
+    outcome = lifecycle.reopen(steps["File online"])
+
+    assert steps["File online"].scheduled == SATURDAY
+    assert not outcome
+
+
+def test_reopening_leaves_completed_siblings_on_their_dates(create_project):
+    tax = tax_return(create_project())
+    steps = steps_of(tax)
+    lifecycle.schedule(tax, MONDAY)
+    lifecycle.complete(steps["Collect receipts"])
+    lifecycle.complete(steps["File online"])
+    lifecycle.schedule(tax, FRIDAY)
+
+    lifecycle.reopen(steps["File online"])
+
+    assert steps["File online"].scheduled == FRIDAY
+    assert steps["Collect receipts"].scheduled == MONDAY
+
+
+def test_advancing_still_moves_the_completed_checklist_onto_the_new_date(
+    create_project,
+):
+    review = weekly_review(create_project())
+    checklist = steps_of(review)
+    lifecycle.complete(checklist["Clear the inbox"])
+
+    lifecycle.complete(review)
+
+    assert checklist["Clear the inbox"].is_pending
+    assert checklist["Clear the inbox"].scheduled == datetime(2026, 10, 12, 9, 0)

@@ -155,13 +155,20 @@ def reopen(todo: Todo) -> Outcome:
 
     Nothing a completion removed comes back: undo is for that. A task whose
     project was dropped while it sat completed is filed back under its origin
-    path, so an open todo always has a project to live in.
+    path, so an open todo always has a project to live in. Completed steps
+    ignore their parent's dates, so a reopened one is fitted to them again.
     """
 
+    outcome = Outcome(todo)
     _reopen_all([*todo.ancestors, *todo.family])
 
+    top = (todo.ancestors or [todo])[-1]
+    _raise_to_floor(top, outcome)
+    _lower_to_ceiling(top, outcome)
+
     manager.save(todo)
-    return Outcome(todo, revived=revive_home(root_of(todo)))
+    outcome.revived = revive_home(root_of(todo))
+    return outcome
 
 
 def schedule(todo: Todo, when: Optional[datetime]) -> Outcome:
@@ -348,6 +355,7 @@ def _lower_to_ceiling(todo: Todo, outcome: Outcome) -> None:
     The ceiling: every step due after its parent, or not at all, moves onto
     its date; earlier ones stay (and are the ceiling for their own steps). A
     recurring step stops recurring, since a todo under a deadline never recurs.
+    A completed step keeps its dates, and so does everything under it.
     """
 
     ceiling = todo.due
@@ -356,6 +364,9 @@ def _lower_to_ceiling(todo: Todo, outcome: Outcome) -> None:
         return
 
     for step in todo.todos:
+        if step.is_completed:
+            continue
+
         if step.recurrence is not None:
             step.recurrence = None
             outcome.overrides.append(Override(step, Change.ENDED))
@@ -370,7 +381,8 @@ def _lower_to_ceiling(todo: Todo, outcome: Outcome) -> None:
 def _carry(todo: Todo, attr: str, when: Optional[datetime], outcome: Outcome) -> None:
     """
     Give a todo a new date, and every step still on its old one the same:
-    a step with a date of its own stays, and so does everything under it
+    a step with a date of its own stays, and so does everything under it.
+    A completed step stays too, until it is reopened.
     """
 
     old = getattr(todo, attr)
@@ -382,7 +394,7 @@ def _carry(todo: Todo, attr: str, when: Optional[datetime], outcome: Outcome) ->
     what = _CARRIED[attr, when is not None]
 
     for step in todo.todos:
-        if getattr(step, attr) == old:
+        if step.is_pending and getattr(step, attr) == old:
             _carry(step, attr, when, outcome)
             outcome.overrides.append(Override(step, what))
 
@@ -413,7 +425,8 @@ def _pull_back_ancestors(todo: Todo, outcome: Outcome) -> None:
 def _raise_to_floor(todo: Todo, outcome: Outcome) -> None:
     """
     The floor: every step scheduled before its parent's date, or not at all,
-    moves onto it; later ones stay (and are the floor for their own steps)
+    moves onto it; later ones stay (and are the floor for their own steps).
+    A completed step keeps its dates, and so does everything under it.
     """
 
     floor = todo.scheduled
@@ -422,6 +435,9 @@ def _raise_to_floor(todo: Todo, outcome: Outcome) -> None:
         return
 
     for step in todo.todos:
+        if step.is_completed:
+            continue
+
         if step.scheduled is None or step.scheduled.date() < floor.date():
             step.scheduled = floor
             outcome.overrides.append(Override(step, Change.MOVED))
@@ -454,10 +470,10 @@ def _advance(todo: Todo, stamp: datetime, outcome: Outcome) -> None:
     todo.scheduled = new_date
     outcome.advanced_to = new_date
 
+    _reopen_all(todo.family)
+
     # Never the ancestors: an advance only ever moves later
     _raise_to_floor(todo, outcome)
-
-    _reopen_all(todo.family)
 
 
 def _reopen_all(todos: List[Todo]) -> None:
