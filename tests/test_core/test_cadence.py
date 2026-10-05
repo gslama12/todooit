@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import text
 
 from todooit.api import Cadence, Todo, lifecycle, manager
+from todooit.utils import next_month_end
 from tests.test_core.core_base import *  # noqa: F401,F403
 
 
@@ -160,3 +161,99 @@ def test_a_recurrence_stored_before_months_reads_as_the_same_interval(
     )
 
     assert reloaded(todo).recurrence == cadence
+
+
+@pytest.mark.parametrize("typed", ["eom", "EOM", " eom "])
+def test_eom_reads_and_shows_as_eom(typed):
+    assert Cadence.parse(typed) == Cadence(1, "eom")
+    assert str(Cadence.parse(typed)) == "eom"
+
+
+@pytest.mark.parametrize("typed", ["1eom", "eom@3", "eo"])
+def test_eom_takes_no_count_or_day(typed):
+    with pytest.raises(ValueError):
+        Cadence.parse(typed)
+
+
+def test_eom_recurs_on_each_months_last_working_day():
+    """Oct 2026 ends on a Saturday, Jan 2027 on a Sunday"""
+
+    dates = advances(Cadence(1, "eom"), datetime(2026, 9, 30), 4)
+
+    assert dates == ["2026-10-30", "2026-11-30", "2026-12-31", "2027-01-29"]
+
+
+def test_eom_skips_a_public_holiday_at_the_end_of_the_month():
+    """31 May 2029 is Fronleichnam"""
+
+    assert advances(Cadence(1, "eom"), datetime(2029, 4, 30), 1) == ["2029-05-30"]
+
+
+def test_eom_from_mid_month_comes_this_month_and_keeps_the_time():
+    new, cadence = Cadence(1, "eom").after(datetime(2026, 10, 5, 9))
+
+    assert new == datetime(2026, 10, 30, 9)
+    assert cadence == Cadence(1, "eom")
+
+
+def test_eom_starts_on_a_month_end_and_other_cadences_anywhere():
+    assert Cadence(1, "eom").first(datetime(2026, 10, 5)) == datetime(2026, 10, 30)
+    assert Cadence(1, "eom").first(datetime(2026, 10, 30)) == datetime(2026, 10, 30)
+    assert Cadence(1, "weeks").first(datetime(2026, 10, 5)) == datetime(2026, 10, 5)
+
+
+def test_eom_is_stored_and_read_back(create_project):
+    todo = create_project().add_todo()
+    todo.scheduled = datetime(2026, 10, 30)
+    todo.recurrence = Cadence(1, "eom")
+    todo.save()
+
+    assert reloaded(todo).recurrence == Cadence(1, "eom")
+
+
+def test_setting_eom_moves_the_todo_onto_the_month_end(create_project):
+    report = create_project().add_todo()
+    report.scheduled = datetime(2026, 10, 5)
+    report.save()
+
+    lifecycle.set_recurrence(report, Cadence(1, "eom"))
+
+    assert report.scheduled == datetime(2026, 10, 30)
+
+
+def test_setting_eom_on_a_todo_with_a_deadline_starts_from_the_deadline(create_project):
+    report = create_project().add_todo()
+    report.due = datetime(2026, 11, 3)
+    report.save()
+
+    lifecycle.set_recurrence(report, Cadence(1, "eom"))
+
+    assert report.due is None
+    assert report.scheduled == datetime(2026, 11, 30)
+
+
+def test_setting_eom_on_an_undated_todo_takes_this_months_end_at_midnight(
+    create_project,
+):
+    report = create_project().add_todo()
+    report.save()
+
+    lifecycle.set_recurrence(report, Cadence(1, "eom"))
+
+    assert report.scheduled == datetime.combine(
+        next_month_end(datetime.now().date()), datetime.min.time()
+    )
+
+
+def test_completing_an_eom_todo_moves_it_to_next_months_end(create_project):
+    report = create_project().add_todo()
+    report.scheduled = datetime(2026, 10, 30)
+    report.recurrence = Cadence(1, "eom")
+    report.save()
+
+    outcome = lifecycle.complete(report)
+    report = reloaded(report)
+
+    assert outcome.advanced_to == datetime(2026, 11, 30)
+    assert report.is_pending
+    assert report.recurrence == Cadence(1, "eom")

@@ -11,6 +11,7 @@ Easter Sunday and Whit Sunday are left out on purpose: both are Sundays, and
 the calendar already draws a Sunday as a day off.
 """
 
+from calendar import monthrange
 from datetime import date, timedelta
 from functools import lru_cache
 from typing import Mapping, Optional
@@ -65,3 +66,37 @@ def holiday_name(day: date) -> Optional[str]:
     """What the day is called, or None on a day that is nothing in particular"""
 
     return holidays(day.year).get(day)
+
+
+def is_working_day(day: date) -> bool:
+    """Monday to Friday, and not a public holiday"""
+
+    return day.weekday() < 5 and holiday_name(day) is None
+
+
+def last_working_day(year: int, month: int) -> date:
+    """The month's last day that is worked: no weekend, no public holiday"""
+
+    day = date(year, month, monthrange(year, month)[1])
+
+    while not is_working_day(day):
+        day -= timedelta(days=1)
+
+    return day
+
+
+def next_month_end(day: date, strictly_after: bool = False) -> date:
+    """
+    The first month's last working day on or after `day` (or after it)
+
+    A day past its own month's last working day -- the weekend or holiday that
+    closes the month -- has already missed it, and gets the next month's.
+    """
+
+    end = last_working_day(day.year, day.month)
+
+    if end > day or (end == day and not strictly_after):
+        return end
+
+    following = date(day.year, day.month, 1) + timedelta(days=32)
+    return last_working_day(following.year, following.month)

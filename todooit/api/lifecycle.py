@@ -16,7 +16,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Union
 
-from .cadence import Cadence
+from .cadence import MONTH_END, Cadence
 from .manager import manager
 from .placement import root_of
 from .recycle import revive_home
@@ -241,9 +241,17 @@ def set_recurrence(todo: Todo, every: Optional[Cadence]) -> Outcome:
     todo.recurrence = every
     _end_recurrence_below(todo, outcome)
 
-    # A cadence needs a first day: that deadline, else today
-    if undated:
-        todo.scheduled = todo.scheduled or datetime.now()
+    # A cadence needs a first day: that deadline, else today. A month end
+    # starts on the first month end from there, at midnight if nothing had a time
+    start = todo.scheduled or datetime.now()
+
+    if undated and every.unit == MONTH_END:
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    first = every.first(start)
+
+    if undated or first != todo.scheduled:
+        todo.scheduled = first
         _pull_back_ancestors(todo, outcome)
         _raise_to_floor(todo, outcome)
 

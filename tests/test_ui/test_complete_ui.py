@@ -8,6 +8,8 @@ something happened) and the status bar says what the completion meant.
 from datetime import date, timedelta
 
 from todooit.api import Cadence, Todo, manager
+from todooit.utils import next_month_end
+from todooit.utils.default_config import todo_recurrence_formatter
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -313,3 +315,40 @@ async def test_one_undo_takes_back_an_indent_and_its_overrides():
         assert stretch.parent_todo is None
         assert stretch.parent_project is review.parent_project
         assert stretch.recurrence == Cadence(1, "days")
+
+
+async def test_typing_eom_recurs_on_the_month_end_and_shows_eom():
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "Monthly report")
+        report = tree.current_model
+        assert isinstance(report, Todo)
+
+        await pilot.press("r")
+        await commit_line(pilot, "eom")
+
+        assert report.recurrence == Cadence(1, "eom")
+        assert report.scheduled is not None
+        assert report.scheduled.date() == next_month_end(date.today())
+        assert todo_recurrence_formatter(report.recurrence, report) == "eom"
+
+        await pilot.press("r")
+        assert tree.current._get_component("recurrence").value == "eom"
+
+
+async def test_typing_eom_as_a_due_date_takes_the_last_working_day():
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "Hand in timesheet")
+        sheet = tree.current_model
+        assert isinstance(sheet, Todo)
+
+        await pilot.press("d")
+        await commit_line(pilot, "eom")
+
+        assert sheet.due is not None
+        assert sheet.due.date() == next_month_end(date.today())

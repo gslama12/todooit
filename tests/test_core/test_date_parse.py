@@ -83,6 +83,7 @@ class TestDateParse(unittest.TestCase):
     def test_named_periods(self):
         assert parse("this weekend", NOW) == (at(day=5), True)
         assert parse("end of month", NOW) == (at(day=30), True)
+        assert parse("eom", NOW) == (at(day=30), True)
         assert parse("someday", NOW) == (at(month=11), True)
         assert parse("mid january", NOW) == (at(year=2027, month=1, day=15), True)
 
@@ -149,3 +150,18 @@ class TestDateParse(unittest.TestCase):
         assert parse("?????", NOW) == (None, False)
         assert parse("asdfgh", NOW) == (None, False)
         assert parse("in 5 bananas", NOW) == (None, False)
+
+
+def test_eom_is_the_last_working_day():
+    """31 October 2026 is a Saturday, 31 May 2029 is Fronleichnam"""
+
+    assert parse("eom", datetime(2026, 10, 5, 10)) == (at(month=10, day=30), True)
+    assert parse("eom 16:00", datetime(2026, 10, 5)) == (
+        at(month=10, day=30, hour=16),
+        True,
+    )
+    assert parse("eom", datetime(2029, 5, 2)) == (at(2029, 5, 30), True)
+
+
+def test_eom_once_this_months_has_passed_is_next_months():
+    assert parse("eom", datetime(2026, 10, 31)) == (at(month=11, day=30), True)

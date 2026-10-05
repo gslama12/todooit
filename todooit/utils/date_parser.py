@@ -7,12 +7,13 @@ anything absolute.
 """
 
 import re
-from calendar import monthrange
 from datetime import datetime, time
 from typing import Optional, Tuple
 
 from dateutil import parser
 from dateutil.relativedelta import relativedelta
+
+from .holidays import next_month_end
 
 # Ambiguous numeric dates read day first (`5.9` is 5 September), matching the
 # German format the due column is rendered in. ISO input is unaffected:
@@ -335,8 +336,10 @@ def _keyword_date(text: str, today: datetime, now: datetime) -> Optional[datetim
         return today + relativedelta(months=2)
 
     if text in ("end of month", "eom", "end of the month"):
-        last = monthrange(today.year, today.month)[1]
-        return today.replace(day=last)
+        # The month's last working day, Austrian holidays included -- the last
+        # day anything can actually be done. Once that is behind us, next month's
+        end = next_month_end(today.date())
+        return today.replace(year=end.year, month=end.month, day=end.day)
 
     if text in ("weekend", "this weekend"):
         return _next_weekday(today, SATURDAY, allow_today=False)

@@ -9,16 +9,22 @@ stays on the 5th.
 A todo on a day a shorter month lacks lands on that month's last day and goes
 back to its own day after: 31 Jan, 28 Feb, 31 Mar, 30 Apr. While it sits on
 such a clamped day, the day it belongs on is kept in `day`.
+
+`eom` is the month's last working day: the last weekday that is not an
+Austrian public holiday. It has no count and no kept day; each month's is
+worked out from the calendar.
 """
 
 import re
 from calendar import monthrange
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Tuple
 
 from sqlalchemy import String
 from sqlalchemy.types import TypeDecorator
+
+from ..utils.holidays import next_month_end
 
 # Typed suffix -> unit
 UNITS = {
@@ -36,6 +42,8 @@ CALENDAR_UNITS = ("months", "years")
 
 PATTERN = re.compile(r"^(\d+)(mo|m|h|d|w|y)(?:@(\d+))?$")
 
+MONTH_END = "eom"
+
 # Rows written before cadences were stored as text hold an SQLAlchemy Interval:
 # the timedelta as a moment after the epoch
 EPOCH = datetime(1970, 1, 1)
@@ -50,7 +58,12 @@ class Cadence:
 
     @classmethod
     def parse(cls, text: str) -> "Cadence":
-        match = PATTERN.match(text.strip())
+        text = text.strip()
+
+        if text.lower() == MONTH_END:
+            return cls(1, MONTH_END)
+
+        match = PATTERN.match(text)
 
         if match is None or int(match[1]) == 0:
             raise ValueError("Invalid recurrence format")
@@ -83,16 +96,35 @@ class Cadence:
     def __str__(self) -> str:
         """As typed, without the kept day"""
 
+        if self.unit == MONTH_END:
+            return MONTH_END
+
         return f"{self.count}{SUFFIXES[self.unit]}"
 
     def stored(self) -> str:
         return f"{self}@{self.day}" if self.day else str(self)
+
+    def first(self, when: datetime) -> datetime:
+        """
+        The first occurrence on or after `when`
+
+        Any date starts a fixed or calendar cadence; a month end only starts
+        on a month end.
+        """
+
+        if self.unit == MONTH_END:
+            return _on(next_month_end(when.date()), when)
+
+        return when
 
     def after(self, when: datetime) -> Tuple[datetime, "Cadence"]:
         """
         The next occurrence after `when`, and the cadence to keep for the one
         after it (which remembers a day the new date had to give up)
         """
+
+        if self.unit == MONTH_END:
+            return _on(next_month_end(when.date(), strictly_after=True), when), self
 
         if self.unit not in CALENDAR_UNITS:
             return when + timedelta(**{self.unit: self.count}), self
@@ -108,6 +140,12 @@ class Cadence:
         new = new.replace(day=_clamp(new, day))
 
         return new, replace(self, day=day if day != new.day else None)
+
+
+def _on(day: date, when: datetime) -> datetime:
+    """`when`'s time of day, on another day"""
+
+    return datetime.combine(day, when.time())
 
 
 def _clamp(when: datetime, day: int) -> int:
@@ -135,7 +173,7 @@ class CadenceType(TypeDecorator):
         if isinstance(value, datetime):
             return Cadence.from_timedelta(value - EPOCH)
 
-        if PATTERN.match(value):
+        if value == MONTH_END or PATTERN.match(value):
             return Cadence.parse(value)
 
         return Cadence.from_timedelta(datetime.fromisoformat(value) - EPOCH)

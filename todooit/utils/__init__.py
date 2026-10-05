@@ -2,7 +2,13 @@ from .date_parser import looks_like_date_start, parse
 from .css_manager import CssManager
 from .colors import blend
 from .day_names import DATE_FORMAT, WEEKDAY_NAMES, day_label
-from .holidays import holiday_name, holidays
+from .holidays import (
+    holiday_name,
+    holidays,
+    is_working_day,
+    last_working_day,
+    next_month_end,
+)
 from .clipboard import copy_text, paste_files, paste_text
 from .files import (
     Opened,
@@ -37,6 +43,9 @@ __all__ = [
     "day_label",
     "holiday_name",
     "holidays",
+    "is_working_day",
+    "last_working_day",
+    "next_month_end",
     "copy_text",
     "paste_files",
     "paste_text",
