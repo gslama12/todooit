@@ -477,6 +477,37 @@ async def test_typing_a_quote_marker_after_an_indent():
         await pilot.pause()
 
 
+async def test_a_quote_marker_in_front_of_a_written_line_quotes_it():
+    """The mark opens a quote where the words already are, not only before"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("a note to self"))
+        await pilot.press("home")
+        await pilot.press(*list("> "))
+        assert screen.editor.text == QUOTE_GLYPH + "a note to self"
+
+        # The cursor lands past the bar, in front of the words
+        assert screen.editor.cursor_location == (0, len(QUOTE_GLYPH))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_quote_marker_mid_line_stays_a_greater_than_sign():
+    """Only a mark at the head of a line is opening one"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("2 > 1"))
+        assert screen.editor.text == "2 > 1"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_typing_a_bullet_marker():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)

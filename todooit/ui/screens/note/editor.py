@@ -803,7 +803,8 @@ class NoteEditor(TextArea):
                     self._draw_header(row, column)
                     return
 
-                if mark == QUOTE_MARK:
+                # Judged on the text before the cursor too, so `> ` in front of existing words quotes them.
+                if head == QUOTE_MARK:
                     glyph = QUOTE_GLYPH
 
             if glyph is None and mark in BULLET_MARKS:
