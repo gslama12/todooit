@@ -1,0 +1,37 @@
+"""
+Standard vim navigation (h/j/k/l) on a QWERTY keyboard
+
+todooit's own direction keys are laid out for a QWERTZ keyboard, one key to the
+right of vim's: j/k/l/ö. QWERTY has no `ö`, so out of the box one of them can't
+even be typed. This config moves them to where vim has them, and moves the two
+bindings that were in the way somewhere else.
+
+The note window, the calendar, the help screen and the attachment strip steer
+with whatever keys the panes move with, so they follow along on their own.
+
+Use it as your config:
+
+    mkdir -p "$(dirname "$(todooit config-loc)")"
+    cp config/qwerty_vim.py "$(todooit config-loc)"
+
+or try it out once with `todooit -c config/qwerty_vim.py`.
+"""
+
+from todooit.ui.api import TodooitAPI, subscribe
+from todooit.ui.api.events import Startup
+
+# Default key -> vim key. Applied all at once, so keys can trade places.
+VIM_KEYS = {
+    "j": "h",  # focus the projects pane
+    "ö": "l",  # focus the todos pane
+    "l": "j",  # cursor down (k, cursor up, stays where it is)
+    # Fold/unfold the highlighted item. `h` is taken now, so it goes to the
+    # home-row key right of `l`, which is `;` on QWERTY.
+    "h": ";",
+    "L": "J",  # shift the item down (K, shift up, stays where it is)
+}
+
+
+@subscribe(Startup)
+def vim_keys(api: TodooitAPI, _):
+    api.keys.remap(VIM_KEYS)

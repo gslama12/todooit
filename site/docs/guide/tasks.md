@@ -50,10 +50,10 @@ but any step may be planned for a later day.
 | What you do | What happens |
 | --- | --- |
 | Add a step to a task that is planned for a day | The step is planned for that day too |
-| Plan a task | Every step that is unplanned or planned earlier moves to that day; steps planned later stay |
+| Plan a task | Steps on its old day move with it; every step that is unplanned or planned earlier moves to that day; steps planned later stay |
 | Plan a step for a later day than its task | Allowed; nothing else moves |
 | Plan a step before its task | The task, and every task above it still later, moves back to that day |
-| Clear a task's day | Its steps keep theirs |
+| Clear a task's day | Steps on its old day lose theirs too; the rest keep theirs |
 | Clear a step's day inside a planned task | The step takes the task's day again |
 | Tick off a repeating step | It moves to its next day; the task keeps its own |
 | Move a task while a step is ticked off | The ticked-off step keeps its day |
@@ -68,10 +68,10 @@ A task's due date is a ceiling: any step may be due earlier, none later.
 
 | What you do | What happens |
 | --- | --- |
-| Give a task a due date | Every step with no due date or a later one takes it; steps due earlier stay |
+| Give a task a due date | Steps due on its old date move with it; every step with no due date or a later one takes it; steps due earlier stay |
 | Give a task a due date when a step repeats | The step stops repeating and takes the due date |
 | Give a step a due date later than its task's | Refused with a warning; the step keeps its date |
-| Clear a task's due date | Its steps keep theirs |
+| Clear a task's due date | Steps due on its old date lose theirs too; the rest keep theirs |
 | Clear a step's due date inside a task that has one | The step takes the task's due date again |
 | Change a task's due date while a step is ticked off | The ticked-off step keeps its due date |
 | Reopen that step | Its due date comes down to the task's again, if it is later |

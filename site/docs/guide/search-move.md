@@ -10,6 +10,13 @@ project it is filed under and whether or not it is still to be done.
 `enter` walks the cursor over to the task that was picked, in the project it
 actually lives in. `escape` leaves everything where it was.
 
+### Searching notes
+
+Start the query with `>` and the finder searches **notes** instead of
+descriptions. Every place the word occurs is its own match, shown under its
+task with the line it was found on, and `enter` opens the note with the cursor
+on that hit.
+
 ## Move
 
 `M`, over a task, asks for one thing: the project to file it under.

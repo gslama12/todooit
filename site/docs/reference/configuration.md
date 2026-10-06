@@ -65,6 +65,23 @@ api.keys.set("x", api.remove_node, group="Editing")
 `scope` is what lets one key be a binding over one pane and the start of a
 chord over the other — `c` ticks a task off, `c0`–`c9` color a project.
 
+### Moving bindings
+
+```python
+api.keys.remap({"j": "h", "ö": "l", "l": "j", "h": ";"})
+```
+
+`remap` moves bindings onto other keys, each keeping its callback, help text,
+group and pane. All moves happen at once, so keys can trade places; moving
+onto a key that is still bound to something else raises instead of silently
+overwriting it. The [vim layouts](/guide/keybindings#vim-layouts) are built
+this way.
+
+The note window, calendar, help screen and attachment strip take their
+direction keys from whichever single keys are bound to `api.focus_projects`
+(left), `api.focus_todos` (right), `api.move_up` and `api.move_down`;
+`api.motion_keys()` returns all four.
+
 The [Keybindings](/guide/keybindings) page lists every default.
 
 ## Columns

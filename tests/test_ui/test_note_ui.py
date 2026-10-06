@@ -1959,7 +1959,8 @@ async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
         await pilot.press("f")
         await pilot.pause()
         assert screen.picking_files
-        assert str(screen.hint.render()) == screen.FILES_HINT
+        assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL, True)
+        assert "jö/kl pick" in str(screen.hint.render())
 
         # The motions the panes behind the window use, on a line of files
         assert screen.files.picked == 1
@@ -1979,7 +1980,8 @@ async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
         assert not screen.picking_files
         assert screen.editor.has_focus
         assert screen.editor.cursor_location == (0, len("some words"))
-        assert str(screen.hint.render()) == screen.HINTS[MODE_NORMAL]
+        assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL)
+        assert "jö/kl move" in str(screen.hint.render())
 
 
 async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):

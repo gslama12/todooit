@@ -8,6 +8,7 @@
 | `todooit/api/` | The models and the operations on them |
 | `todooit/ui/` | Screens, trees, renderers and the config API, with ready-made bar widgets and formatters in `ui/api/` |
 | `todooit/utils/default_config.py` | The configuration: keybinds, formatters, bar, colors |
+| `config/` | Drop-in user configs: the [vim layouts](/guide/keybindings#vim-layouts) |
 | `tests/` | The test suite |
 | `site/` | This documentation site |
 

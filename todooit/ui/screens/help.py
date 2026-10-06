@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from rich.console import Group, RenderableType
 from rich.rule import Rule
 from rich.table import Table
@@ -122,18 +122,16 @@ PANEL_TITLE = "Key Bindings"
 
 
 # Hint bar: just navigation/exit, not the keybind listing itself
-HINT = HINT_GAP.join(("k/l scroll", "gg/G top/end", "esc close"))
+def hint(up: str, down: str) -> str:
+    return HINT_GAP.join((f"{up}/{down} scroll", "gg/G top/end", "esc close"))
 
 
 class HelpScreen(BaseScreen, ModalScreen):
     """Key bindings panel over a dimmed app; spawned fresh, not kept as a named screen."""
 
-    # Listing usually overflows the panel, so it scrolls: k/l up/down, j/ö left/right
+    # Listing usually overflows the panel, so it scrolls: the panes' direction
+    # keys (see `scrolls`) and the arrows
     SCROLLS = {
-        "k": "scroll_up",
-        "l": "scroll_down",
-        "j": "scroll_left",
-        "ö": "scroll_right",
         "up": "scroll_up",
         "down": "scroll_down",
         "left": "scroll_left",
@@ -153,10 +151,22 @@ class HelpScreen(BaseScreen, ModalScreen):
         with VerticalScroll(id="help-panel", can_focus=False):
             yield TodooitKeyTable(self.api.keys)
 
-        yield Static(HINT, id="help-hint")
+        motions = self.api.motion_keys()
+        yield Static(hint(motions.up, motions.down), id="help-hint")
 
     def on_mount(self) -> None:
         self.panel.border_title = PANEL_TITLE
+
+    def scrolls(self) -> Dict[str, str]:
+        motions = self.api.motion_keys()
+
+        return {
+            **self.SCROLLS,
+            motions.up: "scroll_up",
+            motions.down: "scroll_down",
+            motions.left: "scroll_left",
+            motions.right: "scroll_right",
+        }
 
     async def handle_key(self, event: events.Key) -> bool:
         # Modal owns every key; the app's bindings are for the panes behind it
@@ -177,7 +187,7 @@ class HelpScreen(BaseScreen, ModalScreen):
             else:
                 self._pending_g = True
 
-        elif scroll := self.SCROLLS.get(key):
+        elif scroll := self.scrolls().get(key):
             getattr(self.panel, scroll)()
 
         return True

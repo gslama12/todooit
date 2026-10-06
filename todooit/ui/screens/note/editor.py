@@ -2,7 +2,7 @@
 The note editor widget: modes, markup-as-you-type, clipboard, links
 """
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 from rich.style import Style
 from textual import events
@@ -12,6 +12,7 @@ from textual.widgets import TextArea
 from textual.widgets.text_area import TextAreaTheme
 
 from todooit.api.theme import TodooitThemeBase
+from todooit.ui.api.api_components.keys import MotionKeys
 from todooit.utils import (
     blend,
     copy_text,
@@ -72,15 +73,22 @@ THEME_NAME = "todooit-note"
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
 
-# todooit's own motion keys (j/ö/k/l), not vim's. No other letter does anything.
+# Line ends; the four direction keys are the panes' own (see `normal_motions`).
+# No other letter does anything.
 NORMAL_MOTIONS = {
-    "j": "cursor_left",
-    "ö": "cursor_right",
-    "k": "cursor_up",
-    "l": "cursor_down",
     "0": "cursor_line_start",
     "$": "cursor_line_end",
 }
+
+
+def normal_motions(motions: MotionKeys) -> Dict[str, str]:
+    return {
+        **NORMAL_MOTIONS,
+        motions.left: "cursor_left",
+        motions.right: "cursor_right",
+        motions.up: "cursor_up",
+        motions.down: "cursor_down",
+    }
 
 # Only key into INSERT; vim's a/I/A are intentionally omitted.
 INSERT_ENTRY = "i"
@@ -526,7 +534,7 @@ class NoteEditor(TextArea):
 
             return True
 
-        if motion := NORMAL_MOTIONS.get(key):
+        if motion := normal_motions(self.app.api.motion_keys()).get(key):
             getattr(self, f"action_{motion}")()
             return True
 
@@ -620,7 +628,7 @@ class NoteEditor(TextArea):
             self.note_screen.answer(event.key)
             return
 
-        # Resolved character, not raw key name, so ö-based motions match the trees.
+        # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.note_screen.resolve_key(event)
 
         if self.read_only:

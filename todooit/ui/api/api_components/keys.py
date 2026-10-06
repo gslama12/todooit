@@ -1,7 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass
 from collections import defaultdict
-from typing import Callable, List, Literal, Optional, Tuple, Union
+from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 from ._base import ApiComponent
 from todooit.ui.api.events import ModeType
@@ -30,6 +30,19 @@ class TodooitFunction:
 
     def __post_init__(self):
         self.description = self.description.strip("\n")
+
+
+class MotionKeys(NamedTuple):
+    """
+    The four direction keys, as the panes move with them. The overlays (note,
+    calendar, help, attachment strip) steer with the same four, so a config
+    that moves the pane keys moves those along with them.
+    """
+
+    left: str
+    right: str
+    up: str
+    down: str
 
 
 class KeyMatchType(Enum):
@@ -112,6 +125,42 @@ class KeyManager(ApiComponent):
             self.__set_key(
                 "NORMAL", key, callback, description, group, hidden, label, scope
             )
+
+    def remap(self, moves: Dict[str, str]) -> None:
+        """
+        Move bindings onto other keys, `{old: new}`. Each keeps its callback,
+        help text, group, pane and place in the help screen. All moves happen
+        at once, so keys can be swapped or rotated; a new key that is still
+        bound to something not moved away is an error, not a silent overwrite.
+        """
+
+        binds = self.keybinds["NORMAL"]
+
+        if unbound := [old for old in moves if binds.get(old) is None]:
+            raise KeyError(f"Nothing is bound to {', '.join(unbound)}")
+
+        targets = list(moves.values())
+        taken = [
+            new
+            for new in targets
+            if targets.count(new) > 1
+            or (binds.get(new) is not None and new not in moves)
+        ]
+        if taken:
+            raise ValueError(f"Already bound: {', '.join(dict.fromkeys(taken))}")
+
+        remapped = {moves.get(key, key): func for key, func in binds.items()}
+        binds.clear()
+        binds.update(remapped)
+
+    def key_for(self, callback: Callable) -> Optional[str]:
+        """The first single-character key bound to `callback`, if any."""
+
+        for key, func in self.keybinds["NORMAL"].items():
+            if func and len(key) == 1 and func.callback == callback:
+                return key
+
+        return None
 
     @property
     def input(self) -> str:

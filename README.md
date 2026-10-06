@@ -12,39 +12,53 @@ it was missing.
   <img src="site/docs/public/demo.gif" alt="todooit" width="900">
 </p>
 
-📖 **[Documentation](https://gslama12.github.io/todooit/)**
-
 ## Features
 
 - **Fixed views** — Today, Upcoming, Completed and a Bin, built from your real projects and jumped to with `gt` / `gu` / `gc` / `gb`.
-- **Projects and steps** — projects nest as deep as you want, and so do tasks. `h` folds a task shut; planning a task plans every step under it.
+- **Projects and steps** — projects nest as deep as you want, and so do tasks. `h` folds a task shut; Projects act as folders.
 - **Quick add** — `C` types a whole task in one line, with its project, priority and day.
-- **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one you pick.
+- **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one you pick. Start with `>` to search inside notes instead.
 - **Notes** — every task carries a markdown note (`space`), and `m` opens a pinned scratchpad for thoughts with no task yet.
-- **Attachments** — copy a file anywhere on your machine and `ctrl+v` in a note pins it to the strip along the bottom of the note window. `f` picks the files up, `enter` opens one in whatever your desktop opens that file type with, `xx` detaches it. Nothing is written into the note and nothing is copied on disk — the task simply holds the way back to the file.
-- **Dates** — due and scheduled dates typed as words (`next friday`) or picked off a calendar, and `r` makes a task recur.
+- **Note Attachments** — copy a file anywhere on your machine and `ctrl+v` in a note pins a refernce to it at the bottom of the note window.
+- **Dates** — due and scheduled dates typed as words (`next friday`) or picked off a calendar (`cal`), and `r` makes a task recur.
 - **Ordering** — `K` / `L` move a task, `I` / `U` nest it, `M` sends it to another project, and `SP` / `SD` / `SS` read a project by priority or date.
 - **The small things** — `ctrl+c` / `ctrl+v` move tasks through the system clipboard, `o` opens the link under the cursor, `a` flags a task handed to an AI, `ctrl+z` takes back anything.
 
-`?` shows the rest.
+`?` shows all available keybinds. Also check the [Documentation](https://gslama12.github.io/todooit/) for more.
+
 
 ## Install
 
 Needs Python 3.9+ on macOS, Linux or WSL, and a
-[Nerd Font](https://www.nerdfonts.com/font-downloads) in your terminal — the
-checkboxes, folders and calendars are all Nerd Font glyphs. Tested on
-[WezTerm](https://wezterm.org/).
+[Nerd Font](https://www.nerdfonts.com/font-downloads) in your terminal. Tested on [WezTerm](https://wezterm.org/).
 
 ```bash
-git clone https://github.com/gslama12/todooit
-cd todooit
-uv venv .venv && source .venv/bin/activate
-uv pip install -e .
-todooit
+uv tool install todooit
+todooit  # run from anywhere
 ```
 
-Other environment managers and the terminal setup are in the
-[installation guide](https://gslama12.github.io/todooit/guide/installation).
+Also check out the [installation guide](https://gslama12.github.io/todooit/guide/installation).
+
+## Keyboard layout
+
+The default keys are set up for a **QWERTZ** keyboard, with `j` `k` `l` `ö` as the navigation keys (one key to the right of vim's `h` `j` `k` `l`).
+
+| Key | Moves |
+| --- | --- |
+| `j` / `ö` | To the projects / tasks pane |
+| `k` / `l` | Up / down |
+
+The [`config/`](config/) folder has two drop-in configs that switch to standard
+vim navigation instead — `qwertz_vim.py` and `qwerty_vim.py`. 
+
+```bash
+mkdir -p "$(dirname "$(todooit config-loc)")"
+cp config/qwerty_vim.py "$(todooit config-loc)"
+```
+
+or try it out first with `todooit -c config/qwerty_vim.py`. See
+[Vim layouts](https://gslama12.github.io/todooit/guide/keybindings#vim-layouts).
+
 
 ## Configuration
 
@@ -52,14 +66,14 @@ Keybinds, colors, columns and the status bar are all set in Python
 in `todooit/utils/default_config.py`, and your own file on top of it overrides any
 of them — see [Configuration](https://gslama12.github.io/todooit/reference/configuration).
 
+
 ## Data
 
 Todos live in `~/.local/share/todooit/todooit.db`, with generated CSS cached in
-`~/.cache/todooit` and an optional config file in `~/.config/todooit`. Setting
-`TODOOIT_HOME` moves all three into that one directory instead, giving a fully
-isolated instance; `todooit --dev` is shorthand for one at
-`~/.local/share/todooit-dev`, handy for trying changes out without touching your
-real todos.
+`~/.cache/todooit` and an optional config file in `~/.config/todooit`. 
+
+> Setting `TODOOIT_HOME` moves all three into that one directory instead, giving a fully isolated instance; `todooit --dev` is shorthand for one at `~/.local/share/todooit-dev`, handy for trying changes out without touching your real todos.
+
 
 ### Coming from dooit
 
@@ -74,19 +88,29 @@ which backs it up first. Effort is dropped, and minute recurrences round up to
 hours. Details are in
 [Migrating from dooit](https://gslama12.github.io/todooit/reference/data#migrating-from-dooit).
 
+
 ## Contributing
+
+For development, install from source — editable, so editing the code edits the
+running app:
+
+```bash
+git clone https://github.com/gslama12/todooit
+cd todooit
+uv venv .venv && source .venv/bin/activate
+uv pip install -e .
+todooit
+```
+
+Then:
 
 ```bash
 uv sync
 uv run pytest -q              # -m smoke -n 4 for the quick check
 uv run todooit --dev          # the app against a throwaway database
 ```
+More in [Development](https://gslama12.github.io/todooit/reference/development).
 
-Branch off `dev`, never `main`. Appearance and behaviour changes belong in
-`todooit/utils/default_config.py`; structural and rendering ones in `todooit/ui/`.
-New features need tests — every test carries a marker for its feature, so
-`uv run pytest -m notes` runs just that one. More in
-[Development](https://gslama12.github.io/todooit/reference/development).
 
 ## Credits
 

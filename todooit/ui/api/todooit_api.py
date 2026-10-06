@@ -30,6 +30,7 @@ from .api_components import (
     KeyMatchType,
     KeyScopeType,
     LayoutManager,
+    MotionKeys,
     Formatter,
     BarManager,
     VarManager,
@@ -119,6 +120,22 @@ class TodooitAPI:
             return "projects"
 
         return None
+
+    def motion_keys(self) -> MotionKeys:
+        """
+        The direction keys, read off the panes' own bindings so the overlays
+        always steer with whatever the panes move with. A direction with no
+        single-key binding falls back to its arrow key.
+        """
+
+        keys = self.keys
+
+        return MotionKeys(
+            left=keys.key_for(self.focus_projects) or "left",
+            right=keys.key_for(self.focus_todos) or "right",
+            up=keys.key_for(self.move_up) or "up",
+            down=keys.key_for(self.move_down) or "down",
+        )
 
     def handle_key(self, key: str) -> None:
         keymatch = self.keys.register_key(key)

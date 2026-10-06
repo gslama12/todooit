@@ -13,6 +13,8 @@ for the WezTerm setup.
 
 ## Navigation
 
+Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim-layouts).
+
 | Key | What it does | Pane |
 | --- | --- | --- |
 | `j` | Move focus to the projects pane | both |
@@ -89,6 +91,29 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 ## Inside a note
 
 See [Notes](/guide/notes#two-modes).
+
+## Vim layouts
+
+The defaults are laid out for a **QWERTZ** keyboard: the direction keys are
+`j` `k` `l` `ö`, one key to the right of vim's, so the hand stays where it
+types. The repo's [`config/`](https://github.com/gslama12/todooit/tree/main/config)
+folder has two drop-in configs that put them back on vim's `h` `j` `k` `l`:
+
+| File | For | Fold / unfold | Shift down |
+| --- | --- | --- | --- |
+| `qwertz_vim.py` | QWERTZ keyboards | `ö` | `J` |
+| `qwerty_vim.py` | QWERTY keyboards (which have no `ö`) | `;` | `J` |
+
+Everything else stays as listed above. The note window, the calendar, the help
+screen and the attachment strip steer with whatever the panes move with, so
+they switch to `h` `j` `k` `l` too (and the calendar's months to `H` / `L`).
+
+```bash
+mkdir -p "$(dirname "$(todooit config-loc)")"
+cp config/qwerty_vim.py "$(todooit config-loc)"
+```
+
+Or try one out first with `todooit -c config/qwerty_vim.py`.
 
 ## Changing them
 

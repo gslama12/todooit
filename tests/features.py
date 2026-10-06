@@ -68,4 +68,5 @@ FEATURE_BY_MODULE = {
     "test_karabiner_keys": "editing",
     "test_key_resolve": "config",
     "test_loader": "config",
+    "test_keyboard_layouts": "config",
 }

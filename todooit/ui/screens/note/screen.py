@@ -87,10 +87,11 @@ class NoteScreenBase(BaseScreen):
         ("escape", "close", "Close the note"),
     ]
 
-    # One line of hints per mode; keys that would do nothing here are omitted
+    # One line of hints per mode; keys that would do nothing here are omitted.
+    # `{move}` is filled in with the panes' direction keys (see `hint_for`).
     HINTS = {
         MODE_NORMAL: (
-            "i insert    jklö move    ud half page    o link    f files    "
+            "i insert    {move} move    ud half page    o link    f files    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
         # Markup marks, not keys to press. Kept to 80 columns (usual terminal
@@ -102,7 +103,7 @@ class NoteScreenBase(BaseScreen):
     }
 
     # Hint line for when the strip (not the text) has the keyboard
-    FILES_HINT = "jö/kl pick    enter open    xx detach    esc back to the note"
+    FILES_HINT = "{move} pick    enter open    xx detach    esc back to the note"
 
     # Worded/escaped like todooit's other delete-confirm prompts
     CLEAR_PROMPT = r"Clear the whole note? \[y/N]"
@@ -188,7 +189,7 @@ class NoteScreenBase(BaseScreen):
             yield editor
             yield AttachmentStrip()
 
-        yield Static(self.HINTS[editor.mode], id="note-hint")
+        yield Static(self.hint_for(editor.mode), id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
@@ -217,6 +218,16 @@ class NoteScreenBase(BaseScreen):
 
         self.editor.move_cursor((row, column), center=True)
 
+    def hint_for(self, mode: str, picking_files: bool = False) -> str:
+        """The hint line for `mode`, or for the strip while it has the keyboard."""
+
+        motions = self.api.motion_keys()
+        hint = self.FILES_HINT if picking_files else self.HINTS[mode]
+
+        return hint.replace(
+            "{move}", f"{motions.left}{motions.right}/{motions.up}{motions.down}"
+        )
+
     def mode_changed(self) -> None:
         """Redraw the mode chip in the border and the hint line under it."""
 
@@ -229,9 +240,7 @@ class NoteScreenBase(BaseScreen):
 
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
-            self.hint.update(
-                self.FILES_HINT if self.picking_files else self.HINTS[mode]
-            )
+            self.hint.update(self.hint_for(mode, self.picking_files))
 
     def report(self, message: str) -> None:
         """
@@ -316,6 +325,7 @@ class NoteScreenBase(BaseScreen):
         """
 
         strip = self.files
+        motions = self.api.motion_keys()
         pending_x, self._pending_x = self._pending_x, False
 
         if key == "x":
@@ -323,10 +333,10 @@ class NoteScreenBase(BaseScreen):
                 self.detach()
             else:
                 self._pending_x = True
-        elif key in ("j", "b"):
+        elif key in (motions.left, "b"):
             strip.picked = max(0, strip.picked - 1)
             strip.refresh_strip()
-        elif key in ("ö", "w"):
+        elif key in (motions.right, "w"):
             strip.picked = min(len(strip.paths) - 1, strip.picked + 1)
             strip.refresh_strip()
         elif key == "0":
@@ -335,11 +345,11 @@ class NoteScreenBase(BaseScreen):
         elif key == "$":
             strip.picked = len(strip.paths) - 1
             strip.refresh_strip()
-        elif key in ("k", "l"):
+        elif key in (motions.up, motions.down):
             # Up off the top row goes back into the text above the strip
-            if strip.step_row(-1 if key == "k" else 1):
+            if strip.step_row(-1 if key == motions.up else 1):
                 strip.refresh_strip()
-            elif key == "k":
+            elif key == motions.up:
                 self.leave_files()
         elif key in ("enter", "o"):
             self.open_file()

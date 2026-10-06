@@ -2,6 +2,14 @@
 
 todooit needs Python 3.9 or newer and runs on macOS, Linux and WSL.
 
+```bash
+uv tool install todooit
+todooit
+```
+
+That puts `todooit` on your `PATH` in an environment of its own. To work on
+todooit itself, install it [from source](#from-source) instead.
+
 ::: tip Terminal and font
 todooit was only tested on [WezTerm](https://wezterm.org/). Other terminals may
 not show every icon correctly.
@@ -110,8 +118,8 @@ The other terminal spellings of the Mac editing chords work as they are:
 
 ## From source
 
-Each of these installs the app editable, so editing the source edits the
-running app.
+For development. Each of these installs the app editable, so editing the
+source edits the running app.
 
 ::: code-group
 

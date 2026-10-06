@@ -28,7 +28,7 @@ dates cascade nowhere — see
 | `next month`, `next year` | the 1st of it |
 | `weekend` | the coming saturday |
 | `weekday` | the next working day |
-| `end of month`, `eom` | the last day of this month |
+| `end of month`, `eom` | the last working day of this month (no weekend, no Austrian holiday); next month's once that has passed |
 | `someday` | two months out |
 | `mid july` | the 15th |
 | `3d`, `2w`, `1mo`, `1y`, `+5d` | an offset from today |
@@ -41,8 +41,9 @@ dates cascade nowhere — see
 | `none`, `never`, `no date`, `-` | clear the date |
 
 ::: warning Watch out for two things
-`m` is **minutes**, not months — months are `mo`, to agree with the recurrence
-field. And `1600` is not a time: write `16:00`, or `16h` means sixteen hours
+In a date field `m` is **minutes**, not months — months are `mo`. (The
+[recurrence](#recurrence) field has no minutes, so there `m` *is* a month.)
+And `1600` is not a time: write `16:00`, or `16h` means sixteen hours
 from now.
 :::
 
@@ -66,6 +67,10 @@ Type `cal` into either date field and a month opens over the app.
 | `j` / `ö` (or `←` / `→`) | A day back / forward |
 | `k` / `l` (or `↑` / `↓`) | A week back / forward |
 | `J` / `Ö` (or `PgUp` / `PgDn`) | A month back / forward |
+
+The direction keys are whatever the panes move with, so a
+[vim layout](/guide/keybindings#vim-layouts) turns these into `h` `j` `k` `l`
+and `H` / `L`.
 | `t` | Back to today |
 | `enter` | Pick the day |
 | `escape` | Close the month, leaving the field mid-edit |
@@ -76,8 +81,22 @@ kept.
 
 ## Recurrence
 
-`r` sets an interval: `30m`, `2h`, `3d`, `4w` — a number and one of
-`m`/`h`/`d`/`w`.
+`r` sets an interval: a number and a unit.
+
+| Typed | Repeats |
+| --- | --- |
+| `2h` | every two hours |
+| `3d` | every three days |
+| `2w` | every two weeks |
+| `1m`, `1mo` | every month, on the same day of the month |
+| `1y` | every year |
+| `eom` | on the last working day of every month |
+
+There are no minutes, so `m` is a month. Months and years are calendar steps:
+a monthly task on the 31st lands on the last day of a shorter month (28 Feb,
+30 Apr) and goes back to the 31st where the month has one. `eom` skips
+weekends and Austrian public holidays, so it is the last day anything can
+actually be done that month.
 
 A recurring task repeats on its **scheduled** date, not its due date. Setting a
 recurrence on a task that had a due date moves that date over to become the
