@@ -184,9 +184,9 @@ def test_sub_projects_are_blocks_under_their_path(create_project):
     headings = [row for row in rows if row.kind == HEADING]
 
     # The empty sub-project has no block, so draws no heading
-    assert [row.label for row in headings] == ["sub", "sub › deeper"]
+    assert [row.label for row in headings] == ["sub", "sub/deeper"]
     assert [row.id for row in headings] == [heading_id(1), heading_id(2)]
-    assert named(rows) == ["own", "sub", "in sub", "sub › deeper", "in deeper"]
+    assert named(rows) == ["own", "sub", "in sub", "sub/deeper", "in deeper"]
 
 
 def test_a_block_without_a_label_has_no_heading(create_project):

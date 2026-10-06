@@ -10,7 +10,7 @@ project if one of them is restored later.
 from datetime import datetime
 from typing import List, Optional
 
-from .fixed_projects import PATH_SEPARATOR, binned_tasks, project_path
+from .fixed_projects import binned_tasks, project_path, split_path
 from .manager import manager
 from .placement import bin_row_of
 from .project import Project
@@ -83,7 +83,7 @@ def _project_from_path(path: str, created: List[Project]) -> Project:
     The project a path names, creating whatever part of it is missing
     """
 
-    names = [name.strip() for name in path.split(PATH_SEPARATOR) if name.strip()]
+    names = split_path(path)
     parent = Project._get_or_create_root()
 
     for name in names or [UNKNOWN_PROJECT]:

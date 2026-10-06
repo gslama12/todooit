@@ -268,3 +268,20 @@ def test_empty_bin_deletes_for_good(create_project):
 def test_empty_bin_with_nothing_in_it(create_project):
     create_project()
     assert empty_bin() == []
+
+
+def test_a_path_from_before_the_separator_changed_still_restores(create_project):
+    """Bin entries written with " › " rebuild the same nested project"""
+
+    p = create_project("home")
+    t = p.add_todo()
+    move_project_to_bin(p)
+
+    t.origin_path = "outer › inner"
+    created = revive_home(t)
+
+    assert [c.description for c in created] == [
+        f"{REVIVED_PREFIX}outer",
+        f"{REVIVED_PREFIX}inner",
+    ]
+    assert t.parent_project == created[1]

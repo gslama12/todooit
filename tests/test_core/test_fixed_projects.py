@@ -21,6 +21,7 @@ from todooit.api.fixed_projects import (
     fixed_project_from_key,
     fixed_projects,
     project_path,
+    split_path,
 )
 from tests.test_core.core_base import *  # noqa
 
@@ -738,3 +739,9 @@ def test_upcoming_draws_no_step_twice(create_project):
 
     drawn = [todo.id for group in UPCOMING.todo_groups for todo in group.todos]
     assert drawn == [task.id, step.id]
+
+
+def test_split_path_reads_either_separator():
+    assert split_path("outer/inner") == ["outer", "inner"]
+    assert split_path("outer › inner") == ["outer", "inner"]
+    assert split_path(" ") == []

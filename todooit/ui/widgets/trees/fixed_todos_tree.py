@@ -5,7 +5,7 @@ from rich.style import Style
 from rich.text import Text
 
 from todooit.api import FixedProject, Todo, TodoGroup
-from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api.fixed_projects import split_path
 from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
 from todooit.ui.pane_layout import PaneRow
@@ -179,7 +179,9 @@ class FixedTodosTree(TodosTree):
             return project.description
 
         # Last segment of the stored path: that's the project's name
-        return todo.origin_path.split(PATH_SEPARATOR)[-1].strip()
+        names = split_path(todo.origin_path)
+
+        return names[-1] if names else ""
 
     @staticmethod
     def _fit(name: str) -> str:

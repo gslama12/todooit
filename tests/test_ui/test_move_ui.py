@@ -477,3 +477,21 @@ async def test_a_pick_typed_over_is_no_longer_the_answer():
 
         await pilot.press("escape")
         await pilot.pause()
+
+
+async def test_the_preview_writes_a_path_the_way_it_is_typed():
+    """The target chip separates sub-projects with "/", like the line above it"""
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await two_projects_and_a_task(pilot)
+        build_project(["work", "api"])
+
+        screen = await open_move(pilot)
+        await pilot.press(*list("work/api"))
+
+        assert screen._target_chip().plain.endswith("work/api")
+
+        # A path nothing answers to is echoed the same way
+        await pilot.press(*list("x"))
+        assert screen._target_chip().plain.endswith("work/apix")

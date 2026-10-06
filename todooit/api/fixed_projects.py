@@ -23,7 +23,11 @@ from .todo import Todo, priority_key
 
 FIXED_ID_PREFIX = "FixedProject"
 
-PATH_SEPARATOR = " › "
+# Between the steps of a project path, written the way it is typed (`work/api`)
+PATH_SEPARATOR = "/"
+
+# What paths were written with before; Bin entries from back then still carry it
+LEGACY_PATH_SEPARATOR = " › "
 
 
 @dataclass
@@ -149,6 +153,16 @@ def project_path(project: Project) -> str:
         node = node.parent_project
 
     return PATH_SEPARATOR.join(reversed(parts))
+
+
+def split_path(path: str) -> List[str]:
+    """
+    The names in a stored project path, whichever separator it was written with
+    """
+
+    path = path.replace(LEGACY_PATH_SEPARATOR, PATH_SEPARATOR)
+
+    return [name.strip() for name in path.split(PATH_SEPARATOR) if name.strip()]
 
 
 def _project_order() -> Dict[int, int]:
