@@ -60,6 +60,13 @@ from .markup import (
     split_quote,
     star_pair,
 )
+from .markdown import (
+    PASTE_BLOCK,
+    PASTE_INLINE,
+    PASTE_STRIP,
+    from_markdown,
+    to_markdown,
+)
 from .document import (
     FoldedDocument,
     HangingDocument,
@@ -154,6 +161,7 @@ class NoteEditor(TextArea):
     Opens in NORMAL when the note has content, INSERT when empty.
 
     Selecting/copying/pasting work in both modes; cut/paste switch to INSERT.
+    The clipboard speaks markdown: copies are written as it, pastes read as it.
 
     Markup is typed like markdown (`- `, `1. `, `> `, `# `, `---`, `*stars*`)
     and rendered on completion. The only keyboard-only action is nesting
@@ -451,10 +459,10 @@ class NoteEditor(TextArea):
 
     def action_copy(self) -> None:
         """
-        Copy the selection, or the whole note if none (overrides TextArea, which does nothing without a selection).
+        Copy the selection, or the whole note if none (overrides TextArea, which does nothing without a selection), written as markdown.
         """
 
-        copy_text(self.app, self.selected_text or self.text)
+        copy_text(self.app, to_markdown(self.selected_text or self.text))
 
     def action_paste(self) -> None:
         """
@@ -471,16 +479,76 @@ class NoteEditor(TextArea):
             self.note_screen.attach(paths)
             return
 
-        if not text:
+        if text:
+            self._paste(text)
+
+    async def _on_paste(self, event: events.Paste) -> None:
+        """
+        The terminal's own paste (how Windows Terminal sends ctrl+v and right-click), handled like `action_paste` rather than TextArea's verbatim insert - which also drops it in NORMAL.
+        """
+
+        event.stop()
+        event.prevent_default()
+
+        if self.note_screen.awaiting_answer or not event.text:
             return
+
+        if paths := pasted_paths(event.text):
+            self.note_screen.attach(paths)
+            return
+
+        self._paste(event.text)
+
+    def _paste(self, text: str) -> None:
+        """
+        Write pasted text in at the cursor: a bare URL as a link, anything else read as markdown.
+        """
 
         self.enter_insert()
 
         if self._paste_as_link(text):
             return
 
-        if result := self._replace_via_keyboard(text, *self.selection):
-            self.move_cursor(result.end_location)
+        self._paste_markdown(text)
+
+    def _paste_markdown(self, text: str) -> None:
+        """
+        Write pasted markdown in as the markup typing it would have produced, then number any list it landed in.
+        """
+
+        start, end = sorted(self.selection)
+        row, column = start
+
+        line = self.document[row]
+        before = line[:column]
+
+        # Line-start markup only means something where a line starts; right
+        # after a marker it would be a second one, so it's dropped
+        if not before:
+            first = PASTE_BLOCK
+        elif before == line_prefix(line):
+            first = PASTE_STRIP
+        else:
+            first = PASTE_INLINE
+
+        above = self._stored_line(row - 1) if row > 0 else ""
+        converted = from_markdown(text, self.rule, first, above)
+
+        # A pasted rule would swallow the words after the cursor (and stop being a rule)
+        after = self.document[end[0]][end[1] :]
+
+        if after and RULE_RE.match(converted.rsplit("\n", 1)[-1]):
+            converted += "\n"
+
+        result = self._replace_via_keyboard(converted, start, end)
+
+        if result is None:
+            return
+
+        self.move_cursor(result.end_location)
+
+        for pasted in range(row, result.end_location[0] + 1):
+            self._recount(pasted)
 
     def _paste_as_link(self, text: str) -> bool:
         """
@@ -511,12 +579,12 @@ class NoteEditor(TextArea):
         """
 
         start, _ = self.selection
-        removed = self.selected_text or self.document[start[0]]
+        removed = self.selected_text or self._stored_line(start[0])
 
         self.enter_insert()
         super().action_cut()
 
-        copy_text(self.app, removed)
+        copy_text(self.app, to_markdown(removed))
 
     def action_note_start(self) -> None:
         self.move_cursor((0, 0))

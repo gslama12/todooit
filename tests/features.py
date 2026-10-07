@@ -60,6 +60,7 @@ FEATURE_BY_MODULE = {
     "test_move_overrides_sort": "move",
     "test_sort": "sort",
     "test_note_ui": "notes",
+    "test_note_markdown": "notes",
     "test_search": "search",
     "test_goto_item": "search",
     "test_calendar": "dates",

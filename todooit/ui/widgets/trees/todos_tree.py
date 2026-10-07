@@ -362,7 +362,10 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             self.post_message(BarNotification("This task has no note", "warning"))
             return
 
-        copy_text(self.app, note)
+        # Imported here: the screens package imports the widgets
+        from todooit.ui.screens.note.markdown import to_markdown
+
+        copy_text(self.app, to_markdown(note))
         self.post_message(BarNotification("Note copied to clipboard", "info"))
 
     @on(ModelTree.OptionHighlighted)
