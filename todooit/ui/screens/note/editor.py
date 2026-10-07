@@ -4,6 +4,7 @@ The note editor widget: modes, markup-as-you-type, clipboard, links
 
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
+from rich.segment import Segment
 from rich.style import Style
 from textual import events
 from textual.binding import Binding
@@ -253,6 +254,16 @@ class NoteEditor(TextArea):
         style = Style(bgcolor=trailing.bgcolor) if trailing else Style()
 
         body = body.crop_pad(max(0, body.cell_length - pad), pad, 0, style)
+
+        # A wrapped quote keeps its bar on every row, not just the first
+        bar = self.wrapped_document.bar_at(y + self.scroll_offset.y)
+
+        if bar is not None:
+            bar_style = style + self._theme.syntax_styles.get(QUOTE_BAR, Style())
+            glyph = Strip([Segment(QUOTE_GLYPH.rstrip(), bar_style)])
+            body = Strip.join(
+                [body.crop(0, bar), glyph, body.crop(bar + glyph.cell_length)]
+            )
 
         return Strip.join([gutter, body]) if gutter else body
 

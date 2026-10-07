@@ -20,6 +20,7 @@ from todooit.utils.links import (
 )
 
 from .markup import (
+    QUOTE_RE,
     WRAP_MIN,
     hanging_prefix,
 )
@@ -241,6 +242,24 @@ class HangingDocument(WrappedDocument):
             return 0
 
         return self.hanging_pad(line_index, section_offset)
+
+    def bar_at(self, y_offset: int) -> Optional[int]:
+        """
+        Column the quote bar is redrawn at in the padding of the row at
+        `y_offset`, so a wrapped quote's bar runs unbroken down every row.
+        None for a first row, an unpadded row or a line that isn't quoted.
+        """
+
+        if not self.pad_at(y_offset):
+            return None
+
+        line_index, _ = self._offset_to_line_info[y_offset]
+        match = QUOTE_RE.match(self.document.lines[line_index])
+
+        if not match:
+            return None
+
+        return cell_len(match.group("indent").expandtabs(self._tab_width))
 
     def location_to_offset(self, location: tuple) -> Offset:
         """Where in the window a place in the note is drawn, indent included."""

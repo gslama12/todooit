@@ -1895,6 +1895,48 @@ async def test_a_wrapped_quoted_bullet_stays_inside_its_block():
     assert all(row.startswith(" " * 4) and row[4] != " " for row in drawn[1:])
 
 
+async def test_a_wrapped_quote_keeps_its_bar_on_every_row():
+    document = wrapped(QUOTE_GLYPH + LONG_TEXT)
+
+    assert document.get_offsets(0)
+    assert document.bar_at(0) is None
+    assert all(document.bar_at(row) == 0 for row in range(1, document.height))
+
+
+async def test_a_wrapped_line_outside_a_quote_draws_no_bar():
+    document = wrapped("• " + LONG_TEXT)
+
+    assert document.get_offsets(0)
+    assert all(document.bar_at(row) is None for row in range(document.height))
+
+
+async def test_a_wrapped_quote_is_drawn_with_an_unbroken_bar():
+    """The bar runs down a wrapped quote's continuation rows, not only its first"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(QUOTE_GLYPH + LONG_TEXT + "\n" + QUOTE_GLYPH + "short")
+        await pilot.pause()
+
+        sections = len(editor.wrapped_document.get_offsets(0)) + 1
+        assert sections > 1
+
+        bar = QUOTE_GLYPH.rstrip()
+        gutter = editor.gutter_width
+
+        for y in range(sections + 1):
+            drawn = editor.render_line(y).text[gutter:]
+            assert drawn.startswith(bar), (y, drawn)
+
+        # Drawn, not written: the text holds the bar once per line
+        assert editor.text.count(bar) == 2
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_an_indented_line_with_no_marker_keeps_its_indent_too():
     drawn = rows(wrapped(INDENT + LONG_TEXT))
 
