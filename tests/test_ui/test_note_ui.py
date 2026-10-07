@@ -2344,3 +2344,53 @@ async def test_the_pinned_note_carries_files_too(tmp_path):
         await attach(pilot, screen, tmp_path / "scratch.md")
 
         assert PinnedNote.get_attachments() == str(tmp_path / "scratch.md")
+
+
+@pytest.mark.parametrize(
+    "keys",
+    [
+        # Closing star typed last: the opening one went in first, at `home`
+        ["home", "asterisk", "end", "asterisk"],
+        # Opening star typed last: the closing one went in first, at `end`
+        ["end", "asterisk", "home", "asterisk"],
+    ],
+)
+async def test_stars_put_around_a_word_afterwards_turn_into_emphasis(keys):
+    """
+    The bug: stars typed around a word already written stayed on the page as
+    stars, when the opening one was the second to go in - only a star closing
+    a pair was looked at, never one opening it
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("loud"))
+        await pilot.press(*keys)
+        await pilot.pause()
+
+        assert screen.editor.text == EMPH_MARK + "loud" + EMPH_MARK
+        assert fold_links(screen.editor.text)[0] == "loud"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_opening_star_typed_afterwards_leaves_the_cursor_on_the_word():
+    """The opening star lands in front of the word, so the cursor stays there"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("say loud* now"))
+        await pilot.press("home", *["right"] * 4, "asterisk")
+        await pilot.pause()
+
+        assert screen.editor.text == "say " + EMPH_MARK + "loud" + EMPH_MARK + " now"
+        assert screen.editor.cursor_location == (0, 4)
+
+        await pilot.press(*list("very "))
+        assert fold_links(screen.editor.text)[0] == "say very loud now"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()

@@ -233,6 +233,14 @@ def star_pair(line: str, column: int) -> Optional[int]:
     return opening
 
 
+def star_closing(line: str, column: int) -> Optional[int]:
+    """Column of the `*` pairing with one typed at `column` to open it, or None if it opens nothing."""
+
+    # star_pair run backwards: on the reversed line the closing star is an opening one.
+    opening = star_pair(line[::-1], len(line) - column)
+    return None if opening is None else len(line) - 1 - opening
+
+
 def split_indent(line: str) -> Tuple[str, str, str]:
     """Split a line (past its quote bar, if any) into (indent, list marker, rest); marker is "" if none."""
 

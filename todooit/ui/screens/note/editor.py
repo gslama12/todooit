@@ -58,6 +58,7 @@ from .markup import (
     scan_note,
     split_indent,
     split_quote,
+    star_closing,
     star_pair,
 )
 from .markdown import (
@@ -850,26 +851,29 @@ class NoteEditor(TextArea):
 
         if event.character == EMPH_STAR and self.selection.is_empty:
             row, column = self.cursor_location
-            opening = star_pair(self.document[row], column)
+            line = self.document[row]
+            opening = star_pair(line, column)
+            closing = star_closing(line, column) if opening is None else None
 
-            # Closing star of a finished pair: swap both for zero-width emphasis marks.
-            if opening is not None:
+            # Star finishing a pair, whichever end went in last: swap both for zero-width emphasis marks.
+            if opening is not None or closing is not None:
                 event.stop()
                 event.prevent_default()
 
-                # One rewrite of the whole `*phrase*`: the opening star takes a
-                # column the mark doesn't, so a separate second edit would land one column off.
-                phrase = self.document[row][opening + 1 : column]
+                # One rewrite of the whole `*phrase*`: the stars take columns the
+                # marks don't, so a separate second edit would land one column off.
+                start, end = (opening, column) if opening is not None else (column, closing + 1)
+                phrase = line[start:end].strip(EMPH_STAR)
 
                 self.replace(
                     EMPH_MARK + phrase + EMPH_MARK,
-                    (row, opening),
-                    (row, column),
+                    (row, start),
+                    (row, end),
                     maintain_selection_offset=False,
                 )
 
-                # Land past the closing mark, outside the emphasis.
-                self.move_cursor((row, opening + len(phrase)))
+                # Land outside the emphasis: past it after a closing star, in front after an opening one.
+                self.move_cursor((row, start + len(phrase) if opening is not None else start))
                 return
 
         if event.character == DASHES[0]:
