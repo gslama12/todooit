@@ -209,6 +209,22 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         move_project_to_bin(project)
         return True
 
+    def _discard_node(self) -> None:
+        """
+        Also drops the discarded project's tasks pane, which the change signal
+        never names as gone (the row didn't outlive the edit). Left mounted, it
+        would be picked up again by the next new project: SQLite hands the
+        discarded row's id straight back out, and panes are found by that id.
+        """
+
+        from todooit.ui.screens.index import MainScreen
+
+        uuid = self.current_model.uuid
+        super()._discard_node()
+
+        if isinstance(self.screen, MainScreen):
+            self.screen.drop_project_pane(uuid)
+
     def _binned_message(self, subject: str) -> str:
         """Points at the Bin (its tasks, not the dropped project itself) when there were tasks to move."""
 

@@ -87,6 +87,65 @@ async def test_escape_discards_a_new_project():
         assert tree_options(ptree) == []
 
 
+async def _discard_then_add_again(pilot, key: str) -> Project:
+    """
+    Adds a project with `key`, escapes it unnamed, adds one again from the
+    same row and opens its tasks pane. The second add reuses the discarded
+    row's id.
+    """
+
+    app = pilot.app
+    ptree = app.project_tree
+    start = ptree.current_model.uuid
+
+    await pilot.press(key, *list("never kept"))
+    discarded = ptree.current_model.id
+    await pilot.press("escape")
+    await pilot.pause()
+
+    ptree.highlight_id(start)
+    await pilot.press(key)
+    await commit_line(pilot, "kept")
+
+    project = app.project_tree.current_model
+    assert project.id == discarded
+
+    await pilot.press("ö")
+    await pilot.pause()
+
+    assert visible_todos(app).model is project
+    return project
+
+
+async def test_escaped_project_leaves_no_pane_behind():
+    """The next project reusing the escaped one's id gets a pane of its own"""
+
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await pilot.press("j")
+
+        project = await _discard_then_add_again(pilot, "n")
+
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+
+        assert [t.description for t in project.todos] == ["task"]
+
+
+async def test_escaped_sub_project_leaves_no_pane_behind():
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        outer = await new_project(pilot, "outer")
+
+        inner = await _discard_then_add_again(pilot, "N")
+        assert inner.parent_project == outer
+
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+
+        assert [t.description for t in inner.todos] == ["task"]
+
+
 async def test_blank_name_is_dropped_even_on_enter():
     async with run_pilot() as pilot:
         await boot(pilot)
