@@ -1,3 +1,4 @@
+from traceback import format_exc
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
 from todooit.ui.api.events import BarNotification, NotificationType
@@ -152,7 +153,7 @@ class TodooitAPI:
             keymatch.function.callback()
         except Exception as e:
             self.app.bar_switcher.switch_to_notification(
-                BarNotification(str(e), "error")
+                BarNotification(str(e), "error", details=format_exc())
             )
 
     def trigger_event(self, event: TodooitEvent):

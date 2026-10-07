@@ -1,3 +1,4 @@
+from traceback import format_exc
 from datetime import date
 from functools import cache
 from typing import (
@@ -586,7 +587,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             # A rule, not a crash: the change was not made
             self.post_message(BarNotification(str(refusal), "warning"))
         except Exception as e:  # pragma: no cover
-            self.post_message(BarNotification(str(e), "error"))
+            self.post_message(BarNotification(str(e), "error", details=format_exc()))
         else:
             # What a lifecycle column's change did to other todos
             self.tell_outcome(outcome)

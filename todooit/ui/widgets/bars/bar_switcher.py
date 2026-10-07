@@ -69,7 +69,9 @@ class BarSwitcher(ContentSwitcher):
         )
 
     def switch_to_notification(self, event: BarNotification):
-        notification_bar = NotificationBar(event.message, event.level, event.auto_exit)
+        notification_bar = NotificationBar(
+            event.message, event.level, event.auto_exit, event.details
+        )
         self.add_content(
             widget=notification_bar,
             id="notification_bar",

@@ -147,12 +147,19 @@ class BarNotification(TodooitEvent):
     """Emitted when a notification is to be displayed."""
 
     def __init__(
-        self, message: str, level: NotificationType, auto_exit: bool = True
+        self,
+        message: str,
+        level: NotificationType,
+        auto_exit: bool = True,
+        details: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.message = message
         self.level: NotificationType = level
         self.auto_exit = auto_exit
+        # Extra text an error carries onto the clipboard but not onto the
+        # screen, e.g. the traceback of the exception behind it
+        self.details = details
 
 
 class StartFieldEdit(TodooitEvent):

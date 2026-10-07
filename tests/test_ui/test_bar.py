@@ -361,3 +361,79 @@ async def test_copying_a_description_says_the_key_landed():
         await pilot.pause()
 
         assert notification_message(app) == "Description copied to clipboard"
+
+
+async def test_an_error_shows_a_copy_icon_and_a_warning_does_not():
+    from todooit.ui.widgets.bars.notification_bar.bar import COPY_LABEL
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        app.api.notify("it broke", "error")
+        await pilot.pause()
+        assert COPY_LABEL in str(app.bar_switcher.visible_content.render_line(0).text)
+
+        app.api.notify("careful", "warning")
+        await pilot.pause()
+        assert notification_message(app) == "careful"
+        assert COPY_LABEL not in str(app.bar_switcher.visible_content.render_line(0).text)
+
+
+async def test_errors_stay_up_longer_than_warnings():
+    from todooit.ui.widgets.bars.notification_bar.bar import (
+        COPIED_SHOWN_FOR,
+        SHOWN_FOR,
+    )
+
+    assert SHOWN_FOR["error"] == 10
+    assert COPIED_SHOWN_FOR == 2
+    assert SHOWN_FOR["error"] > SHOWN_FOR["warning"] > SHOWN_FOR["info"]
+
+
+async def test_clicking_an_error_copies_it_with_its_traceback():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        def explode():
+            raise ValueError("the [b]bad[/b] value")
+
+        app.api.keys.set("Z", explode)
+        await pilot.press("Z")
+        await pilot.pause()
+        assert notification_message(app) == "the [b]bad[/b] value"
+
+        await pilot.click("NotificationBar")
+        await pilot.pause()
+
+        # Markup off, and the traceback under it
+        assert app.clipboard.startswith("the bad value\n\nTraceback")
+        assert "ValueError: the [b]bad[/b] value" in app.clipboard
+        assert notification_message(app) == "Error copied to clipboard"
+        assert app.bar_switcher.current == "notification_bar"
+        assert "info" in app.bar_switcher.visible_content.classes
+        assert "Copy" not in str(app.bar_switcher.visible_content.render_line(0).text)
+
+
+async def test_clicking_an_error_without_a_traceback_copies_the_message():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        app.api.notify("no [b]browser[/b] found", "error")
+        await pilot.pause()
+        await pilot.click("NotificationBar")
+        await pilot.pause()
+
+        assert app.clipboard == "no browser found"
+
+
+async def test_clicking_a_warning_copies_nothing():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        app.api.notify("careful", "warning")
+        await pilot.pause()
+        await pilot.click("NotificationBar")
+        await pilot.pause()
+
+        assert app.clipboard != "careful"
+        assert notification_message(app) == "careful"
