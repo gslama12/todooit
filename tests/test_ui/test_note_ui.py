@@ -4,6 +4,8 @@ Notes: the window on a todo's note, and the pinned scratchpad
 
 from unittest.mock import patch
 
+import pytest
+
 from rich.cells import cell_len
 from textual.geometry import Offset
 
@@ -26,6 +28,7 @@ from todooit.ui.screens.note.markup import (
     QUOTE_ITEM,
     RULE,
     RULE_SPAN,
+    recount,
     scan_note,
 )
 from todooit.utils import Opened
@@ -777,6 +780,149 @@ async def test_a_number_mid_line_is_not_an_enumeration():
     """`1.` opens a list only where a list could open: at the head of a line"""
 
     assert list(scan_note(["worth about 1. of a point"]))[0] == []
+
+
+async def test_enter_carries_an_enumeration_on_with_the_next_number():
+    """A numbered item is carried on like a bullet, one number further"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press(*list("1. first"))
+        await pilot.press("enter")
+        await pilot.press(*list("second"))
+        assert editor.text == "1. first\n2. second"
+
+        # Past nine, the number grows a digit and the cursor stays past it
+        editor.text = "9. ninth"
+        editor.move_cursor((0, 8))
+        await pilot.press("enter")
+        assert editor.text == "9. ninth\n10. "
+        assert editor.cursor_location == (1, 4)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_tab_nests_an_enumeration_and_enter_walks_it_back_out():
+    """A nested list counts from one, and the one it came out of carries on"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("1. top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("a"))
+        await pilot.press("enter")
+        await pilot.press(*list("b"))
+        assert screen.editor.text == "1. top\n  1. a\n  2. b"
+
+        # Out of the nested list, the outer one picks up after its last number
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == "1. top\n  1. a\n  2. b\n2. "
+
+        # And at the top the list ends the way a bulleted one does
+        await pilot.press("enter")
+        assert screen.editor.text == "1. top\n  1. a\n  2. b\n"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_edit_mid_list_moves_the_numbers_below_it():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c"
+        editor.move_cursor((0, 4))
+        await pilot.press("enter")
+        assert editor.text == "1. a\n2. \n3. b\n4. c"
+
+        # A tab closes the gap the item leaves behind it
+        editor.move_cursor((2, 4))
+        await pilot.press("tab")
+        assert editor.text == "1. a\n2. \n  1. b\n3. c"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_steps_a_nested_enumeration_out():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("1. top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("child"))
+        assert screen.editor.text == "1. top\n  1. child"
+
+        # From the head of the words: out a level first, renumbered
+        screen.editor.move_cursor((1, 5))
+        await pilot.press("backspace")
+        assert screen.editor.text == "1. top\n2. child"
+
+        # Then the number goes, and the words stay
+        await pilot.press("backspace")
+        assert screen.editor.text == "1. top\nchild"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_enumeration_is_carried_on_inside_a_quote():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("1. said"))
+        await pilot.press("enter")
+        await pilot.press(*list("again"))
+        assert screen.editor.text == QUOTE_GLYPH + "1. said\n" + QUOTE_GLYPH + "2. again"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_shift_o_opens_the_next_numbered_item():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("3. third"))
+        await pilot.press("escape", "O")
+        await pilot.press(*list("fourth"))
+        assert screen.editor.text == "3. third\n4. fourth"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+@pytest.mark.parametrize(
+    "lines, row, counted",
+    [
+        # Each depth counts on; a nested list starts over
+        (["1. a", "1. b", "  5. x", "  5. y", "7. c"], 1, ["1. a", "2. b", "  1. x", "  2. y", "3. c"]),
+        # Stepped out of a nested list: the outer one counts it in, the rest starts over
+        (["1. a", "  1. x", "2. y", "  3. z", "2. b"], 2, ["1. a", "  1. x", "2. y", "  1. z", "3. b"]),
+        # The first item's own number opens the count
+        (["5. a", "1. b"], 1, ["5. a", "6. b"]),
+        # A blank line ends the list, and so does a change of quote
+        (["1. a", "", "9. b"], 0, ["1. a", "", "9. b"]),
+        ([QUOTE_GLYPH + "1. a", "1. b"], 0, [QUOTE_GLYPH + "1. a", "1. b"]),
+        # A bullet is counted around, and restarts the count after it
+        (["1. a", "• b", "4. c"], 0, ["1. a", "• b", "1. c"]),
+        (["• a", "  ◦ b"], 0, ["• a", "  ◦ b"]),
+        (["plain"], 0, ["plain"]),
+    ],
+)
+def test_recount(lines, row, counted):
+    edited = list(lines)
+
+    for at, start, end, marker in recount(lines, row):
+        edited[at] = edited[at][:start] + marker + edited[at][end:]
+
+    assert edited == counted
 
 
 async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():

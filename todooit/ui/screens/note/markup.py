@@ -3,7 +3,7 @@ The note's markdown-ish markup: constants, regexes and pure line parsing
 """
 
 import re
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, List, Optional, Sequence, Tuple
 
 from rich.cells import cell_len
 
@@ -87,13 +87,12 @@ EMPH_RE = re.compile(
     r"|\*(?P<star>[^*\s](?:[^*]*[^*\s])?)\*"
 )
 
-BULLET_RE = re.compile(
-    rf"^(?P<indent>[ \t]*)(?P<marker>[{''.join(BULLET_GLYPHS)}] )"
+# A list item: a bullet glyph, or a number. A number keeps no glyph, and is
+# otherwise a bullet - colored, carried on, nested and unwound the same way -
+# whose count `recount` keeps straight.
+ITEM_RE = re.compile(
+    rf"^(?P<indent>[ \t]*)(?P<marker>[{''.join(BULLET_GLYPHS)}] |(?P<number>\d+)\. )"
 )
-
-# Numbered items keep their typed number (no glyph swap) and are only
-# colored, the same as a bullet - one list, two markers.
-ORDERED_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>\d+\. )")
 
 QUOTE_RE = re.compile(rf"^(?P<indent>[ \t]*)(?P<marker>{QUOTE_GLYPH})")
 
@@ -114,6 +113,20 @@ def bullet_glyph(depth: int) -> str:
     return BULLET_GLYPHS[min(depth, len(BULLET_GLYPHS) - 1)] + " "
 
 
+def ordered_marker(number: int) -> str:
+    """The marker a numbered item wears, with the space that follows it."""
+
+    return f"{number}. "
+
+
+def item_number(marker: str) -> Optional[int]:
+    """The number of a numbered item's marker, or None for a bullet (or no marker)."""
+
+    match = ITEM_RE.match(marker)
+
+    return int(match.group("number")) if match and match.group("number") else None
+
+
 def split_quote(line: str) -> Tuple[str, str]:
     """Split a line into (quote bar, rest); bar is "" when not quoted."""
 
@@ -123,24 +136,85 @@ def split_quote(line: str) -> Tuple[str, str]:
 
 
 def line_prefix(line: str) -> str:
-    """A line's opening prefix (quote bar + indent + bullet), or "" - what `enter` carries onto the next line."""
+    """A line's opening prefix (quote bar + indent + list marker), or "" - what `enter` carries onto the next line."""
 
     bar, body = split_quote(line)
-    bullet = BULLET_RE.match(body)
+    item = ITEM_RE.match(body)
 
-    return bar + (body[: bullet.end()] if bullet else "")
+    return bar + (body[: item.end()] if item else "")
+
+
+def recount(lines: Sequence[str], row: int) -> List[Tuple[int, int, int, str]]:
+    """
+    Number the list `row` sits in again, top to bottom, so an item opened or
+    moved anywhere in it leaves no gap or repeat behind.
+
+    A list is the run of item lines around `row` (a blank line, a plain line or
+    a change of quote ends it). Each depth counts on from the item before it at
+    that depth; a nested list, or one after a bullet, starts at 1. The list's
+    first item keeps the number it was typed with, so `5.` can open one.
+
+    Only markers are rewritten (lines may carry folded links, which a whole-line
+    rewrite would lose), as (row, start, end, marker) edits.
+    """
+
+    def item(at: int) -> Optional[Tuple[str, str, str]]:
+        bar, body = split_quote(lines[at])
+        indent, marker, _ = split_indent(body)
+
+        return (bar, indent, marker) if marker else None
+
+    found = item(row)
+
+    if found is None:
+        return []
+
+    bar = found[0]
+    first = row
+
+    while first > 0 and (above := item(first - 1)) and above[0] == bar:
+        first -= 1
+
+    edits = []
+    counts = {}
+
+    for below in range(first, len(lines)):
+        found = item(below)
+
+        if found is None or found[0] != bar:
+            break
+
+        _, indent, marker = found
+        depth = indent_depth(indent)
+        number = item_number(marker)
+
+        # Stepping out ends the lists nested deeper
+        counts = {level: count for level, count in counts.items() if level <= depth}
+
+        if number is None:
+            counts.pop(depth, None)
+            continue
+
+        expected = counts.get(depth, number if below == first else 1)
+        counts[depth] = expected + 1
+
+        if expected != number:
+            start = len(bar) + len(indent)
+            edits.append((below, start, start + len(marker), ordered_marker(expected)))
+
+    return edits
 
 
 def marker_start(line: str) -> int:
-    """Column where `line`'s innermost marker starts (bullet first, then quote bar) as a list is exited."""
+    """Column where `line`'s innermost marker starts (list marker first, then quote bar) as a list is exited."""
 
     bar, body = split_quote(line)
-    bullet = BULLET_RE.match(body)
+    item = ITEM_RE.match(body)
 
-    if not bullet:
+    if not item:
         return 0
 
-    return len(bar) + len(bullet.group("indent"))
+    return len(bar) + len(item.group("indent"))
 
 
 def star_pair(line: str, column: int) -> Optional[int]:
@@ -160,9 +234,9 @@ def star_pair(line: str, column: int) -> Optional[int]:
 
 
 def split_indent(line: str) -> Tuple[str, str, str]:
-    """Split a line (past its quote bar, if any) into (indent, bullet, rest); bullet is "" if none."""
+    """Split a line (past its quote bar, if any) into (indent, list marker, rest); marker is "" if none."""
 
-    match = BULLET_RE.match(line)
+    match = ITEM_RE.match(line)
 
     if match:
         return match.group("indent"), match.group("marker"), line[match.end() :]
@@ -179,7 +253,7 @@ def hanging_prefix(line: str) -> str:
     """
 
     bar, body = split_quote(line)
-    item = BULLET_RE.match(body) or ORDERED_RE.match(body)
+    item = ITEM_RE.match(body)
 
     if item:
         return bar + body[: item.end("marker")]
@@ -262,7 +336,7 @@ def scan_markup(
     # Bullet and numbered markers style the same way. Outside a quote, color
     # shows depth; inside one, color shows "quoted" instead (depth is then
     # read from the glyph/indent).
-    item = BULLET_RE.match(body) or ORDERED_RE.match(body)
+    item = ITEM_RE.match(body)
     if item:
         depth = indent_depth(item.group("indent"))
         span = QUOTE_ITEM if bar else BULLET_SPANS[min(depth, len(BULLET_SPANS) - 1)]

@@ -49,9 +49,18 @@ is drawn the moment it is finished.
 keyboard-driven piece of markup, because nesting is the one thing that cannot
 be read off the characters on the line.
 
-`enter` on an empty item walks a list back out: from a nested bullet it steps
+`enter` at the end of an item opens the next one: a bullet carries its glyph
+on, a numbered item the next number (`1.` → `2.`).
+
+`enter` on an empty item walks a list back out: from a nested item it steps
 one level up and keeps the marker, and at the top level it takes the marker
 away, which is where the list ends.
+
+Numbered lists keep count as they are edited: an item opened or nested in the
+middle of one moves the numbers below it along, a nested list starts at `1.`,
+and stepping back out picks the outer list up after its last number. A list
+keeps the number it was opened with (`5.` counts on from five), and a blank or
+unnumbered line ends it.
 
 Lists work inside a quote, nested by the same `tab`, and are drawn in the
 quote's green.

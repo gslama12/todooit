@@ -48,10 +48,12 @@ from .markup import (
     RULE_SPAN,
     bullet_glyph,
     indent_depth,
+    item_number,
     line_prefix,
     marker_start,
     pasted_link,
     pasted_paths,
+    recount,
     scan_note,
     split_indent,
     split_quote,
@@ -330,7 +332,10 @@ class NoteEditor(TextArea):
         indent, bullet, rest = split_indent(body)
 
         depth = max(0, indent_depth(indent) + levels)
-        head = bar + INDENT * depth + (bullet_glyph(depth) if bullet else "")
+
+        # A glyph shows its depth; a number is put right by the recount below
+        marker = bullet_glyph(depth) if item_number(bullet) is None else bullet
+        head = bar + INDENT * depth + (marker if bullet else "")
 
         if head + rest == line:
             return
@@ -345,6 +350,23 @@ class NoteEditor(TextArea):
 
         # Cursor follows the words, not the column: indenting moves the words.
         self.move_cursor((row, max(0, column + len(head) - len(bar + indent + bullet))))
+
+        self._recount(row)
+
+    def _recount(self, row: int) -> None:
+        """
+        Number the list `row` sits in again (a no-op off a list); the cursor stays on its words.
+        """
+
+        cursor_row, column = self.cursor_location
+
+        for at, start, end, marker in recount(self.document.lines, row):
+            self.replace(marker, (at, start), (at, end), maintain_selection_offset=False)
+
+            if at == cursor_row and column >= end:
+                column += len(marker) - (end - start)
+
+        self.move_cursor((cursor_row, column))
 
     def action_indent(self) -> None:
         """
@@ -615,6 +637,7 @@ class NoteEditor(TextArea):
 
         self.move_cursor((row, len(line)))
         self.insert("\n" + prefix, maintain_selection_offset=False)
+        self._recount(row + 1)
 
     async def _on_key(self, event: events.Key) -> None:
         """
@@ -695,6 +718,7 @@ class NoteEditor(TextArea):
                     self.move_cursor((row + 1, column))
                 elif line[len(prefix) :].strip():
                     self.insert("\n" + prefix, maintain_selection_offset=False)
+                    self._recount(row + 1)
                 elif self._nested_item(row):
                     # Empty nested item: dedent one level (far more common
                     # than deleting it). Marker only goes at the top level.
