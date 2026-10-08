@@ -939,6 +939,100 @@ async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
         await pilot.pause()
 
 
+async def test_a_bullet_marker_in_front_of_a_written_line_bullets_it():
+    """
+    The bug: `- ` only opened a bullet with nothing after it, so a dash put in
+    front of words already written stayed a hyphen
+    """
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("a note to self"))
+        await pilot.press("home")
+        await pilot.press(*list("- "))
+        assert screen.editor.text == "• a note to self"
+
+        # The cursor lands past the glyph, in front of the words
+        assert screen.editor.cursor_location == (0, len("• "))
+
+        # A star does the same, on the next line
+        await pilot.press("end", "enter", "backspace")
+        await pilot.press(*list("second"))
+        await pilot.press("home")
+        await pilot.press(*list("* "))
+        assert screen.editor.text == "• a note to self\n• second"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_dash_put_in_front_of_a_space_bullets_the_line():
+    """The space is already there, so the dash alone opens the bullet"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("x words"))
+        await pilot.press("home", "delete")
+        assert screen.editor.text == " words"
+
+        await pilot.press("-")
+        assert screen.editor.text == "• words"
+        assert screen.editor.cursor_location == (0, len("• "))
+
+        # In front of an indent rather than one space, it stays a dash
+        await pilot.press("end", "enter", "backspace", "space", "space")
+        await pilot.press(*list("indented"))
+        await pilot.press("home", "home", "-")
+        assert screen.editor.text.splitlines()[1] == "-  indented"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_bullet_marker_in_front_of_an_indented_line_follows_its_depth():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press("tab")
+        await pilot.press(*list("words"))
+        await pilot.press(*["left"] * len("words"))
+        await pilot.press(*list("- "))
+        assert screen.editor.text == "  ◦ words"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_bullet_marker_in_front_of_quoted_words_opens_inside_the_quote():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> quoted words"))
+        await pilot.press(*["left"] * len("quoted words"))
+        await pilot.press(*list("- "))
+        assert screen.editor.text == QUOTE_GLYPH + "• quoted words"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_dash_put_mid_line_stays_a_hyphen():
+    """In front of existing words, but after other words: still a hyphen"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("well almost"))
+        await pilot.press(*["left"] * len("almost"))
+        await pilot.press(*list("- "))
+        assert screen.editor.text == "well - almost"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
 async def test_a_dash_mid_line_stays_a_hyphen():
     """Only a mark at the head of a line is opening one"""
 

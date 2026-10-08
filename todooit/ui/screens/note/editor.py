@@ -330,6 +330,26 @@ class NoteEditor(TextArea):
 
         self.move_cursor((row, end))
 
+    def _line_head(self, row: int, column: int) -> Tuple[str, str, str]:
+        """
+        Split the text before the cursor into (quote bar, indent, head): the
+        bar is checked first, so a mark after it opens inside the quote.
+        """
+
+        bar, body = split_quote(self.document[row])
+        before = body[: max(0, column - len(bar))]
+        indent = before[: len(before) - len(before.lstrip(" \t"))]
+
+        return bar, indent, before[len(indent) :]
+
+    def _open_bullet(self, row: int, start: int, end: int, indent: str) -> None:
+        """Swap the typed mark between `start` and `end` for the glyph its depth wears."""
+
+        glyph = bullet_glyph(indent_depth(indent))
+
+        self.replace(glyph, (row, start), (row, end), maintain_selection_offset=False)
+        self.move_cursor((row, start + len(glyph)))
+
     def _nested_item(self, row: int) -> bool:
         """
         Whether the list item on `row` is nested (checked via indent, not the glyph; quoted items are measured after the bar).
@@ -886,48 +906,51 @@ class NoteEditor(TextArea):
                 self._draw_separator(row)
                 return
 
-        if event.character == " ":
+        if event.character in BULLET_MARKS and self.selection.is_empty:
             row, column = self.cursor_location
-            line = self.document[row]
+            bar, indent, head = self._line_head(row, column)
 
-            # Check the quote bar first, so a mark after it opens inside the quote (not a literal hyphen).
-            bar, body = split_quote(line)
-            indent = body[: len(body) - len(body.lstrip(" \t"))]
+            after = self.document[row][column:]
 
-            # Space of `> `, `- `, `* ` or `# `: only bar/indent may precede it and nothing may follow.
-            mark = body[len(indent) :] if column == len(line) else ""
-
-            # Text before the cursor, so a `#` in front of existing words still opens a header.
-            head = body[len(indent) : max(0, column - len(bar))]
-
-            glyph = None
-
-            # Headers and quotes are whole-line constructs, meaningless nested in another quote.
-            if not bar:
-                if head and set(head) == {HEADER_MARK}:
-                    event.stop()
-                    event.prevent_default()
-                    self._draw_header(row, column)
-                    return
-
-                # Judged on the text before the cursor too, so `> ` in front of existing words quotes them.
-                if head == QUOTE_MARK:
-                    glyph = QUOTE_GLYPH
-
-            if glyph is None and mark in BULLET_MARKS:
-                glyph = bullet_glyph(indent_depth(indent))
-
-            if glyph is not None:
+            # Mark put at the head of a line whose words already have a space in
+            # front: that space is the mark's own, so the bullet opens now. Just
+            # the one space, so a mark typed into an indent stays literal.
+            if not head and after[:1] == " " and not after[1:2].isspace():
                 event.stop()
                 event.prevent_default()
+                self._open_bullet(row, column, column + 1, indent)
+                return
 
-                at = len(bar) + len(indent)
+        if event.character == " ":
+            row, column = self.cursor_location
 
+            # Space of `> `, `- `, `* ` or `# `: only bar/indent may precede the
+            # mark. Judged on the text before the cursor, so a mark in front of
+            # existing words still opens its line.
+            bar, indent, head = self._line_head(row, column)
+            at = len(bar) + len(indent)
+
+            # Headers and quotes are whole-line constructs, meaningless nested in another quote.
+            if not bar and head and set(head) == {HEADER_MARK}:
+                event.stop()
+                event.prevent_default()
+                self._draw_header(row, column)
+                return
+
+            if not bar and head == QUOTE_MARK:
+                event.stop()
+                event.prevent_default()
                 self.replace(
-                    glyph, (row, at), (row, column),
+                    QUOTE_GLYPH, (row, at), (row, column),
                     maintain_selection_offset=False,
                 )
-                self.move_cursor((row, at + len(glyph)))
+                self.move_cursor((row, at + len(QUOTE_GLYPH)))
+                return
+
+            if head in BULLET_MARKS:
+                event.stop()
+                event.prevent_default()
+                self._open_bullet(row, at, column, indent)
                 return
 
         await super()._on_key(event)
