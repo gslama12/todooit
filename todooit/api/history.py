@@ -8,9 +8,9 @@ Nothing is read unless `manager.revision` moved, so cursor keys cost nothing.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, cast
 
-from sqlalchemy import delete, event, insert, select
+from sqlalchemy import Table, delete, event, insert, select
 
 from .manager import manager
 from .project import Project
@@ -25,6 +25,12 @@ NOTE = "note"
 TABLES = (Project, Todo)
 
 MAX_DEPTH = 200
+
+
+def _table(model: type[Union[Project, Todo]]) -> Table:
+    """The table a model is mapped to (typed as the wider FromClause by SQLAlchemy)"""
+
+    return cast(Table, model.__table__)
 
 # One row of one table, keyed by column name
 Row = Dict[str, Any]
@@ -50,7 +56,7 @@ def _capture() -> Snapshot:
     snapshot: Snapshot = {}
 
     for model in TABLES:
-        table = model.__table__
+        table = _table(model)
         columns = [column for column in table.c if column.name != NOTE]
         query = select(*columns)
 
@@ -211,7 +217,7 @@ def _apply(fragment: Fragment, leaving: Fragment) -> ChangedRows:
         if not rows:
             continue
 
-        table = model.__table__
+        table = _table(model)
         session.execute(delete(table).where(table.c.id.in_(list(rows))))
 
     # Insert parents first
@@ -231,7 +237,7 @@ def _apply(fragment: Fragment, leaving: Fragment) -> ChangedRows:
             ]
 
         if values:
-            session.execute(insert(model.__table__), values)
+            session.execute(insert(_table(model)), values)
 
     _classify(fragment, leaving, restored)
     manager.commit()

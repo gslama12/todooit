@@ -29,6 +29,7 @@ todooit = "todooit.__main__:main"
 dev = [
     "coverage>=7.10.7",
     "faker>=37.8.0",
+    "mypy>=1.19.1",
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
@@ -36,6 +37,8 @@ dev = [
     "pytest-xdist>=3.6.1",
     "ruff>=0.13.1",
     "textual-dev>=1.7.0",
+    "types-pyperclip>=1.9.0.20250801",
+    "types-python-dateutil>=2.9.0.20260124",
 ]
 
 [build-system]
@@ -89,6 +92,19 @@ markers = [
 
 [tool.ruff.lint]
 ignore = ["E712"]
+
+[tool.mypy]
+# `uv run mypy` with no arguments checks all of these
+files = ["todooit", "migration", "tests", "conftest.py"]
+# The oldest target mypy still accepts; requires-python says 3.9
+python_version = "3.10"
+# tests/ has no __init__.py, so the root conftest.py and
+# tests/test_ui/conftest.py would both be module "conftest" without this
+explicit_package_bases = true
+# Most of the package is unannotated; without this mypy skips those bodies
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
 
 [tool.coverage.report]
 omit = ["todooit/utils/default_config.py"]

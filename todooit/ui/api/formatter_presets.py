@@ -92,6 +92,9 @@ def due_danger_today(fmt: str = "{}") -> Callable:
                 ),
             ).markup
 
+        # Declined: the next formatter in the chain draws the date
+        return None
+
     return wrapper
 
 

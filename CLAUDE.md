@@ -215,6 +215,21 @@ Two things the suite now relies on, worth keeping true:
   fail under load. Wait for a state instead — `boot()`, or a helper like it.
 
 
+## Type checking
+
+mypy is configured in `pyproject.toml` (`[tool.mypy]`) and covers the package,
+`migration/` and the tests:
+
+```bash
+uv run mypy                              # everything in [tool.mypy] files
+uv run mypy todooit/ui/screens/move.py   # one file, for a quick check
+```
+
+The codebase is not clean yet, so judge a change by whether it adds errors,
+not by a zero count. Don't add `# type: ignore` to make a count drop: fix the
+type or leave it.
+
+
 ## Every change ships a demo
 
 Seed a project into **this worktree's** database (never live) that exercises

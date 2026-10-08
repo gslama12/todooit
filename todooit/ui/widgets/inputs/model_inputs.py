@@ -68,6 +68,8 @@ class DateInput(SimpleInput[Todo, datetime]):
     EDIT_FORMAT = "%d.%m.%Y"
 
     def asks_for_calendar(self) -> bool:
+        """Whether the typed text is a request to open the calendar."""
+
         return self.value.strip().lower() == CALENDAR_WORD
 
     def take_back_word(self) -> None:

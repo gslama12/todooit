@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Callable, Optional, Tuple
 from rich.style import Style
-from todooit.api import Cadence, Todo, Project
+from todooit.api import Cadence, Todo, Project, TodoSortModeType
 from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
 from todooit.ui.api.formatter_presets import (
@@ -56,7 +56,7 @@ def priority_color(priority: int, api: TodooitAPI) -> str:
 # whatever is filed in here, what is the next thing to do out of it. The dates
 # are there for the stretches of work that are run off a calendar instead, and
 # hold until they are switched back — the order is the pane's, not a project's.
-SORT_MODES = ("priority", "due", "scheduled")
+SORT_MODES: Tuple[TodoSortModeType, ...] = ("priority", "due", "scheduled")
 
 
 CHECKBOX_EMPTY = "󰄱"

@@ -135,11 +135,11 @@ def migrate(
     if target.exists() and target.resolve() == source.resolve():
         raise MigrationError("source and target are the same file")
 
-    workspaces, todos = _read_dooit(source)
+    workspaces, todo_rows = _read_dooit(source)
 
     report = Report(source, target, dry_run, target.exists())
     projects = [_project(row) for row in workspaces]
-    todos = [_todo(row, report) for row in todos]
+    todos = [_todo(row, report) for row in todo_rows]
     report.projects, report.todos = len(projects), len(todos)
 
     if dry_run:

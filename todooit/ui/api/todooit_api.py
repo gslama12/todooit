@@ -9,6 +9,7 @@ from todooit.api import (
     TODAY,
     UPCOMING,
     History,
+    TodoSortModeType,
     binned_tasks,
     empty_bin,
 )
@@ -425,7 +426,7 @@ class TodooitAPI:
         if isinstance(self.focused, ProjectsTree):
             self.focused.set_color(color)
 
-    def sort_todos(self, mode: str):
+    def sort_todos(self, mode: TodoSortModeType):
         """Order the todos of a project by priority, due date or scheduled date"""
 
         tree = self.vars.todos_tree

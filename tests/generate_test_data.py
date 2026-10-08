@@ -17,7 +17,7 @@ def gen_todo(parent):
     due = f.date_between(start_date="-1y", end_date="+1y")
     priority = randint(1, 3) if randint(0, 10) == 5 else 0
 
-    recurrence = Cadence(randint(1, 30, "days")) if randint(0, 10) == 5 else None
+    recurrence = Cadence(randint(1, 30), "days") if randint(0, 10) == 5 else None
     todo = Todo(
         description=description,
         due=due,

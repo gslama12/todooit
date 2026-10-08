@@ -11,6 +11,7 @@ from todooit.api import (
     Todo,
     Project,
     TodoGroup,
+    TodoSortModeType,
     freeze_sort_order,
     move_todo_to_bin,
     restore_todo,
@@ -70,7 +71,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return self.api.vars.todo_sort
 
-    def sort_by(self, mode: str) -> bool:
+    def sort_by(self, mode: TodoSortModeType) -> bool:
         """
         Sets the order for every todos pane (not just this one — it's a global setting
         applied per pane), keeping the cursor on the same row. Returns False if this
@@ -140,7 +141,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return project_groups(self.model, self.sort_mode)
 
-    def layout(self) -> List[PaneRow]:
+    def pane_rows(self) -> List[PaneRow]:
         return todo_rows(self.todo_groups, self.visible_children, self.is_node_expaned)
 
     def option_for(self, row: PaneRow) -> Option:

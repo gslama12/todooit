@@ -43,6 +43,7 @@ from todooit.ui.widgets.renderers import (
     COLUMN_PADDING,
     DESCRIPTION_OVERFLOW,
 )
+from todooit.ui.widgets.inputs.model_inputs import DateInput
 from todooit.utils import copy_text, paste_text
 from .base_tree import BaseTree
 from ._render_dict import RenderDict
@@ -451,7 +452,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return getattr(model, self.CHILDREN_ATTR)
 
-    def layout(self) -> List[PaneRow]:
+    def pane_rows(self) -> List[PaneRow]:
         """The rows this pane draws, finished (see pane_layout). Overridden by panes that draw blocks."""
 
         return tree_rows(
@@ -468,7 +469,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     def _body_options(self) -> List[Option]:
         """Every row of the pane except the column titles."""
 
-        rows = self.layout()
+        rows = self.pane_rows()
 
         for row in rows:
             self._rows[row.id] = row
@@ -624,7 +625,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         column = self.current.editing
         component = self.current._get_component(column)
 
-        if not component.asks_for_calendar():
+        if not isinstance(component, DateInput) or not component.asks_for_calendar():
             return
 
         component.take_back_word()
@@ -642,7 +643,12 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         if not self.is_editing or self.current.editing != column:
             return False  # pragma: no cover
 
-        self.current._get_component(column).set_day(day)
+        component = self.current._get_component(column)
+
+        if not isinstance(component, DateInput):
+            return False  # pragma: no cover
+
+        component.set_day(day)
         self.update_current_prompt()
 
         return True

@@ -4,7 +4,7 @@ from typing import Any, List, Optional
 from rich.style import Style
 from rich.text import Text
 
-from todooit.api import FixedProject, Todo, TodoGroup
+from todooit.api import FixedProject, Todo, TodoGroup, TodoSortModeType
 from todooit.api.fixed_projects import split_path
 from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
@@ -259,7 +259,7 @@ class FixedTodosTree(TodosTree):
     def shift_down(self):
         self._not_here("Tasks can't be reordered")
 
-    def sort_by(self, mode: str) -> bool:
+    def sort_by(self, mode: TodoSortModeType) -> bool:
         """Sort keys do nothing here — the pane's order is fixed, not user-selectable — rather than silently sorting elsewhere."""
 
         self._not_here("Tasks can't be sorted")
