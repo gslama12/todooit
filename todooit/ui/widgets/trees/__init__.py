@@ -1,8 +1,8 @@
-from .todos_tree import TodosTree
-from .fixed_todos_tree import FixedTodosTree
 from .bin_todos_tree import BinTodosTree
 from .completed_todos_tree import CompletedTodosTree
+from .fixed_todos_tree import FixedTodosTree
 from .projects_tree import ProjectsTree
+from .todos_tree import TodosTree
 
 
 def make_todos_tree(project) -> TodosTree:

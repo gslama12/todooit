@@ -12,13 +12,12 @@ from todooit.utils import (
     fold_links,
     looks_like_path,
 )
-from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
 from todooit.utils.links import (
     EMPH_MARK,
     folded_emph,
     mark_pairs,
 )
-
+from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
 
 # Stored as the actual glyph (not a "- " swapped at render time) since a
 # TextArea draws exactly the text it holds. One glyph per nesting level; past

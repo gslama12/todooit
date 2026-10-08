@@ -7,11 +7,11 @@ from typing import List, Optional, Tuple
 
 from rich.cells import cell_len
 from textual._wrap import compute_wrap_offsets
-from textual.expand_tabs import get_tab_widths
-from textual.geometry import Offset
 from textual.document._document import Document, EditResult
 from textual.document._document_navigator import DocumentNavigator
 from textual.document._wrapped_document import WrappedDocument
+from textual.expand_tabs import get_tab_widths
+from textual.geometry import Offset
 
 from todooit.utils import fold_links
 from todooit.utils.links import (

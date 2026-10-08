@@ -1,37 +1,40 @@
 from datetime import date
 from functools import partial
 from typing import Optional
+
 from rich.markup import escape
 from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher, Static
+
 from todooit.api import (
     TODAY,
     ChangedRows,
-    Todo,
     Project,
+    Todo,
     fixed_project_from_key,
-)
-from todooit.ui.api.events import (
-    ModeChanged,
-    ShowConfirm,
-    StartFieldEdit,
-    ProjectSelected,
-    RevealTodo,
-    GotoFixedProject,
-    HistoryStep,
-    SpawnHelp,
-    SpawnMove,
-    SpawnNote,
-    SpawnCalendar,
-    SpawnQuickAdd,
-    SpawnSearch,
-    BarNotification,
 )
 from todooit.api.fixed_projects import project_path
 from todooit.api.placement import home_of
-from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
+from todooit.ui.api.events import (
+    BarNotification,
+    GotoFixedProject,
+    HistoryStep,
+    ModeChanged,
+    ProjectSelected,
+    RevealTodo,
+    ShowConfirm,
+    SpawnCalendar,
+    SpawnHelp,
+    SpawnMove,
+    SpawnNote,
+    SpawnQuickAdd,
+    SpawnSearch,
+    StartFieldEdit,
+)
 from todooit.ui.widgets import BarSwitcher, ModelTree
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
+
 from .base import BaseScreen
 from .calendar import CalendarScreen, calendar_title
 from .help import HelpScreen
@@ -39,7 +42,6 @@ from .move import Moved, MoveScreen
 from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
 from .search import Found, SearchScreen
-
 
 # Max rows a history step flashes individually; past this, the bar's count
 # already says enough and flashing top-to-bottom adds little.

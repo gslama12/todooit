@@ -1,13 +1,14 @@
 from typing import TYPE_CHECKING, List, Optional
+
 from textual import on
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, fixed_projects, move_project_to_bin
 from todooit.ui.api.events import ProjectSelected
-from .model_tree import ColumnRule, ModelTree
+
 from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
-
+from .model_tree import ColumnRule, ModelTree
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters.model_formatters import (

@@ -9,9 +9,9 @@ here settles the import order once, for the whole directory, and makes single
 test files runnable on their own.
 """
 
-import tests.test_ui.ui_base  # noqa: F401
-
 import pytest
+
+import tests.test_ui.ui_base  # noqa: F401
 
 # Anything a test waits out in real seconds is a race it loses the moment the
 # suite runs in parallel and a worker is starved: the notification bar removes

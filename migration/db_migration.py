@@ -170,7 +170,9 @@ def _read_dooit(source: Path) -> Tuple[List[sqlite3.Row], List[sqlite3.Row]]:
         workspaces = connection.execute("SELECT * FROM workspace ORDER BY id").fetchall()
         todos = connection.execute("SELECT * FROM todo ORDER BY id").fetchall()
     except sqlite3.DatabaseError as error:
-        raise MigrationError(f"{source} is not a readable SQLite database: {error}")
+        raise MigrationError(
+            f"{source} is not a readable SQLite database: {error}"
+        ) from error
     finally:
         connection.close()
 

@@ -1,8 +1,9 @@
-from tests.test_ui.ui_base import run_pilot
-from todooit.ui.tui import Todooit
-from todooit.ui.api import loader
 import tempfile
 from pathlib import Path
+
+from tests.test_ui.ui_base import run_pilot
+from todooit.ui.api import loader
+from todooit.ui.tui import Todooit
 
 
 async def test_loader():

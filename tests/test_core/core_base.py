@@ -1,6 +1,6 @@
-from todooit.api import manager
-from todooit.api import Project, Todo
 import pytest
+
+from todooit.api import Project, Todo, manager
 
 TEMP_PATH = ":memory:"
 

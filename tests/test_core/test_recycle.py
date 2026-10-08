@@ -2,6 +2,7 @@
 The Bin: throwing work away, getting it back, and emptying it out
 """
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import (
     Project,
     Todo,
@@ -12,7 +13,6 @@ from todooit.api import (
     restore_todo,
 )
 from todooit.api.recycle import REVIVED_PREFIX, UNKNOWN_PROJECT, revive_home
-from tests.test_core.core_base import *  # noqa
 
 
 def test_binning_stamps_the_whole_family(create_project):

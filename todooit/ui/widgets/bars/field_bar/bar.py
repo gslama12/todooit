@@ -5,6 +5,7 @@ from rich.style import Style
 from rich.text import Text
 
 from todooit.ui.api.events import ModeChanged
+
 from .._base import BarBase
 
 if TYPE_CHECKING:  # pragma: no cover

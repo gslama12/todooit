@@ -7,7 +7,9 @@ value changes: once at startup, on a timer, or on an event.
 
 from datetime import datetime
 from typing import Optional, Union
+
 from rich.text import TextType
+
 from todooit.ui.api import TodooitAPI, subscribe, timer
 from todooit.ui.api.events import ProjectSelected, Startup
 from todooit.ui.widgets.bars import StatusBarWidget

@@ -8,11 +8,12 @@ fixed per column rather than shared.
 import re
 from datetime import datetime
 from typing import Callable, Optional
+
 from rich.style import Style
 from rich.text import Text
+
 from todooit.api import Todo
 from todooit.ui.api import TodooitAPI, extra_formatter
-
 
 # An hourglass, in the same Material set the rest of the row's icons come out
 # of: sand running through says the work is under way somewhere else, which is

@@ -19,15 +19,14 @@ import pytest
 from textual._xterm_parser import XTermParser
 from textual.pilot import Pilot
 
-from todooit.ui.screens.note.editor import NoteEditor
-from todooit.ui.widgets.inputs._input import Input
-
 from tests.test_ui.test_note_ui import open_note
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     run_pilot,
 )
+from todooit.ui.screens.note.editor import NoteEditor
+from todooit.ui.widgets.inputs._input import Input
 
 # What WezTerm sends into todooit for each Esc-layer key
 WEZTERM = {

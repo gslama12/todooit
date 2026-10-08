@@ -4,9 +4,9 @@ The undo history: what a change is worth keeping, and what putting one back does
 
 from datetime import datetime
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import History, Project, Todo, manager, move_project_to_bin
 from todooit.api.history import MAX_DEPTH
-from tests.test_core.core_base import *  # noqa
 
 
 def started_history() -> History:

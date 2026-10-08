@@ -1,15 +1,8 @@
-from .date_parser import looks_like_date_start, parse
-from .css_manager import CssManager
-from .colors import blend
-from .day_names import DATE_FORMAT, WEEKDAY_NAMES, day_label
-from .holidays import (
-    holiday_name,
-    holidays,
-    is_working_day,
-    last_working_day,
-    next_month_end,
-)
 from .clipboard import copy_text, paste_files, paste_text
+from .colors import blend
+from .css_manager import CssManager
+from .date_parser import looks_like_date_start, parse
+from .day_names import DATE_FORMAT, WEEKDAY_NAMES, day_label
 from .files import (
     Opened,
     display_name,
@@ -19,6 +12,13 @@ from .files import (
     read_attachments,
     resolve_path,
     write_attachments,
+)
+from .holidays import (
+    holiday_name,
+    holidays,
+    is_working_day,
+    last_working_day,
+    next_month_end,
 )
 from .links import (
     TITLE_MAX,

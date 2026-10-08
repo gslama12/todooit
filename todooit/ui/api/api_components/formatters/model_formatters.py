@@ -1,5 +1,6 @@
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree
+
 from ._model_formatter_base import ModelFormatterBase
-from todooit.ui.widgets.trees import TodosTree, ProjectsTree
 
 
 class TodoFormatter(ModelFormatterBase):

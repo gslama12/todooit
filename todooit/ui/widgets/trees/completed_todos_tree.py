@@ -1,6 +1,7 @@
 from todooit.api import Todo
 from todooit.api.placement import root_of
 from todooit.ui.api.events import RevealTodo
+
 from .fixed_todos_tree import FixedTodosTree
 
 

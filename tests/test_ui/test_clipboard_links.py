@@ -4,8 +4,6 @@ The system clipboard on the tasks pane, and the `o` that opens a row's link
 
 from unittest.mock import patch
 
-from todooit.ui.screens.note import NoteScreen
-
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -15,6 +13,7 @@ from tests.test_ui.ui_base import (
     set_clipboard,
     tree_options,
 )
+from todooit.ui.screens.note import NoteScreen
 
 
 async def test_copy_todo_description():

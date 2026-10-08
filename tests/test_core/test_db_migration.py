@@ -14,12 +14,11 @@ import pytest
 from platformdirs import user_data_dir
 
 from migration import db_migration
+from migration.db_migration import MigrationError, migrate
+from tests.test_core.test_sync import EXPECTED_INDEXES, _index_names
 from todooit.api import Project, Todo, manager
 from todooit.api.cadence import EPOCH, Cadence
-from migration.db_migration import MigrationError, migrate
 from todooit.paths import HOME_ENV_VAR, database_file
-
-from tests.test_core.test_sync import EXPECTED_INDEXES, _index_names
 
 REPO = Path(__file__).parents[2]
 DOOIT_DDL = Path(__file__).with_name("dooit_v3.sql")

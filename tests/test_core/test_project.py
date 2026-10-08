@@ -1,5 +1,5 @@
-from todooit.api import Project
 from tests.test_core.core_base import *  # noqa
+from todooit.api import Project
 
 
 def test_project_creation(create_project):

@@ -1,6 +1,8 @@
 from textual.app import App
-from todooit.ui.api.widgets import TodoLayout, ProjectLayout
-from todooit.ui.widgets.trees import TodosTree, ProjectsTree
+
+from todooit.ui.api.widgets import ProjectLayout, TodoLayout
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree
+
 from ._base import ApiComponent
 
 

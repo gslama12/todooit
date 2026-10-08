@@ -12,9 +12,6 @@ from pathlib import Path
 
 import pytest
 
-# A plain dict of {test module stem: feature}; imports nothing itself
-from tests.features import FEATURE_BY_MODULE
-
 # --------------------------------------------------------------------------
 # 1. Textual's idle detector
 #
@@ -28,6 +25,9 @@ from tests.features import FEATURE_BY_MODULE
 # tighter poll has every worker waking 500x a second, and the box spends its
 # time scheduling rather than testing.
 import textual._wait as _textual_wait
+
+# A plain dict of {test module stem: feature}; imports nothing itself
+from tests.features import FEATURE_BY_MODULE
 
 _IDLE_GRANULARITY = 0.005
 

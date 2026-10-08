@@ -3,9 +3,9 @@ from datetime import datetime
 import pytest
 from sqlalchemy import text
 
+from tests.test_core.core_base import *  # noqa: F403
 from todooit.api import Cadence, Todo, lifecycle, manager
 from todooit.utils import next_month_end
-from tests.test_core.core_base import *  # noqa: F401,F403
 
 
 def advances(cadence: Cadence, start: datetime, times: int) -> list:

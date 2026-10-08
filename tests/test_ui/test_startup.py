@@ -1,9 +1,9 @@
 from textual.widgets import ContentSwitcher
 
+from tests.test_ui.ui_base import boot, run_pilot, visible_todos
 from todooit.api import TODAY
 from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
-from tests.test_ui.ui_base import boot, run_pilot, visible_todos
 
 
 async def test_startup():
@@ -14,8 +14,8 @@ async def test_startup():
         assert app.is_running
 
         # check for vars
-        app.bar_switcher
-        app.project_tree
+        assert app.bar_switcher is not None
+        assert app.project_tree is not None
 
         assert app.get_todooit_mode() == "NORMAL"
 

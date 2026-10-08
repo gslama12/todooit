@@ -1,5 +1,6 @@
 from functools import partial
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
+
 from textual.widgets.option_list import OptionDoesNotExist
 
 from todooit.api.exceptions import NoNodeError

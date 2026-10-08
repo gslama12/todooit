@@ -1,8 +1,9 @@
-import faker
 from random import randint
-from todooit.api import Cadence, Todo, Project
-from todooit.utils.database import delete_all_data
 
+import faker
+
+from todooit.api import Cadence, Project, Todo
+from todooit.utils.database import delete_all_data
 
 f = faker.Faker()
 

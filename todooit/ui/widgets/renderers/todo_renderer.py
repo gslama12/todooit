@@ -4,11 +4,11 @@ from ..inputs.model_inputs import (
     Completed,
     Due,
     Note,
+    Priority,
     Recurrence,
     Scheduled,
     Status,
     TodoDescription,
-    Priority,
 )
 from .base_renderer import BaseRenderer, Todo
 

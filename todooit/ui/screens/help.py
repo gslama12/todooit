@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple
+
 from rich.console import Group, RenderableType
 from rich.rule import Rule
 from rich.table import Table
@@ -9,6 +10,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from todooit.ui.api.api_components.keys import KeyManager
+
 from .base import BaseScreen
 from .panel import HINT_GAP
 

@@ -4,9 +4,6 @@ The quick add overlay: a whole task typed in one line over the app
 
 from datetime import date, timedelta
 
-from todooit.api import Project, Todo
-from todooit.ui.screens.quick_add import HINT, SCALE_HINTS, QuickAddScreen
-from todooit.utils.quick_add import SCALES
 from tests.test_ui.ui_base import (
     boot,
     new_project,
@@ -14,6 +11,9 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import Project, Todo
+from todooit.ui.screens.quick_add import HINT, SCALE_HINTS, QuickAddScreen
+from todooit.utils.quick_add import SCALES
 
 
 async def open_quick_add(pilot) -> QuickAddScreen:

@@ -5,13 +5,18 @@ Notes: the window on a todo's note, and the pinned scratchpad
 from unittest.mock import patch
 
 import pytest
-
 from rich.cells import cell_len
 from textual.geometry import Offset
 
+from tests.test_ui.ui_base import (
+    boot,
+    commit_line,
+    create_and_move_to_todo,
+    run_pilot,
+    set_clipboard,
+)
 from todooit.api import PinnedNote, Todo
 from todooit.api.theme import TodooitThemeBase
-
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
 from todooit.ui.screens.note.document import FoldedDocument, HangingDocument
 from todooit.ui.screens.note.editor import MODE_INSERT, MODE_NORMAL, build_theme
@@ -33,13 +38,6 @@ from todooit.ui.screens.note.markup import (
 )
 from todooit.utils import Opened
 from todooit.utils.links import fold_links
-from tests.test_ui.ui_base import (
-    boot,
-    commit_line,
-    create_and_move_to_todo,
-    run_pilot,
-    set_clipboard,
-)
 
 # The address that started all this: too long to sit on a line of its own, let
 # alone inside a quote bar, and with nothing past the page name worth reading
@@ -709,7 +707,7 @@ async def test_an_emphasised_word_deleted_leaves_no_mark_behind():
     """
 
     async with run_pilot() as pilot:
-        screen = await open_note(pilot)
+        await open_note(pilot)
 
         await pilot.press(*list("say *this* twice"))
 

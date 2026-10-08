@@ -7,8 +7,8 @@ from typing import Callable, Optional, Tuple
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
-from textual.timer import Timer
 from textual.containers import Vertical
+from textual.timer import Timer
 from textual.widgets import Static, TextArea
 
 from todooit.api import Todo
@@ -29,11 +29,10 @@ from .editor import (
     MODE_INSERT,
     MODE_NORMAL,
     THEME_NAME,
-    build_theme,
     NoteEditor,
+    build_theme,
 )
 from .markup import tidy_marks
-
 
 # How long the editor sits still before the note is written back
 SAVE_DEBOUNCE = 0.4

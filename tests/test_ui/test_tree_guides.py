@@ -13,6 +13,13 @@ from typing import List
 
 from rich.console import Console
 
+from tests.test_ui.ui_base import (
+    boot,
+    commit_line,
+    create_and_move_to_todo,
+    run_pilot,
+    visible_todos,
+)
 from todooit.api import Todo, move_todo_to_bin
 from todooit.ui.pane_layout import (
     GUIDE_BLANK,
@@ -23,13 +30,6 @@ from todooit.ui.pane_layout import (
     context_id,
 )
 from todooit.ui.widgets.trees.model_tree import ModelTree
-from tests.test_ui.ui_base import (
-    boot,
-    commit_line,
-    create_and_move_to_todo,
-    run_pilot,
-    visible_todos,
-)
 
 # Narrow enough that a sentence of a description has to wrap, wide enough that
 # it still wraps a word at a time rather than a letter at a time

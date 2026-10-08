@@ -4,8 +4,6 @@ Ctrl+z and ctrl+y over the two panes: taking a key back, and pressing it again
 
 from textual.pilot import Pilot
 
-from todooit.api import BIN, Project, Todo
-from todooit.ui.tui import Todooit
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -17,6 +15,8 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import BIN, Project, Todo
+from todooit.ui.tui import Todooit
 
 
 async def undo(pilot: Pilot) -> None:

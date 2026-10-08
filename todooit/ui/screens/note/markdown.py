@@ -23,7 +23,6 @@ from .markup import (
     split_quote,
 )
 
-
 # How the first pasted line meets the line the cursor is on
 PASTE_BLOCK = "block"  # cursor opens the line: its markup is converted
 PASTE_STRIP = "strip"  # cursor right after a marker: the pasted one is dropped

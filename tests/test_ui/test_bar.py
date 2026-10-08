@@ -8,9 +8,6 @@ test_sort.py.
 
 from typing import Optional
 
-from todooit.api import BIN, Todo
-from todooit.ui.tui import Todooit
-from todooit.ui.widgets.bars import StatusBar
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -20,6 +17,9 @@ from tests.test_ui.ui_base import (
     notification_message,
     run_pilot,
 )
+from todooit.api import BIN, Todo
+from todooit.ui.tui import Todooit
+from todooit.ui.widgets.bars import StatusBar
 
 
 async def settle(pilot):

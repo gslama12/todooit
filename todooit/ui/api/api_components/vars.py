@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING, Optional
 from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
-from ._base import ApiComponent
 
+from ._base import ApiComponent
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.todooit_api import TodooitAPI

@@ -1,8 +1,7 @@
-from traceback import format_exc
 from contextlib import contextmanager
+from traceback import format_exc
 from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
-from todooit.ui.api.events import BarNotification, NotificationType
-from todooit.ui.api.plug import ConfigManager
+
 from todooit.api import (
     BIN,
     COMPLETED,
@@ -13,29 +12,31 @@ from todooit.api import (
     binned_tasks,
     empty_bin,
 )
-from .events import (
-    TodooitEvent,
-    GotoFixedProject,
-    HistoryStep,
-    ShowConfirm,
-    SpawnHelp,
-    SpawnQuickAdd,
-    SpawnSearch,
-    QuitApp,
-)
+from todooit.ui.api.events import BarNotification, NotificationType
+from todooit.ui.api.plug import ConfigManager
 from todooit.ui.widgets import ModelTree
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.utils import CssManager, first_link, link_label, open_url
 
 from .api_components import (
+    BarManager,
+    Formatter,
     KeyManager,
     KeyMatchType,
     KeyScopeType,
     LayoutManager,
     MotionKeys,
-    Formatter,
-    BarManager,
     VarManager,
+)
+from .events import (
+    GotoFixedProject,
+    HistoryStep,
+    QuitApp,
+    ShowConfirm,
+    SpawnHelp,
+    SpawnQuickAdd,
+    SpawnSearch,
+    TodooitEvent,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -97,7 +98,6 @@ class TodooitAPI:
 
     def no_op(self):
         """<NOP>"""
-        pass
 
     def quit(self):
         """Quit todooit"""

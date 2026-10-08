@@ -2,9 +2,6 @@
 The move window: the project a task is filed under, retyped in one line
 """
 
-from todooit.api import Project, Todo
-from todooit.ui.screens.move import MoveScreen
-from todooit.ui.screens.project_completion import build_project
 from tests.test_ui.ui_base import (
     boot,
     new_project,
@@ -13,6 +10,9 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import Project, Todo
+from todooit.ui.screens.move import MoveScreen
+from todooit.ui.screens.project_completion import build_project
 
 
 async def open_move(pilot) -> MoveScreen:

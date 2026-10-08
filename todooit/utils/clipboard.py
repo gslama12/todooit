@@ -11,6 +11,7 @@ a file manager, which is on the clipboard as a file and not as any text at all.
 """
 
 import platform
+from contextlib import suppress
 from shutil import which
 from subprocess import DEVNULL, PIPE, SubprocessError, run
 from typing import TYPE_CHECKING, List, Optional
@@ -47,13 +48,11 @@ def copy_text(app: Optional["App"], text: str) -> None:
     if app is not None:
         app.copy_to_clipboard(text)
 
-    try:
+    # No clipboard tool on the host (no xclip, no clip.exe, ...). The
+    # terminal was still handed the text, so the copy is not lost - and a
+    # failure here is nothing the user asked about
+    with suppress(Exception):
         pyperclip.copy(text)
-    except Exception:
-        # No clipboard tool on the host (no xclip, no clip.exe, ...). The
-        # terminal was still handed the text, so the copy is not lost - and a
-        # failure here is nothing the user asked about
-        pass
 
 
 def paste_text(app: Optional["App"] = None) -> str:

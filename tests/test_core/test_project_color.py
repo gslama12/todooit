@@ -150,7 +150,7 @@ def test_an_indented_tree_takes_its_new_parents_color(create_project):
 
 
 def test_indenting_into_the_same_color_says_nothing(create_project):
-    work = create_project("work")
+    create_project("work")
     home = create_project("home")
 
     assert not home.indent()

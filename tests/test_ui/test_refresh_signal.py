@@ -5,9 +5,6 @@ redraws from the rows that key left different, whatever code made the change
 
 from datetime import datetime
 
-from todooit.api import Project, Todo
-from todooit.ui.tui import Todooit
-from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
     boot,
     descriptions,
@@ -16,6 +13,9 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import Project, Todo
+from todooit.ui.tui import Todooit
+from todooit.ui.widgets.trees.model_tree import ModelTree
 
 
 def weekly_review(app: Todooit) -> Todo:

@@ -7,6 +7,7 @@ and the headings and context rows of a block.
 
 from datetime import datetime, time, timedelta
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import TODAY, UPCOMING, Project, Todo, TodoGroup, move_todo_to_bin
 from todooit.ui.pane_layout import (
     CONTEXT,
@@ -22,7 +23,6 @@ from todooit.ui.pane_layout import (
     todo_rows,
     tree_rows,
 )
-from tests.test_core.core_base import *  # noqa
 
 
 def everything(_uuid: str) -> bool:

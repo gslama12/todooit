@@ -1,27 +1,24 @@
-from .model import TodooitModel, BaseModel
+from . import lifecycle
 from .cadence import Cadence
-from .todo import (
-    SORT_KEYS,
-    Todo,
-    TodoSortModeType,
-    freeze_sort_order,
-    sort_todos,
-)
-from .project import Project
-from .pinned_note import PINNED_NOTE_ID, PinnedNote
 from .fixed_projects import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    UPCOMING,
     FixedProject,
     TodoGroup,
     TodoRow,
-    TODAY,
-    UPCOMING,
-    COMPLETED,
-    BIN,
+    binned_tasks,
     fixed_project_from_id,
     fixed_project_from_key,
     fixed_projects,
-    binned_tasks,
 )
+from .history import ChangedRows, History
+from .hooks import fix_hooks, validation_hooks
+from .manager import manager
+from .model import BaseModel, TodooitModel
+from .pinned_note import PINNED_NOTE_ID, PinnedNote
+from .project import Project
 from .recycle import (
     REVIVED_PREFIX,
     empty_bin,
@@ -30,10 +27,13 @@ from .recycle import (
     restore_todo,
     revive_home,
 )
-from .history import ChangedRows, History
-from . import lifecycle
-from .manager import manager
-from .hooks import fix_hooks, validation_hooks
+from .todo import (
+    SORT_KEYS,
+    Todo,
+    TodoSortModeType,
+    freeze_sort_order,
+    sort_todos,
+)
 
 
 def drop_blank_models() -> None:

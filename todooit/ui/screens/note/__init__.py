@@ -11,7 +11,7 @@ The note window, split by concern:
 - `pinned`      `PinnedNoteScreen`, the app-wide scratchpad note
 """
 
-from .screen import NoteScreen, NoteScreenBase
 from .pinned import PinnedNoteScreen
+from .screen import NoteScreen, NoteScreenBase
 
 __all__ = ["NoteScreen", "NoteScreenBase", "PinnedNoteScreen"]

@@ -3,6 +3,7 @@ from datetime import datetime
 from textual.pilot import Pilot
 from textual.widgets import ContentSwitcher
 
+from tests.test_ui.ui_base import run_pilot
 from todooit.api import COMPLETED, Project, Todo
 from todooit.ui.screens.note import NoteScreen
 from todooit.ui.screens.search import (
@@ -12,8 +13,8 @@ from todooit.ui.screens.search import (
     EMPTY_QUERY,
     MAX_NOTE_ROWS,
     MAX_ROWS,
-    NOTES_TITLE,
     NO_NOTE_MATCHES,
+    NOTES_TITLE,
     PANEL_TITLE,
     SearchScreen,
     note_hits,
@@ -21,7 +22,6 @@ from todooit.ui.screens.search import (
 )
 from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.todos_tree import TodosTree
-from tests.test_ui.ui_base import run_pilot
 
 ITEMS = ["apple", "apps", "applet", "apricot"]
 

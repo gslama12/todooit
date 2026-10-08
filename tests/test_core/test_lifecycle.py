@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy import update
 
+from tests.test_core.core_base import *  # noqa: F403
 from todooit.api import Cadence, Todo, lifecycle, manager, move_todo_to_bin
-from tests.test_core.core_base import *  # noqa: F401,F403
 
 MONDAY = datetime(2026, 10, 5, 9, 0)
 TUESDAY_NEXT_WEEK = datetime(2026, 10, 13, 9, 0)

@@ -1,8 +1,9 @@
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from uuid import uuid4
-from dataclasses import dataclass
 
 from rich.text import Text
+
 from todooit.api.project import ModelType
 from todooit.ui.api.api_components.formatters._decorators import MUTLIPLE_FORMATTER_ATTR
 

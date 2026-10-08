@@ -5,6 +5,7 @@ Rules R1-R5 of the placement glossary, plus the tripwire that keeps the
 Completed and Bin panes' own gathering in step with placement.
 """
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import (
     BIN,
     COMPLETED,
@@ -14,7 +15,6 @@ from todooit.api import (
     restore_todo,
 )
 from todooit.api.placement import bin_row_of, home_of, project_of, root_of
-from tests.test_core.core_base import *  # noqa
 
 
 def test_a_binned_todo_lives_in_the_bin(create_project):

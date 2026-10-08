@@ -8,9 +8,10 @@ from todooit.api import FixedProject, Todo, TodoGroup, TodoSortModeType
 from todooit.api.fixed_projects import split_path
 from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
-from todooit.ui.pane_layout import PaneRow
 from todooit.ui.api.widgets import TodoWidget
+from todooit.ui.pane_layout import PaneRow
 from todooit.utils import blend
+
 from .todos_tree import TodosTree
 
 # Same folder icon the projects pane uses, so a row visibly points back to its project

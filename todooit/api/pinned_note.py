@@ -3,7 +3,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .manager import manager
 from .model import BaseModel, BaseModelMixin
 
-
 # The table holds exactly one row, always with this id
 PINNED_NOTE_ID = 1
 

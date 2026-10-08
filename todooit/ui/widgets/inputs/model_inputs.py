@@ -4,11 +4,12 @@ from typing import Any, Optional
 from rich.style import Style
 from rich.text import Text
 
-from .simple_input import SimpleInput
-from todooit.api import Cadence, Todo, Project, lifecycle
+from todooit.api import Cadence, Project, Todo, lifecycle
 from todooit.api.lifecycle import Outcome
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
+
+from .simple_input import SimpleInput
 
 # Typed into a date field, opens the calendar instead of being parsed as a
 # date (no date expression starts with "cal"). A plain word rather than a
@@ -234,10 +235,7 @@ class Status(SimpleInput[Todo, str]):
         return "o"
 
     def _typecast_value(self, value: str) -> Any:
-        if value == "COMPLETED":
-            return False
-
-        return True
+        return value != "COMPLETED"
 
 
 class Recurrence(SimpleInput[Todo, Cadence]):

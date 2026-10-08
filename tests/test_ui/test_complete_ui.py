@@ -7,9 +7,6 @@ something happened) and the status bar says what the completion meant.
 
 from datetime import date, timedelta
 
-from todooit.api import Cadence, Todo, manager
-from todooit.utils import next_month_end
-from todooit.utils.default_config import todo_recurrence_formatter
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -17,6 +14,9 @@ from tests.test_ui.ui_base import (
     notification_message,
     run_pilot,
 )
+from todooit.api import Cadence, Todo, manager
+from todooit.utils import next_month_end
+from todooit.utils.default_config import todo_recurrence_formatter
 
 
 async def test_completing_a_recurring_todo_flashes_it_and_names_its_new_day():

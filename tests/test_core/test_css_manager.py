@@ -1,7 +1,8 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import CssManager
-from tempfile import TemporaryDirectory
 
 
 class TestTheme(TodooitThemeBase):

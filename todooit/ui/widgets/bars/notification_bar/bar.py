@@ -1,11 +1,14 @@
 from typing import Optional
+
 from rich.console import RenderableType
 from rich.errors import MarkupError
 from rich.table import Table
 from rich.text import Text
 from textual import events
+
 from todooit.ui.api.events.events import NotificationType
 from todooit.utils.clipboard import copy_text
+
 from .._base import BarBase
 
 # Seconds a notification stays up before giving the bar back; a key dismisses

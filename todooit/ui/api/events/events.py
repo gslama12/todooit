@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Any, Callable, Literal, Optional, Union
+
 from textual.message import Message
 
 from todooit.api import FixedProject, Project, Todo

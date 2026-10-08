@@ -6,7 +6,6 @@ until it is switched again. Fixed projects order their own rows and turn the
 chords down.
 """
 
-from todooit.api import Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -17,6 +16,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
     tree_options,
 )
+from todooit.api import Todo
 
 
 async def seed_unsorted(pilot):

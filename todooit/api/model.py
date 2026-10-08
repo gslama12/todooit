@@ -1,7 +1,9 @@
 from typing import Any, Generic, List, Optional, TypeVar
-from typing_extensions import Protocol, Self
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 from sqlalchemy.ext.declarative import declared_attr
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from typing_extensions import Protocol, Self
+
 from .manager import manager
 
 

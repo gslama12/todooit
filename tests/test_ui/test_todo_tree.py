@@ -6,11 +6,6 @@ from datetime import date, datetime, timedelta
 
 from pytest import raises
 
-from todooit.api import Cadence, Todo
-from todooit.api.exceptions import NoNodeError
-from todooit.ui.api.widgets import TodoWidget
-from todooit.ui.tui import Todooit
-from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -19,6 +14,11 @@ from tests.test_ui.ui_base import (
     run_pilot,
     tree_options,
 )
+from todooit.api import Cadence, Todo
+from todooit.api.exceptions import NoNodeError
+from todooit.ui.api.widgets import TodoWidget
+from todooit.ui.tui import Todooit
+from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
 
 
 def custom_formatter(value, todo):
@@ -37,7 +37,7 @@ async def test_no_node_error():
         tree = await create_and_move_to_todo(pilot)
 
         with raises(NoNodeError):
-            tree.current
+            _ = tree.current
 
 
 async def test_add_todo_via_keys():

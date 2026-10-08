@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+
 from pytest import raises
-from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Cadence, Project, Todo
+
 from tests.test_core.core_base import *  # noqa
+from todooit.api import Cadence, Project, Todo
+from todooit.api.exceptions import MultipleParentError, NoParentError
 
 
 def test_todo_creation(create_project, create_todo):

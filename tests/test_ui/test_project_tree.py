@@ -2,7 +2,6 @@
 The projects pane: stored projects among the fixed ones
 """
 
-from todooit.api import BIN, TODAY, Project, Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -14,6 +13,7 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import BIN, TODAY, Project, Todo
 
 
 async def test_projects_tree_basics():

@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 from typing import Optional
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+
 from todooit.paths import database_file
 
 

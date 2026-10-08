@@ -1,11 +1,13 @@
 from typing import Optional
-from rich.text import Text
+
 from rich.style import Style
+from rich.text import Text
+
+from tests.test_ui.ui_base import run_pilot
 from todooit.api.project import Project
+from todooit.ui.api import extra_formatter
 from todooit.ui.api.api_components.formatters import FormatterStore
 from todooit.ui.api.todooit_api import TodooitAPI
-from todooit.ui.api import extra_formatter
-from tests.test_ui.ui_base import run_pilot
 from todooit.ui.tui import Todooit
 
 

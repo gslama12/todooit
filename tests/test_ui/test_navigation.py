@@ -2,7 +2,6 @@
 Moving around: pane focus, cursor keys, and the jumps to the fixed projects
 """
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Todo
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -15,6 +14,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING
 
 
 async def test_focus_keys():

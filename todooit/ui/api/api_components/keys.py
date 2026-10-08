@@ -1,10 +1,11 @@
-from enum import Enum
-from dataclasses import dataclass
 from collections import defaultdict
+from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
-from ._base import ApiComponent
 from todooit.ui.api.events import ModeType
+
+from ._base import ApiComponent
 
 KeyBindType = defaultdict[str, defaultdict[str, Optional["TodooitFunction"]]]
 KeyType = Union[str, List[str]]

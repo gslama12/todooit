@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from typing import List, Optional, Union
+
 from sqlalchemy import ForeignKey, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from ..api.todo import Todo
-from .model import TodooitModel
 from .manager import manager
+from .model import TodooitModel
 
 ModelType = Union["Project", "Todo"]
 

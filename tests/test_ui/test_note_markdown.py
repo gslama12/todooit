@@ -3,16 +3,8 @@ Notes and markdown: copies are written as markdown, pastes read as it
 """
 
 import pytest
-
 from textual import events
 
-from todooit.ui.screens.note.markdown import (
-    PASTE_INLINE,
-    PASTE_STRIP,
-    from_markdown,
-    to_markdown,
-)
-from todooit.ui.screens.note.markup import EMPH_MARK, QUOTE_GLYPH
 from tests.test_ui.test_note_ui import open_note
 from tests.test_ui.ui_base import (
     commit_line,
@@ -20,6 +12,13 @@ from tests.test_ui.ui_base import (
     run_pilot,
     set_clipboard,
 )
+from todooit.ui.screens.note.markdown import (
+    PASTE_INLINE,
+    PASTE_STRIP,
+    from_markdown,
+    to_markdown,
+)
+from todooit.ui.screens.note.markup import EMPH_MARK, QUOTE_GLYPH
 
 RULE = "─" * 10
 M = EMPH_MARK

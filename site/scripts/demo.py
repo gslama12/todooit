@@ -22,7 +22,7 @@ Needs **JetBrainsMono Nerd Font Mono** installed, like the screenshots do.
 """
 
 import asyncio
-import os
+import io
 import shutil
 import sys
 from pathlib import Path
@@ -53,7 +53,6 @@ PADDING = 12
 sys.path.insert(0, str(SCRIPTS))
 
 import screenshots as shots  # noqa: E402
-
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 from rich.cells import cell_len  # noqa: E402
 from rich.color import blend_rgb  # noqa: E402
@@ -61,11 +60,9 @@ from rich.console import Console  # noqa: E402
 from rich.segment import Segment  # noqa: E402
 from rich.style import Style  # noqa: E402
 from rich.terminal_theme import SVG_EXPORT_THEME as THEME  # noqa: E402
-
 from textual.pilot import Pilot  # noqa: E402
 
 from todooit.ui.tui import Dooit  # noqa: E402
-
 
 # --------------------------------------------------------------------------
 # The workflow being demonstrated
@@ -155,7 +152,7 @@ def screen_segments(app: Dooit) -> List[Segment]:
     console = Console(
         width=app.size.width,
         height=app.size.height,
-        file=open(os.devnull, "w"),
+        file=io.StringIO(),
         force_terminal=True,
         color_system="truecolor",
         record=True,

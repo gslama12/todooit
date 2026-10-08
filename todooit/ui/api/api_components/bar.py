@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, List
+
 from todooit.ui.widgets.bars import StatusBarWidget
+
 from ._base import ApiComponent
 
 if TYPE_CHECKING:  # pragma: no cover

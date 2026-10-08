@@ -4,9 +4,9 @@ The help overlay: the keybinds of the config, grouped the way it groups them
 
 from textual.screen import ModalScreen
 
+from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.screens import HelpScreen, MainScreen
 from todooit.ui.screens.help import TodooitKeyTable
-from tests.test_ui.ui_base import boot, run_pilot
 
 
 async def test_help_is_an_overlay_like_the_others():

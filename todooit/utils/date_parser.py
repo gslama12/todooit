@@ -427,7 +427,7 @@ def _build(year: int, month: int, day: int, today: datetime) -> datetime:
         return today.replace(year=year, month=month, day=day)
     except ValueError:
         # A real calendar impossibility -- 32.01. or 29.02. in a common year
-        raise _Ambiguous()
+        raise _Ambiguous() from None
 
 
 def _numeric_date(text: str, today: datetime) -> Optional[datetime]:

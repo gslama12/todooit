@@ -1,5 +1,5 @@
-from .base_renderer import BaseRenderer, Project
 from ..inputs.model_inputs import ProjectDescription, ProjectTasks
+from .base_renderer import BaseRenderer, Project
 
 
 class ProjectRender(BaseRenderer[Project]):

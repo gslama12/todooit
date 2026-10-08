@@ -5,8 +5,6 @@ of real use strings them together
 
 from datetime import date, timedelta
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
-from todooit.ui.screens.search import SearchScreen
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -18,6 +16,8 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
+from todooit.ui.screens.search import SearchScreen
 
 
 async def test_a_task_s_whole_life():

@@ -1,13 +1,14 @@
 from typing import TYPE_CHECKING, Callable
-from textual.widgets import Static
 
+from textual.widgets import Static
 
 from ...api.events import ModeChanged
 
 if TYPE_CHECKING:  # pragma: no cover
-    from .bar_switcher import BarSwitcher
-    from todooit.ui.tui import Todooit
     from todooit.ui.api.todooit_api import TodooitAPI
+    from todooit.ui.tui import Todooit
+
+    from .bar_switcher import BarSwitcher
 
 
 class BarBase(Static):

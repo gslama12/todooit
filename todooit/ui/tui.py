@@ -1,17 +1,20 @@
 from pathlib import Path
 from typing import Optional
+
 from textual import on
 from textual.app import App
 from textual.widgets import ContentSwitcher
-from todooit.ui.api.events import ModeChanged, TodooitEvent, ModeType, Startup, QuitApp
+
+from todooit.ui.api.events import ModeChanged, ModeType, QuitApp, Startup, TodooitEvent
 from todooit.ui.api.events.events import ShutDown
+from todooit.ui.screens import MainScreen
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
-from todooit.ui.screens import MainScreen
 from todooit.utils import CssManager
+
+from ..api import drop_blank_models, manager
 from .api import TodooitAPI
-from ..api import manager, drop_blank_models
 
 
 class Todooit(App):

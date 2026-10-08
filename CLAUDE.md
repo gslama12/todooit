@@ -230,6 +230,22 @@ not by a zero count. Don't add `# type: ignore` to make a count drop: fix the
 type or leave it.
 
 
+## Linting
+
+ruff, configured in `pyproject.toml` (`[tool.ruff.lint]`) with an explicit
+rule set, so a ruff upgrade does not change what is checked. The codebase is
+clean against it, and CI fails on any finding:
+
+```bash
+uv run ruff check                        # everything
+uv run ruff check --fix                  # apply the safe fixes (import order etc.)
+```
+
+Run it before handing a change over. Fix a finding rather than silencing it;
+when a rule is wrong for one line, use a scoped `# noqa: <code>` with a short
+reason, never a bare `# noqa`.
+
+
 ## Every change ships a demo
 
 Seed a project into **this worktree's** database (never live) that exercises

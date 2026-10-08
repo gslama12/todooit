@@ -8,8 +8,8 @@ from textual import on
 from textual.widgets.option_list import Option
 
 from todooit.api import (
-    Todo,
     Project,
+    Todo,
     TodoGroup,
     TodoSortModeType,
     freeze_sort_order,
@@ -17,12 +17,6 @@ from todooit.api import (
     restore_todo,
 )
 from todooit.api.placement import home_of
-from todooit.ui.pane_layout import (
-    PaneRow,
-    drawn_children,
-    project_groups,
-    todo_rows,
-)
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
@@ -30,10 +24,17 @@ from todooit.ui.api.events import (
     SpawnNote,
 )
 from todooit.ui.api.events.events import TodoSelected
+from todooit.ui.pane_layout import (
+    PaneRow,
+    drawn_children,
+    project_groups,
+    todo_rows,
+)
 from todooit.utils import blend, copy_text
-from .model_tree import GroupHeading, ModelTree
+
 from ._decorators import require_highlighted_node
 from ._render_dict import TodoRenderDict
+from .model_tree import GroupHeading, ModelTree
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...api.api_components.formatters.model_formatters import (

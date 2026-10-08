@@ -7,12 +7,13 @@ blocks and their rows come in.
 
 from datetime import datetime, timedelta
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import (
-    lifecycle,
     BIN,
     COMPLETED,
     TODAY,
     UPCOMING,
+    lifecycle,
     move_todo_to_bin,
 )
 from todooit.api.fixed_projects import (
@@ -23,7 +24,6 @@ from todooit.api.fixed_projects import (
     project_path,
     split_path,
 )
-from tests.test_core.core_base import *  # noqa
 
 
 def today_at(hour: int = 10) -> datetime:

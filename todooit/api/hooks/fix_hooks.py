@@ -1,4 +1,5 @@
 from sqlalchemy import event, text
+
 from ..project import Project
 from ..todo import Todo
 

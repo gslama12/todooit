@@ -1,13 +1,13 @@
 from collections import defaultdict
-from typing import TYPE_CHECKING, Callable, Dict, Literal, Optional, Union
 from datetime import date, datetime
-from typing import List
+from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Optional, Union
+
 from sqlalchemy import ForeignKey, Index, select, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
-from .cadence import Cadence, CadenceType
-from .model import TodooitModel
-from .manager import manager
 
+from .cadence import Cadence, CadenceType
+from .manager import manager
+from .model import TodooitModel
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.api.lifecycle import Outcome

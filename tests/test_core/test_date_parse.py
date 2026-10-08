@@ -1,5 +1,6 @@
-from datetime import datetime
 import unittest
+from datetime import datetime
+
 from todooit.utils.date_parser import parse
 
 # A Wednesday, so that "next monday" and a bare weekday are visibly different

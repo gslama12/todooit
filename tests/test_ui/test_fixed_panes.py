@@ -9,10 +9,6 @@ from rich.style import Style as RichStyle
 from rich.styled import Styled
 from textual.style import Style
 
-from todooit.api import Todo, move_project_to_bin, restore_todo
-from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
-from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
-from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -27,6 +23,9 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import Todo, move_project_to_bin, restore_todo
+from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
+from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 
 
 async def settle(pilot):

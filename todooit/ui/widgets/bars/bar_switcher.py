@@ -1,13 +1,17 @@
+from contextlib import suppress
 from typing import Optional
+
 from textual.await_complete import AwaitComplete
 from textual.widget import Widget
 from textual.widgets import ContentSwitcher
+
 from todooit.ui.api.events.events import BarNotification, ShowConfirm
 from todooit.ui.widgets.bars._base import BarBase
-from .status_bar import StatusBar
+
 from .confirm_bar import ConfirmBar
-from .notification_bar import NotificationBar
 from .field_bar import FieldBar
+from .notification_bar import NotificationBar
+from .status_bar import StatusBar
 
 
 class BarSwitcher(ContentSwitcher):
@@ -32,10 +36,8 @@ class BarSwitcher(ContentSwitcher):
     def add_content(
         self, widget: Widget, *, id: Optional[str] = None, set_current: bool = False
     ) -> AwaitComplete:
-        try:
+        with suppress(Exception):
             self.query_one(f"#{id}", expect_type=BarBase).remove()
-        except Exception as _:
-            pass
 
         return super().add_content(widget, id=id, set_current=set_current)
 

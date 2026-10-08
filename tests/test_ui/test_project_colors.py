@@ -3,14 +3,6 @@ Colors a project can be given, and the "c" that means two different things
 depending on which pane it is pressed over
 """
 
-from todooit.api import Project
-from todooit.utils.default_config import (
-    PROJECT_COLOR_NAMES,
-    project_color,
-    project_palette,
-)
-from todooit.api.theme import TodooitThemeBase, TokyoNight
-from todooit.ui.tui import Todooit
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -18,6 +10,14 @@ from tests.test_ui.ui_base import (
     new_project,
     new_todo,
     run_pilot,
+)
+from todooit.api import Project
+from todooit.api.theme import TodooitThemeBase, TokyoNight
+from todooit.ui.tui import Todooit
+from todooit.utils.default_config import (
+    PROJECT_COLOR_NAMES,
+    project_color,
+    project_palette,
 )
 
 

@@ -4,6 +4,14 @@ The calendar overlay: a day picked off a month instead of typed into a field
 
 from datetime import date, timedelta
 
+from tests.test_ui.ui_base import (
+    boot,
+    commit_line,
+    create_and_move_to_todo,
+    new_todo,
+    run_pilot,
+    visible_todos,
+)
 from todooit.api import Todo
 from todooit.ui.screens import MainScreen
 from todooit.ui.screens.calendar import (
@@ -12,14 +20,6 @@ from todooit.ui.screens.calendar import (
     CalendarScreen,
     add_months,
     weeks_around,
-)
-from tests.test_ui.ui_base import (
-    boot,
-    commit_line,
-    create_and_move_to_todo,
-    new_todo,
-    run_pilot,
-    visible_todos,
 )
 
 TODAY = date.today()

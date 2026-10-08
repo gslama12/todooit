@@ -26,6 +26,18 @@ from todooit.utils.links import (
     folded_link_at,
 )
 
+from .document import (
+    FoldedDocument,
+    HangingDocument,
+    HangingNavigator,
+)
+from .markdown import (
+    PASTE_BLOCK,
+    PASTE_INLINE,
+    PASTE_STRIP,
+    from_markdown,
+    to_markdown,
+)
 from .markup import (
     BULLET_MARKS,
     BULLET_SPANS,
@@ -60,18 +72,6 @@ from .markup import (
     split_quote,
     star_closing,
     star_pair,
-)
-from .markdown import (
-    PASTE_BLOCK,
-    PASTE_INLINE,
-    PASTE_STRIP,
-    from_markdown,
-    to_markdown,
-)
-from .document import (
-    FoldedDocument,
-    HangingDocument,
-    HangingNavigator,
 )
 
 if TYPE_CHECKING:  # pragma: no cover

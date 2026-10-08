@@ -1,7 +1,9 @@
 from typing import Callable
+
 from rich.console import RenderableType
 
 from todooit.ui.api.events import BarNotification
+
 from .._base import BarBase
 
 

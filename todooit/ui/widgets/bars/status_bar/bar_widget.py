@@ -1,7 +1,8 @@
 from collections.abc import Callable
-from rich.style import Style
-from rich.text import TextType, Text
 from typing import Optional
+
+from rich.style import Style
+from rich.text import Text, TextType
 
 
 class StatusBarWidget:

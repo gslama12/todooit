@@ -91,6 +91,17 @@ markers = [
 ]
 
 [tool.ruff.lint]
+# An explicit set rather than ruff's defaults: those grow between releases,
+# and ruff is unpinned here, so an upgrade would otherwise change the rules
+select = [
+  "E4", "E7", "E9", "F",  # pycodestyle errors + pyflakes (ruff's classic defaults)
+  "I",                    # import sorting
+  "B",                    # bugbear: likely bugs
+  "SIM",                  # simplifications
+  "PIE",                  # unnecessary code
+  "RUF100",               # noqa comments that no longer suppress anything
+]
+# `== True` / `== False` is how SQLAlchemy filters are written
 ignore = ["E712"]
 
 [tool.mypy]

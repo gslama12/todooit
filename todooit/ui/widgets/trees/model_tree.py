@@ -1,6 +1,7 @@
-from traceback import format_exc
+from contextlib import suppress
 from datetime import date
 from functools import cache
+from traceback import format_exc
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -14,45 +15,48 @@ from typing import (
     TypeVar,
     Union,
 )
-from textual import events, on
-from textual.app import ComposeResult
+
 from rich.cells import cell_len
-from rich.markup import escape
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.markup import escape
 from rich.measure import Measurement
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
+from textual import events, on
+from textual.app import ComposeResult
 from textual.color import Color
 from textual.strip import Strip
 from textual.style import Style
 from textual.timer import Timer
 from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
-from todooit.api import Todo, Project
+
+from todooit.api import Project, Todo
 from todooit.api.lifecycle import Refusal
 from todooit.api.model import Tellable
-from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
 from todooit.ui.api.events import (
+    BarNotification,
     ModeChanged,
     SpawnCalendar,
-    BarNotification,
 )
+from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
+from todooit.ui.widgets.inputs.model_inputs import DateInput
 from todooit.ui.widgets.renderers import (
-    BaseRenderer,
     COLUMN_PADDING,
     DESCRIPTION_OVERFLOW,
+    BaseRenderer,
 )
-from todooit.ui.widgets.inputs.model_inputs import DateInput
 from todooit.utils import copy_text, paste_text
-from .base_tree import BaseTree
-from ._render_dict import RenderDict
+
 from ._decorators import (
     fix_highlight,
     refresh_tree,
-    require_highlighted_node,
     require_confirmation,
+    require_highlighted_node,
 )
+from ._render_dict import RenderDict
+from .base_tree import BaseTree
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters._model_formatter_base import (
@@ -254,7 +258,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return super()._get_option_render(option, style)
 
-    @cache
+    @cache  # noqa: B019 -- cleared by hand whenever the rows change
     def get_column_width(self, attr: str) -> int:
         width = max(i._get_attr_width(attr) for i in self._renderers.values())
 
@@ -849,10 +853,8 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
             # A pane waiting to redraw (hidden) still holds this option; drop it too,
             # since its renderer (looked up by model) is now gone
-            try:
+            with suppress(OptionDoesNotExist):
                 self.remove_option(_id)
-            except OptionDoesNotExist:
-                pass
 
     def quoted_name(self) -> str:
         """The highlighted row's description, truncated for the bar; blank if it never got a name."""

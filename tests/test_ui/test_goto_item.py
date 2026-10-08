@@ -2,7 +2,6 @@
 `gi`: the task under the cursor, in the project it is really filed under
 """
 
-from todooit.api import Project, Todo
 from tests.test_ui.test_fixed_panes import flashed, schedule, settle
 from tests.test_ui.ui_base import (
     boot,
@@ -13,6 +12,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import Project, Todo
 
 
 async def test_goto_item_from_today_opens_the_project():

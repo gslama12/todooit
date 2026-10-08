@@ -101,7 +101,6 @@ from todooit.api.recycle import move_todo_to_bin  # noqa: E402
 from todooit.ui.tui import Dooit  # noqa: E402
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree  # noqa: E402
 
-
 # --------------------------------------------------------------------------
 # The workspace every screenshot is taken against
 # --------------------------------------------------------------------------
@@ -348,9 +347,11 @@ async def boot(pilot: Pilot) -> Dooit:
         await pilot.pause()
 
         switcher = app.screen.query_one("#todo_switcher")
-        if isinstance(switcher.visible_content, FixedTodosTree):
-            if app.focused is switcher.visible_content:
-                return app
+        if (
+            isinstance(switcher.visible_content, FixedTodosTree)
+            and app.focused is switcher.visible_content
+        ):
+            return app
 
     raise AssertionError("The app never settled on the Today pane")
 

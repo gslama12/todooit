@@ -2,9 +2,9 @@
 The pinned note: one scratchpad for the whole of todooit
 """
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import PinnedNote
 from todooit.api.pinned_note import PINNED_NOTE_ID
-from tests.test_core.core_base import *  # noqa
 
 
 def test_the_note_starts_empty(session):

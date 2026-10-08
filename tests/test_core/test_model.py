@@ -1,5 +1,5 @@
-from todooit.api.project import Project
 from tests.test_core.core_base import *  # noqa
+from todooit.api.project import Project
 
 
 def test_creation_and_deletion(create_project):
