@@ -49,6 +49,10 @@ HEADING_FADE = 0.25
 class TodosTree(ModelTree[Model, TodoRenderDict]):
     BORDER_TITLE = "TASKS"
     NODE_NOUN = "task"
+
+    # What I and U say when there is nowhere to move the task
+    NOTHING_ABOVE = "Nothing above this to make it a step of"
+    NOT_NESTED = "This task is not a step of anything"
     show_header = True
     CHILDREN_ATTR = "todos"
 
@@ -242,51 +246,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         self.post_message(
             BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
         )
-
-    def _row_above(self, todo: Todo) -> Optional[Todo]:
-        """The task drawn directly above this one, read off the pane's own display order, not the filing order."""
-
-        return self.row_beside(todo, -1)
-
-    @require_highlighted_node
-    def indent_node(self) -> None:
-        """Makes the highlighted task a step of the task above it, expanding that parent so the row stays visible."""
-
-        todo = self.current_model
-        assert isinstance(todo, Todo)
-
-        parent = self._row_above(todo)
-
-        if parent is None:
-            self.post_message(
-                BarNotification("Nothing above this to make it a step of", "warning")
-            )
-            return
-
-        outcome = todo.indent(parent)
-
-        # Expanding refreshes the pane, placing the row where it now belongs
-        self._expand_node(parent.uuid)
-
-        # Fitted to its new ancestors rather than refused: say what gave way
-        self.tell_outcome(outcome)
-
-    @require_highlighted_node
-    def unindent_node(self) -> None:
-        """Takes the highlighted task out of the task it's a step of."""
-
-        todo = self.current_model
-        assert isinstance(todo, Todo)
-
-        outcome = todo.unindent()
-
-        if outcome is None:
-            self.post_message(
-                BarNotification("This task is not a step of anything", "warning")
-            )
-            return
-
-        self.tell_outcome(outcome)
 
     def toggle_complete(self):
         todo = self.current_model

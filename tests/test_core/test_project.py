@@ -105,3 +105,63 @@ def test_total_projects(create_project):
 
     assert p.total_projects == 2
     assert inner.total_projects == 1
+
+
+def test_indent_files_under_previous_sibling(create_project):
+    first = create_project("first")
+    second = create_project("second")
+
+    assert second.indent() is not None
+    assert second.parent_project == first
+    assert first.projects == [second]
+
+
+def test_indent_carries_sub_projects_and_todos_along(create_project):
+    first = create_project("first")
+    second = create_project("second")
+    sub = second.add_project()
+    todo = second.add_todo()
+
+    second.indent()
+    assert second.parent_project == first
+    assert sub.parent_project == second
+    assert todo.parent_project == second
+
+
+def test_indent_with_nothing_above(create_project):
+    only = create_project("only")
+    home = only.parent_project
+
+    assert only.indent() is None
+    assert only.parent_project == home
+
+
+def test_unindent_lands_beside_the_old_parent(create_project):
+    first = create_project("first")
+    create_project("last")
+    sub = first.add_project()
+    sub.description = "sub"
+    sub.save()
+
+    assert sub.unindent() is not None
+    assert sub.parent_project == first.parent_project
+
+    # Directly under the project it was in, not at the end of the run
+    assert [p.description for p in sub.siblings] == ["first", "sub", "last"]
+
+
+def test_unindent_of_a_nested_sub_project(create_project):
+    top = create_project("top")
+    sub = top.add_project()
+    sub_sub = sub.add_project()
+
+    assert sub_sub.unindent() is not None
+    assert sub_sub.parent_project == top
+
+
+def test_unindent_at_top_level(create_project):
+    top = create_project("top")
+    home = top.parent_project
+
+    assert top.unindent() is None
+    assert top.parent_project == home

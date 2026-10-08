@@ -257,17 +257,15 @@ class TodooitAPI:
 
         self.focused.shift_down()
 
-    def indent_todo(self):
-        """Make the highlighted task a step of the task above it"""
+    def indent(self):
+        """File the highlighted task or project under the one above it"""
 
-        if isinstance(self.focused, TodosTree):
-            self.focused.indent_node()
+        self.focused.indent_node()
 
-    def unindent_todo(self):
-        """Take the highlighted task out of the task it is a step of"""
+    def unindent(self):
+        """Take the highlighted task or project out of the one it is under"""
 
-        if isinstance(self.focused, TodosTree):
-            self.focused.unindent_node()
+        self.focused.unindent_node()
 
     def move_todo(self):
         """File the highlighted task under another project"""

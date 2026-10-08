@@ -620,11 +620,11 @@ def key_setup(api: TodooitAPI, _):
 
     api.keys.set("L", api.shift_down, group=MOVING)
     api.keys.set("K", api.shift_up, group=MOVING)
-    # A task moves sideways as well as up and down: shifted "i" files it under
-    # the task above it, shifted "u" pulls it back out. Only the tasks pane
-    # has levels to move between, so the projects pane leaves both alone
-    api.keys.set("I", api.indent_todo, group=MOVING)
-    api.keys.set("U", api.unindent_todo, group=MOVING)
+    # A row moves sideways as well as up and down: shifted "i" files it under
+    # the row above it, shifted "u" pulls it back out. Tasks and projects
+    # both nest, so the two keys work the same in either pane
+    api.keys.set("I", api.indent, group=MOVING)
+    api.keys.set("U", api.unindent, group=MOVING)
     # The move that crosses the whole tree rather than one step of it: the
     # other three shift a task among the rows around it, and this one takes it
     # out of the project altogether. Shifted "m", which is free over the tasks

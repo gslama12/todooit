@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import List, Optional, Union
 from sqlalchemy import ForeignKey, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -8,7 +9,26 @@ from .manager import manager
 ModelType = Union["Project", "Todo"]
 
 
-class Project(TodooitModel):
+@dataclass
+class LevelChange:
+    """
+    What moving a project to another level meant
+
+    Falsy when there is nothing worth telling the status bar.
+    """
+
+    project: "Project"
+    # Took its new parent's color in place of its own
+    recolored: bool = False
+
+    def __bool__(self) -> bool:
+        return self.recolored
+
+    def summary(self) -> str:
+        return "recolored to match its new parent" if self.recolored else ""
+
+
+class Project(TodooitModel[LevelChange]):
     description: Mapped[str] = mapped_column(default="")
     is_root: Mapped[bool] = mapped_column(default=False)
 
@@ -142,6 +162,34 @@ class Project(TodooitModel):
         )
         project.save()
         return project
+
+    @property
+    def _children_of_kind(self) -> List["Project"]:
+        return self.projects
+
+    @property
+    def _parent_of_kind(self) -> Optional["Project"]:
+        parent = self.parent_project
+        return None if parent is None or parent.is_root else parent
+
+    def _place(self, parent: TodooitModel) -> LevelChange:
+        """
+        Under another project the whole tree takes that project's color;
+        back at the top level it keeps the one it had
+        """
+
+        assert isinstance(parent, Project)
+
+        before = self.color
+        self.parent_project = parent
+
+        # Saving colors this project itself; the ones under it follow here
+        if not parent.is_root:
+            for project in self.descendants:
+                project.color = parent.color
+
+        self.save()
+        return LevelChange(self, recolored=self.color != before)
 
     def save(self) -> None:
         # Sub projects always inherit their parent's color. no_autoflush keeps

@@ -30,7 +30,8 @@ from textual.timer import Timer
 from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
 from todooit.api import Todo, Project
-from todooit.api.lifecycle import Outcome, Refusal
+from todooit.api.lifecycle import Refusal
+from todooit.api.model import Tellable
 from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
 from todooit.ui.api.events import (
     ModeChanged,
@@ -158,6 +159,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     # What a row is called when the bar has to refer to one with no name
     NODE_NOUN: str = "item"
 
+    # What I and U say when there is nowhere to move the row
+    NOTHING_ABOVE: str = "Nothing above this to put it under"
+    NOT_NESTED: str = "This is not under anything"
+
     # Rounded caps either side of the border title, matching the pane's rounded border
     TITLE_CAP_LEFT = "\ue0b6"
     TITLE_CAP_RIGHT = "\ue0b4"
@@ -208,8 +213,8 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.flash_row(_id)
         return True
 
-    def tell_outcome(self, outcome: Optional[Outcome]) -> None:
-        """Says in the status bar what a lifecycle change did, if anything worth telling."""
+    def tell_outcome(self, outcome: Optional[Tellable]) -> None:
+        """Says in the status bar what a lifecycle change or a move between levels did, if anything worth telling."""
 
         if outcome:
             self.post_message(BarNotification(outcome.summary(), "info"))
@@ -957,6 +962,37 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             return None
 
         return drawn[index]
+
+    @require_highlighted_node
+    def indent_node(self) -> None:
+        """Files the highlighted row under the row drawn above it, expanding that parent so the row stays visible."""
+
+        model = self.current_model
+        parent = self.row_beside(model, -1)
+
+        if parent is None:
+            self.post_message(BarNotification(self.NOTHING_ABOVE, "warning"))
+            return
+
+        outcome = model.indent(parent)
+
+        # Expanding refreshes the pane, placing the row where it now belongs
+        self._expand_node(parent.uuid)
+
+        # Fitted to its new parent rather than refused: say what gave way
+        self.tell_outcome(outcome)
+
+    @require_highlighted_node
+    def unindent_node(self) -> None:
+        """Takes the highlighted row out of the one it is filed under."""
+
+        outcome = self.current_model.unindent()
+
+        if outcome is None:
+            self.post_message(BarNotification(self.NOT_NESTED, "warning"))
+            return
+
+        self.tell_outcome(outcome)
 
     def _shift(self, offset: int) -> bool:
         """Swaps the highlighted row with the one drawn beside it (by drawn position, not filing order)."""

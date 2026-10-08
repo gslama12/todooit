@@ -528,3 +528,95 @@ async def test_pane_that_overflows_still_scrolls():
         assert ptree._bottom_gap == 0
         assert ptree.virtual_size.height > ptree.scrollable_content_region.height
         assert ptree.show_vertical_scrollbar
+
+
+async def test_indenting_files_a_project_under_the_row_above():
+    """
+    I files a project under the row drawn above it, the way it files a task,
+    and U takes it back out; the cursor stays on it throughout
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        work = await new_project(pilot, "work")
+        home = await new_project(pilot, "home")
+
+        # Collapsed: the row has to open again to show where it went
+        nested = work.add_project()
+        ptree.force_refresh()
+        ptree.highlight_id(work.uuid)
+        ptree.toggle_expand()
+        ptree.highlight_id(home.uuid)
+        await pilot.pause()
+
+        await pilot.press("I")
+        await pilot.pause()
+
+        assert home.parent_project == work
+        assert ptree.current_model == home
+        assert len(tree_options(ptree)) == 3
+        assert nested.parent_project == work
+
+        await pilot.press("U")
+        await pilot.pause()
+
+        assert home.parent_project == work.parent_project
+        assert ptree.current_model == home
+
+
+async def test_indenting_a_project_nowhere_is_turned_away():
+    """
+    The first project has only the fixed block above it, which holds no
+    projects; a top-level project has nothing to come out of; and a fixed
+    project can't be moved at all. Each says so and leaves the tree alone.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        first = await new_project(pilot, "first")
+        home = first.parent_project
+
+        await pilot.press("I")
+        await pilot.pause()
+        assert first.parent_project == home
+        message = notification_message(app)
+        assert message is not None and "No project above" in message
+
+        await pilot.press("U")
+        await pilot.pause()
+        assert first.parent_project == home
+        message = notification_message(app)
+        assert message is not None and "not under" in message
+
+        ptree.highlight_id(TODAY.uuid)
+        await pilot.pause()
+
+        for key in ("I", "U"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert ptree.current_model is TODAY
+            message = notification_message(app)
+            assert message is not None and "fixed project" in message
+
+        assert first.parent_project == home
+
+
+async def test_indenting_a_colored_project_says_it_was_recolored():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        work = await new_project(pilot, "work")
+        work.set_color(2)
+        home = await new_project(pilot, "home")
+        home.set_color(5)
+
+        await pilot.press("I")
+        await pilot.pause()
+
+        assert home.color == 2
+        message = notification_message(app)
+        assert message is not None and "recolored" in message

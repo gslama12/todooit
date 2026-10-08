@@ -77,7 +77,7 @@ def sort_todos(todos: List["Todo"], mode: Optional[str]) -> List["Todo"]:
     return sorted(todos, key=key)
 
 
-class Todo(TodooitModel):
+class Todo(TodooitModel["Outcome"]):
     # Day panes query pending work by schedule; the Bin queries binned rows
     # (partial index, since almost no rows are binned)
     __table_args__ = (
@@ -281,66 +281,20 @@ class Todo(TodooitModel):
 
     # ------------------- Moving between levels --------------------
 
-    def _renumber(self, todos: List["Todo"]) -> None:
-        """
-        Renumber a whole run in the given order (fixes gaps and duplicate indexes)
-        """
-
-        for order, todo in enumerate(todos):
-            todo.order_index = order
-            self.session.add(todo)
+    @property
+    def _children_of_kind(self) -> List["Todo"]:
+        return self.todos
 
     @property
-    def previous_sibling(self) -> Optional["Todo"]:
-        if self.is_first_sibling():
-            return None
+    def _parent_of_kind(self) -> Optional["Todo"]:
+        return self.parent_todo
 
-        siblings = self.siblings
-        return siblings[siblings.index(self) - 1]
-
-    def indent(self, parent: Optional["Todo"] = None) -> Optional["Outcome"]:
-        """
-        Make this todo the last step of `parent` (default: the previous sibling)
-
-        Returns how it was fitted to its new ancestors, or None if there
-        is nothing to indent under.
-        """
-
+    def _place(self, parent: TodooitModel) -> "Outcome":
         from . import lifecycle
+        from .project import Project
 
-        parent = parent or self.previous_sibling
-
-        if parent is None:
-            return None
-
-        self._renumber(list(parent.todos) + [self])
+        assert isinstance(parent, (Project, Todo))
         return lifecycle.place(self, parent)
-
-    def unindent(self) -> Optional["Outcome"]:
-        """
-        Move this todo out of its parent todo, placing it right after the parent
-
-        Returns how it was placed, or None if already top level.
-        """
-
-        from . import lifecycle
-
-        parent = self.parent_todo
-
-        if parent is None:
-            return None
-
-        grandparent = parent.parent
-
-        # The parent is an orphan: nowhere to move to
-        if grandparent is None:  # pragma: no cover
-            return None
-
-        run = [todo for todo in parent.siblings if todo.id != self.id]
-        after = run.index(parent) + 1
-        self._renumber(run[:after] + [self] + run[after:])
-
-        return lifecycle.place(self, grandparent)
 
     def move_to(self, project: "Project") -> "Outcome":
         """

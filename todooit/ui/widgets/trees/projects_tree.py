@@ -21,6 +21,10 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     show_header = True
     CHILDREN_ATTR = "projects"
 
+    # What I and U say when there is nowhere to move the project
+    NOTHING_ABOVE = "No project above this to put it under"
+    NOT_NESTED = "This project is not under another one"
+
     # A project's description is just what it's called
     COLUMN_TITLES = {"description": "Name"}
 
@@ -261,6 +265,14 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def shift_down(self):
         return super().shift_down()
+
+    @reject_fixed_node(FIXED_MESSAGE)
+    def indent_node(self) -> None:
+        return super().indent_node()
+
+    @reject_fixed_node(FIXED_MESSAGE)
+    def unindent_node(self) -> None:
+        return super().unindent_node()
 
     def _new_sibling(self) -> Optional[Project]:
         """A fixed project has no siblings, so a new sibling there goes to the top level instead."""
