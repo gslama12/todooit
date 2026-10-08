@@ -213,13 +213,30 @@ class FixedTodosTree(TodosTree):
 
         self.post_message(BarNotification(message, "warning"))
 
-    def _new_sibling(self) -> None:
-        """No sibling slot here — rows are gathered from the whole tree, so there's no single project to add one to."""
+    def _new_sibling(self) -> Optional[Todo]:
+        """
+        A step beside the highlighted step, filed under the same parent task. A gathered
+        row itself gets no sibling slot — rows come from the whole tree, so there's no
+        single project to add one to.
+        """
+
+        if self.takes_new_steps and self._on_step():
+            return super()._new_sibling()
 
         instead = "[b]N[/b] adds a step to one" if self.takes_new_steps else ""
 
         self._not_here("Tasks can't be added", instead)
         return None
+
+    def _on_step(self) -> bool:
+        """Whether the cursor is on a step drawn under its parent, rather than on a gathered row."""
+
+        if self.highlighted is None or not self.node.id:
+            return False
+
+        row = self._rows.get(self.node.id)
+
+        return row is not None and not row.is_root
 
     def add_child_node(self):
         """Adds a step under the highlighted task, filed in that task's real project (not this pane)."""

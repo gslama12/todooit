@@ -767,6 +767,44 @@ async def test_upcoming_takes_a_new_step_under_a_row():
         assert step.scheduled == task.scheduled
 
 
+async def test_n_on_a_step_adds_a_step_beside_it():
+    """
+    A step has a home a sibling can share: its parent task
+
+    The refusal is for gathered rows, which have no single project to add to.
+    A step drawn under its task has one, so `n` there adds another step to the
+    same task, on the same day, just as it would in the task's own project.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+
+        await pilot.press("N")
+        await commit_line(pilot, "first")
+        await settle(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "second")
+        await settle(pilot)
+
+        assert descriptions(today) == ["task", "first", "second"]
+
+        task = [todo for todo in Todo.all() if todo.description == "task"][0]
+        second = [todo for todo in Todo.all() if todo.description == "second"][0]
+        assert second.parent_todo is task
+        assert second.scheduled == task.scheduled
+
+
 async def test_a_new_step_goes_under_a_scheduled_step_too():
     """
     The row the key was pressed on is the row it goes under, context or not
