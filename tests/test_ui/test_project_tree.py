@@ -229,14 +229,28 @@ async def test_nested_project_via_child_key():
         assert len(tree_options(ptree)) == 1
 
 
-async def test_empty_bin_from_anywhere_notifies_when_empty():
+async def test_empty_bin_notifies_when_empty():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
 
         assert notification_message(app) == "The Bin is already empty"
+
+
+async def test_empty_completed_notifies_when_empty():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+        await pilot.press("Y", "Y")
+        await pilot.pause()
+
+        assert notification_message(app) == "Completed is already empty"
 
 
 async def test_fixed_projects_cannot_be_edited():

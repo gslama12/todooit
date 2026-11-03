@@ -157,6 +157,6 @@ it is drawn; the address behind it is what gets opened.
 | `xx` | Move it to the Bin |
 | `u` | Restore it out of the Bin |
 | `yy` | Delete it for good (asks first) |
-| `YY` | Empty the whole Bin (asks first, and says how much will go) |
+| `YY` | In the Bin or Completed: delete everything there for good (asks first, and says how much will go) |
 
 See [Undo & the Bin](/guide/undo-bin).

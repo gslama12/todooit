@@ -9,7 +9,7 @@
 | `xx` | To the Bin |
 | `u` | Back out of the Bin, into the project it came from |
 | `yy` | Delete for good (asks first) |
-| `YY` | Empty the whole Bin (asks first, and counts what will go) |
+| `YY` | In the Bin: empty the whole Bin (asks first, and counts what will go) |
 
 ![The Bin](/screenshots/bin.svg)
 
@@ -20,6 +20,10 @@ stays in the Bin until it is restored or deleted for good — nothing expires on
 its own.
 
 Dropping a project scatters its work into the Bin along with it.
+
+`YY` only works with the Bin open. Pressed in Completed it deletes every
+completed task for good instead, and anywhere else it does nothing but say
+where it works.
 
 The Bin pane shows the project each row came out of and the day it landed
 there, instead of the dates it was working to.

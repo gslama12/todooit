@@ -276,6 +276,24 @@ def binned_tasks() -> List[Todo]:
     ]
 
 
+def completed_tasks() -> List[Todo]:
+    """
+    Completed todos not drawn in a completed parent's row (one row per
+    task in Completed); binned ones belong to the Bin instead
+    """
+
+    query = select(Todo).where(
+        Todo.pending == False,
+        Todo.binned_at.is_(None),
+    )
+
+    return [
+        todo
+        for todo in manager.session.execute(query).scalars().all()
+        if completed_row_of(todo) is todo
+    ]
+
+
 def _day_heading(day: date) -> str:
     if day == date.today():
         return "Today"
@@ -389,17 +407,8 @@ class CompletedProject(FixedProject):
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
-        query = select(Todo).where(
-            Todo.pending == False,
-            Todo.binned_at.is_(None),
-        )
-        rows = [
-            todo
-            for todo in manager.session.execute(query).scalars().all()
-            if completed_row_of(todo) is todo
-        ]
         todos = sorted(
-            rows,
+            completed_tasks(),
             key=lambda todo: todo.completed_at or datetime.min,
             reverse=True,
         )

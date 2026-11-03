@@ -50,7 +50,7 @@ Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim
 | `xx` | Move the highlighted item to the Bin | both |
 | `u` | Restore the highlighted item out of the Bin | both |
 | `yy` | Delete the highlighted item for good (asks first) | both |
-| `YY` | Delete everything in the Bin for good (asks first) | both |
+| `YY` | Delete everything in the Bin or Completed for good, whichever is open (asks first) | both |
 | `ctrl+z` | Take back the last change made in the panes | both |
 | `ctrl+y` | Put back the change that was last taken back | both |
 

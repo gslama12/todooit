@@ -1178,7 +1178,9 @@ async def test_empty_bin_via_chord():
             await pilot.press("x", "x")
             await pilot.pause()
 
-        # From anywhere at all; the question counts what is about to go
+        # Only with the Bin open; the question counts what is about to go
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
 
@@ -1189,6 +1191,67 @@ async def test_empty_bin_via_chord():
         await pilot.pause()
 
         assert Todo.all() == []
+
+
+async def test_empty_chord_does_nothing_outside_bin_and_completed():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        for name in ("binned", "done", "open"):
+            await pilot.press("n")
+            await commit_line(pilot, name)
+        await pilot.press("x", "x")
+        await pilot.pause()
+        await pilot.press("k")
+        await pilot.press("c")
+        await pilot.pause()
+
+        # Neither a project's pane nor another fixed one empties anything
+        for jump in (None, ("g", "t"), ("g", "u")):
+            if jump:
+                await pilot.press(*jump)
+                await pilot.pause()
+
+            await pilot.press("Y", "Y")
+            await pilot.pause()
+
+            assert app.bar_switcher.current != "confirm_bar"
+            message = notification_message(app)
+            assert message is not None and "only empties" in message
+            assert len(Todo.all()) == 3
+
+
+async def test_empty_completed_via_chord():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        for name in ("open", "done", "binned"):
+            await pilot.press("n")
+            await commit_line(pilot, name)
+
+        # "binned" to the Bin, "done" ticked off; "open" stays open
+        await pilot.press("x", "x")
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+        await pilot.press("Y", "Y")
+        await pilot.pause()
+
+        assert app.bar_switcher.current == "confirm_bar"
+        assert "1 task in Completed" in app.bar_switcher.visible_content.message
+
+        await pilot.press("y")
+        await pilot.pause()
+
+        # Only the completed task went; the Bin and the open one are untouched
+        left = sorted(t.description for t in Todo.all())
+        assert left == ["binned", "open"]
+        assert tree_options(visible_todos(app)) == []
 
 
 async def test_deleting_from_the_bin_leaves_no_ghost_row():

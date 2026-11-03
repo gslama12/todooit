@@ -7,7 +7,9 @@ from todooit.api import (
     Project,
     Todo,
     binned_tasks,
+    completed_tasks,
     empty_bin,
+    empty_completed,
     move_project_to_bin,
     move_todo_to_bin,
     restore_todo,
@@ -268,6 +270,39 @@ def test_empty_bin_deletes_for_good(create_project):
 def test_empty_bin_with_nothing_in_it(create_project):
     create_project()
     assert empty_bin() == []
+
+
+def test_empty_completed_deletes_only_completed_tasks(create_project):
+    p = create_project()
+    done = p.add_todo()
+    done_step = done.add_todo()
+    open_parent = p.add_todo()
+    finished_step = open_parent.add_todo()
+    binned_done = p.add_todo()
+    kept = p.add_todo()
+
+    for todo in (done, finished_step, binned_done):
+        todo.toggle_complete()
+        todo.save()
+    move_todo_to_bin(binned_done)
+
+    done_uuid, done_step_uuid = done.uuid, done_step.uuid
+    finished_uuid = finished_step.uuid
+
+    gone = empty_completed()
+
+    # A step finished under an open parent goes alone; a binned task stays
+    # for the Bin to deal with
+    assert sorted(gone) == sorted([done_uuid, done_step_uuid, finished_uuid])
+    assert completed_tasks() == []
+    assert sorted(t.uuid for t in Todo.all()) == sorted(
+        [open_parent.uuid, binned_done.uuid, kept.uuid]
+    )
+
+
+def test_empty_completed_with_nothing_in_it(create_project):
+    create_project().add_todo()
+    assert empty_completed() == []
 
 
 def test_a_path_from_before_the_separator_changed_still_restores(create_project):
