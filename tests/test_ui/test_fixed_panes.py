@@ -482,6 +482,38 @@ async def test_upcoming_carries_a_slipped_row_into_today():
         assert "project" in upcoming.row_note(missed, upcoming._rows[missed.uuid]).plain
 
 
+async def test_a_step_finished_on_its_own_is_labelled_with_its_project_only():
+    """A lone step in the log names the project it came from, never its parent"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "move house")
+        await pilot.press("N")
+        await commit_line(pilot, "book van")
+
+        await pilot.press("c")
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+
+        completed = visible_todos(app)
+        assert descriptions(completed) == ["book van"]
+
+        row_id = tree_options(completed)[0].id
+        assert row_id is not None
+
+        step = completed._renderers[row_id].model
+        note = completed.row_note(step, completed._rows[step.uuid]).plain
+
+        assert "project" in note
+        assert "move house" not in note
+        assert step.parent_todo is not None and step.parent_todo.is_pending
+
+
 async def test_completing_a_task_moves_it_to_completed():
     async with run_pilot() as pilot:
         app = await boot(pilot)

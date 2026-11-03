@@ -150,7 +150,8 @@ class FixedTodosTree(TodosTree):
         """
         Shows the source project's name after a row's description, for fixed projects
         grouped by something other than project (those already say it via headings).
-        Only on the gathered row, not its steps, to avoid repeating it. A todo whose
+        Only on the gathered row, not its steps, to avoid repeating it; a step
+        gathered on its own names its project only, never its parent. A todo whose
         project was dropped falls back to the project name from its stored path.
         """
 
@@ -164,6 +165,7 @@ class FixedTodosTree(TodosTree):
 
         if not name:  # pragma: no cover
             return Text()
+
 
         theme = self.api.vars.theme
         style = Style(color=blend(theme.foreground1, theme.background1, OWNER_FADE))

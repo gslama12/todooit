@@ -66,7 +66,9 @@ work is rescheduled in.
 
 ![The Completed pane](/screenshots/completed.svg)
 
-Finishing a task moves it here. Unticking it hands the whole task back to the
+Finishing a task moves it here, and so does finishing a step on its own: it
+gets a single row of its own, labelled with its project like any task. A
+finished task carries its steps under it. Unticking a row hands it back to the
 project it came from — it was never moved in the database, only shown here
 while it was done with.
 

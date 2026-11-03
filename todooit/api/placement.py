@@ -49,13 +49,32 @@ def bin_row_of(todo: Todo) -> Todo:
     return row
 
 
+def completed_row_of(todo: Todo) -> Todo:
+    """
+    The row Completed draws a completed todo in: the highest completed todo
+    in its line. A step finished under an open parent is a row of its own; one
+    under a completed parent is drawn in its parent's row.
+    """
+
+    row = todo
+
+    for ancestor in todo.ancestors:
+        if not ancestor.is_completed:
+            break
+
+        row = ancestor
+
+    return row
+
+
 def home_of(todo: Todo) -> Optional[Home]:
     """
     The pane a todo lives in, as a project a screen can open directly
 
     The Bin for a binned todo, even a step whose parent is not binned; else
-    Completed if its root is completed, steps included; else its project, so
-    a completed step under an open root stays in place. None only for an open
+    Completed if it or anything it is nested under is completed, so a step
+    finished under an open parent leaves for Completed like any task; else its
+    project. None only for an open
     orphan, which never outlives the call that reopened it: reopening or
     restoring one rebuilds its project from its origin path.
     """
@@ -66,7 +85,7 @@ def home_of(todo: Todo) -> Optional[Home]:
     if todo.is_binned:
         return BIN
 
-    if root_of(todo).is_completed:
+    if completed_row_of(todo).is_completed:
         return COMPLETED
 
     return project_of(todo)

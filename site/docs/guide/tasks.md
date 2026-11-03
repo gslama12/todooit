@@ -110,10 +110,16 @@ The status checkbox carries the priority color, so urgency reads from the
 first column. A ticked task is struck through and grayed out, and moves to the
 [Completed](/guide/projects#completed) pane.
 
+A step ticked off on its own moves to Completed like any task, as a single
+row labelled with its project. Its parent stays open until you
+tick it off yourself, even once every step under it is done.
+
 Ticking runs down the tree and un-ticking runs up it: ticking a task ticks
-every step under it at every depth, and un-ticking a step hands back every
-task it sits inside, since something with work left in it is not finished
-however deep that work sits. Un-ticking a task hands back all its steps too.
+every step still open under it at every depth (steps finished earlier keep
+the day they were finished), and un-ticking a step hands back every task it
+sits inside, since something with work left in it is not finished however
+deep that work sits. Un-ticking a task hands back the steps that were ticked
+off with it; steps you had finished on their own stay in Completed.
 
 Ticking a task also ends every recurrence inside it: once the task is done,
 none of its steps come back. Un-ticking doesn't restore them — undo (`ctrl+z`) is

@@ -152,16 +152,20 @@ def complete(todo: Todo) -> Outcome:
 
 def reopen(todo: Todo) -> Outcome:
     """
-    Reopen a todo's whole family and all its ancestors
+    Reopen a todo, the steps its completion closed along with it, and all its
+    ancestors
 
-    Nothing a completion removed comes back: undo is for that. A task whose
-    project was dropped while it sat completed is filed back under its origin
-    path, so an open todo always has a project to live in. Completed steps
-    ignore their parent's dates, so a reopened one is fitted to them again.
+    A step finished on its own before its parent was completed has its own
+    moment and stays completed: reopening a task undoes only what completing
+    it did. Nothing a completion removed comes back: undo is for that. A task
+    whose project was dropped while it sat completed is filed back under its
+    origin path, so an open todo always has a project to live in. Completed
+    steps ignore their parent's dates, so a reopened one is fitted to them
+    again.
     """
 
     outcome = Outcome(todo)
-    _reopen_all([*todo.ancestors, *todo.family])
+    _reopen_all([*todo.ancestors, *_closed_with(todo)])
 
     top = (todo.ancestors or [todo])[-1]
     _raise_to_floor(top, outcome)
@@ -455,9 +459,15 @@ def _raise_to_floor(todo: Todo, outcome: Outcome) -> None:
 
 
 def _complete_family(todo: Todo, stamp: datetime, outcome: Outcome) -> None:
-    """The whole family is completed at one moment and stops recurring"""
+    """
+    What is still open in the family is completed at one moment and stops
+    recurring; a step already completed keeps the moment it was finished
+    """
 
     for node in todo.family:
+        if node.is_completed:
+            continue
+
         if node.recurrence is not None:
             outcome.overrides.append(Override(node, Change.ENDED))
 
@@ -483,6 +493,22 @@ def _advance(todo: Todo, stamp: datetime, outcome: Outcome) -> None:
 
     # Never the ancestors: an advance only ever moves later
     _raise_to_floor(todo, outcome)
+
+
+def _closed_with(todo: Todo) -> List[Todo]:
+    """
+    A completed todo and the steps completed in the same moment as it, at
+    every depth: what completing it closed. A step with a moment of its own
+    was finished before, and so was everything under it.
+    """
+
+    found = [todo]
+
+    for step in todo.todos:
+        if step.is_completed and step.completed_at == todo.completed_at:
+            found.extend(_closed_with(step))
+
+    return found
 
 
 def _reopen_all(todos: List[Todo]) -> None:

@@ -88,8 +88,8 @@ def context_id(block: int, todo: Todo) -> str:
 def drawn_children(model: Union[Project, Todo], sort_mode: Optional[str]) -> List[Todo]:
     """
     The todos a pane draws under a project or a row: those living where their
-    parent does (see placement), in the pane's order. A completed step stays
-    under its open parent; a step binned on its own leaves for the Bin.
+    parent does (see placement), in the pane's order. A step completed or
+    binned on its own leaves for Completed or the Bin.
     """
 
     home = model if isinstance(model, Project) else home_of(model)

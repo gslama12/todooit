@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from ..utils.day_names import day_label
 from .manager import manager
-from .placement import project_of
+from .placement import completed_row_of, project_of
 from .project import Project
 from .todo import Todo, priority_key
 
@@ -368,10 +368,11 @@ class UpcomingProject(FixedProject):
 
 class CompletedProject(FixedProject):
     """
-    Log of completed top-level tasks, most recently finished first
+    Log of completed todos, most recently finished first
 
-    A child todo only appears here inside its parent once the parent is
-    completed. Unticking a row sends the whole task back to its project.
+    A step finished under an open parent is a row of its own, like any task;
+    a completed parent carries its steps under it. Unticking a row sends it
+    back to its project, reopening whatever it is nested under.
     """
 
     key = "completed"
@@ -391,10 +392,14 @@ class CompletedProject(FixedProject):
         query = select(Todo).where(
             Todo.pending == False,
             Todo.binned_at.is_(None),
-            Todo.parent_todo_id.is_(None),
         )
+        rows = [
+            todo
+            for todo in manager.session.execute(query).scalars().all()
+            if completed_row_of(todo) is todo
+        ]
         todos = sorted(
-            manager.session.execute(query).scalars().all(),
+            rows,
             key=lambda todo: todo.completed_at or datetime.min,
             reverse=True,
         )

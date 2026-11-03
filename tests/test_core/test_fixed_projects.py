@@ -654,8 +654,8 @@ def test_completed_is_a_log_of_finished_tasks(create_project):
     assert COMPLETED.todos == [last_done, first_done]
 
 
-def test_completed_shows_whole_tasks_not_steps(create_project):
-    """A finished step of an unfinished task has gone nowhere"""
+def test_completed_shows_a_step_finished_on_its_own_as_its_own_row(create_project):
+    """A finished step of an unfinished task leaves for the log like any task"""
 
     p = create_project("work")
     task = p.add_todo()
@@ -664,9 +664,10 @@ def test_completed_shows_whole_tasks_not_steps(create_project):
 
     step.toggle_complete()
 
-    assert COMPLETED.todos == []
+    assert COMPLETED.todos == [step]
+    assert task.is_pending
 
-    # Only once the task itself is ticked does it arrive, as the task
+    # Once the task itself is ticked, it carries the step in its own row
     task.toggle_complete()
 
     assert COMPLETED.todos == [task]

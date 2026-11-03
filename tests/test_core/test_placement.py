@@ -14,7 +14,14 @@ from todooit.api import (
     move_todo_to_bin,
     restore_todo,
 )
-from todooit.api.placement import bin_row_of, home_of, project_of, root_of
+from todooit.ui.pane_layout import drawn_children
+from todooit.api.placement import (
+    bin_row_of,
+    completed_row_of,
+    home_of,
+    project_of,
+    root_of,
+)
 
 
 def test_a_binned_todo_lives_in_the_bin(create_project):
@@ -59,8 +66,10 @@ def test_a_completed_root_lives_in_completed_with_its_steps(create_project):
     assert home_of(sub_step) is COMPLETED
 
 
-def test_a_completed_step_under_an_open_root_stays_in_its_project(create_project):
-    """R3"""
+def test_a_completed_step_under_an_open_root_lives_in_completed_as_its_own_row(
+    create_project,
+):
+    """R3: a step finished on its own leaves its project like any task"""
 
     p = create_project("work")
     root = p.add_todo()
@@ -70,8 +79,31 @@ def test_a_completed_step_under_an_open_root_stays_in_its_project(create_project
     done.toggle_complete()
 
     assert root.is_pending
-    assert home_of(done) is p
-    assert root_of(done) is root
+    assert home_of(root) is p
+    assert home_of(done) is COMPLETED
+    assert completed_row_of(done) is done
+    assert done not in drawn_children(root, None)
+
+
+def test_a_step_finished_before_its_parent_is_drawn_in_the_parent_s_row(
+    create_project,
+):
+    """R2: once the parent is completed too, the step is drawn under it"""
+
+    p = create_project("work")
+    root = p.add_todo()
+    early = root.add_todo()
+    sub_step = early.add_todo()
+    root.add_todo()
+
+    early.toggle_complete()
+    assert completed_row_of(sub_step) is early
+
+    root.toggle_complete()
+
+    assert completed_row_of(early) is root
+    assert completed_row_of(sub_step) is root
+    assert [t.id for t in COMPLETED.todos] == [root.id]
 
 
 def test_an_open_todo_in_a_nested_project_lives_in_that_project(create_project):
@@ -202,7 +234,8 @@ def test_completed_and_the_bin_gather_exactly_what_lives_there(create_project):
 
     # open, with a completed step and a step binned on its own
     open_root = api.add_todo()
-    open_root.add_todo().toggle_complete()
+    open_done = open_root.add_todo()
+    open_done.toggle_complete()
     move_todo_to_bin(open_root.add_todo().add_todo())
     open_root.add_todo()
 
@@ -239,14 +272,16 @@ def test_completed_and_the_bin_gather_exactly_what_lives_there(create_project):
     # No todo is left without a home: an open orphan never outlives its call
     assert all(home_of(t) is not None for t in everything)
 
-    completed_roots = {
-        t.id for t in everything if home_of(t) is COMPLETED and root_of(t) is t
+    completed_rows = {
+        t.id
+        for t in everything
+        if home_of(t) is COMPLETED and completed_row_of(t) is t
     }
     bin_rows = {t.id for t in everything if home_of(t) is BIN and bin_row_of(t) is t}
 
-    assert {t.id for t in COMPLETED.todos} == completed_roots
+    assert {t.id for t in COMPLETED.todos} == completed_rows
     assert {t.id for t in BIN.todos} == bin_rows
 
     # Every kind made it in, so the agreement above means something
-    assert completed_roots == {done_root.id, done_orphan.id}
+    assert completed_rows == {done_root.id, done_orphan.id, open_done.id}
     assert len(bin_rows) == 6

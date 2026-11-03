@@ -110,6 +110,63 @@ def test_completing_every_step_leaves_the_parent_to_be_completed(create_project)
     assert garden.is_pending
 
 
+def finished_earlier(step: Todo) -> datetime:
+    """Completes a step on its own, a day before anything else is completed"""
+
+    lifecycle.complete(step)
+    step.completed_at = datetime.now() - timedelta(days=1)
+    manager.save(step)
+
+    return step.completed_at
+
+
+def test_completing_a_parent_keeps_the_moment_of_a_step_finished_earlier(
+    create_project,
+):
+    garden = garden_season(create_project())
+    steps = steps_of(garden)
+    earlier = finished_earlier(steps["Buy seeds"])
+
+    lifecycle.complete(garden)
+
+    assert steps["Buy seeds"].completed_at == earlier
+    assert steps["Water plants"].completed_at == garden.completed_at
+
+
+def test_reopening_a_parent_leaves_a_step_finished_earlier_completed(create_project):
+    """Reopening a task undoes only what completing it closed"""
+
+    garden = garden_season(create_project())
+    steps = steps_of(garden)
+    finished_earlier(steps["Buy seeds"])
+
+    lifecycle.complete(garden)
+    lifecycle.reopen(garden)
+
+    assert garden.is_pending
+    assert steps["Water plants"].is_pending
+    assert steps["Buy seeds"].is_completed
+
+
+def test_reopening_a_parent_reopens_what_its_completion_closed_at_every_depth(
+    create_project,
+):
+    garden = garden_season(create_project())
+    seeds = steps_of(garden)["Buy seeds"]
+    packet = seeds.add_todo()
+    packet.save()
+    done_packet = seeds.add_todo()
+    done_packet.save()
+    finished_earlier(done_packet)
+
+    lifecycle.complete(garden)
+    lifecycle.reopen(garden)
+
+    assert seeds.is_pending
+    assert packet.is_pending
+    assert done_packet.is_completed
+
+
 def test_a_new_step_leaves_the_completed_ones_alone(create_project):
     """Writing a step into a task is not reopening the task"""
 
