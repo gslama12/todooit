@@ -41,6 +41,7 @@ class Manager:
         # Creates missing tables only; existing tables are never migrated
         BaseModel.metadata.create_all(bind=self.engine)
         self._drop_retired_columns()
+        self._add_new_columns()
 
     # Columns the model no longer has. Left in place they would break every
     # insert, since they were created NOT NULL with only a Python-side default.
@@ -56,6 +57,27 @@ class Manager:
 
                 if present:
                     connection.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {column}")
+
+    # Columns added to tables that may already exist: `create_all` leaves an
+    # existing table alone, so a database from before them gets them here.
+    # (table, column, definition)
+    ADDED_COLUMNS = (
+        ("project", "expanded", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("todo", "expanded", "BOOLEAN NOT NULL DEFAULT 1"),
+    )
+
+    def _add_new_columns(self) -> None:
+        with self.engine.begin() as connection:
+            for table, column, definition in self.ADDED_COLUMNS:
+                present = connection.exec_driver_sql(
+                    f"SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?",
+                    (column,),
+                ).first()
+
+                if not present:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                    )
 
     def delete(self, obj):
         self.session.delete(obj)

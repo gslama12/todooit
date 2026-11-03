@@ -33,6 +33,7 @@ from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
 
 from todooit.api import Project, Todo
+from todooit.api.expansion import is_expanded, set_expanded
 from todooit.api.lifecycle import Refusal
 from todooit.api.model import Tellable
 from todooit.ui.api.events import (
@@ -448,8 +449,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self._force_refresh()
         self.get_column_width.cache_clear()
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return self.expanded_nodes[_id]
+    def is_node_expanded(self, model: Any) -> bool:
+        """Whether `model` is drawn open; stored on the model, so it survives a relaunch"""
+
+        return getattr(model, "expanded", True)
 
     def visible_children(self, model: Any) -> List:
         """The children of a model this pane draws a row for (all of them, by default)."""
@@ -462,7 +465,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         return tree_rows(
             self.visible_children(self.model),
             self.visible_children,
-            self.is_node_expaned,
+            self.is_node_expanded,
         )
 
     def option_for(self, row: PaneRow) -> Option:
@@ -697,7 +700,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @refresh_tree
     def _expand_node(self, _id: str) -> None:
-        self.expanded_nodes[_id] = True
+        set_expanded(_id, True)
 
     def expand_node(self) -> None:
         if self.highlighted is not None and self.node.id:
@@ -705,11 +708,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @refresh_tree
     def _collapse_node(self, _id: str) -> None:
-        self.expanded_nodes[_id] = False
+        set_expanded(_id, False)
 
     def _toggle_expand_node(self, _id: str) -> None:
-        expanded = self.expanded_nodes[_id]
-        if expanded:
+        if is_expanded(_id):
             self._collapse_node(_id)
         else:
             self._expand_node(_id)
@@ -829,12 +831,11 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         model = self.current_model
 
         self._renderers.pop(model.uuid)
-        self.expanded_nodes.pop(model.uuid)
         model.drop()
 
     def forget_rows(self, ids: Iterable[str]) -> None:
         """
-        Drops renderers/expansion state for models gone for good. The pane keeps a
+        Drops renderers for models gone for good. The pane keeps a
         renderer for every model it's ever drawn (even ones since moved elsewhere),
         and column-width measurement walks all of them — a leftover renderer for a
         deleted model would look the model up and fail.
@@ -849,7 +850,6 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         for _id in ids:
             self._renderers.pop(_id, None)
-            self.expanded_nodes.pop(_id, None)
 
             # A pane waiting to redraw (hidden) still holds this option; drop it too,
             # since its renderer (looked up by model) is now gone

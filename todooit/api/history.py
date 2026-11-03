@@ -21,6 +21,13 @@ from .todo import Todo
 # current note and deleted rows get theirs back (see `_notes_of_deleted`).
 NOTE = "note"
 
+# Expansion is view state, stored only so the trees reopen as they were left:
+# opening a row is no edit to undo, and undoing an edit must not reopen one.
+# A row undo puts back comes back expanded (the column's default).
+EXPANDED = "expanded"
+
+UNTRACKED = (NOTE, EXPANDED)
+
 # Parents before children: rows are inserted in this order, deleted in reverse
 TABLES = (Project, Todo)
 
@@ -50,14 +57,14 @@ def _capture() -> Snapshot:
     Every row of both tables, read via the tables (not the models, so no validators run)
 
     Skips the root project (created lazily; undoing it would drop the tree)
-    and the note column.
+    and the note and expanded columns.
     """
 
     snapshot: Snapshot = {}
 
     for model in TABLES:
         table = _table(model)
-        columns = [column for column in table.c if column.name != NOTE]
+        columns = [column for column in table.c if column.name not in UNTRACKED]
         query = select(*columns)
 
         if model is Project:
@@ -210,6 +217,24 @@ def _apply(fragment: Fragment, leaving: Fragment) -> ChangedRows:
             )
         }
 
+    # Current expansion of rows about to be rewritten, so undoing an edit to a
+    # collapsed row doesn't reopen it
+    kept_expanded: Dict[str, Dict[int, bool]] = {}
+
+    for model in TABLES:
+        ids = list(fragment.get(model.__tablename__, {}))
+
+        if not ids:
+            continue
+
+        table = _table(model)
+        kept_expanded[table.name] = {
+            row.id: row.expanded
+            for row in session.execute(
+                select(table.c.id, table.c.expanded).where(table.c.id.in_(ids))
+            )
+        }
+
     # Delete children first
     for model in reversed(TABLES):
         rows = fragment.get(model.__tablename__)
@@ -235,6 +260,10 @@ def _apply(fragment: Fragment, leaving: Fragment) -> ChangedRows:
                 {**row, NOTE: row.get(NOTE, kept_notes.get(row["id"], ""))}
                 for row in values
             ]
+
+        # Rows put back after a delete take the column's default (expanded)
+        kept = kept_expanded.get(model.__tablename__, {})
+        values = [{**row, EXPANDED: kept.get(row["id"], True)} for row in values]
 
         if values:
             session.execute(insert(_table(model)), values)

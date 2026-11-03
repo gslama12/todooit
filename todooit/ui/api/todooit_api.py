@@ -333,7 +333,7 @@ class TodooitAPI:
         else:
             always = self.vars.always_expand_todos
 
-        return always or ModelTree.expanded_nodes[model.uuid]
+        return always or model.expanded
 
     def add_child_node(self):
         """Add a child to the highlighted item"""

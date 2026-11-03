@@ -388,3 +388,41 @@ def test_the_snapshot_does_not_carry_notes(create_project):
     (row,) = snapshot["todo"].values()
 
     assert "note" not in row
+
+
+def test_opening_or_closing_a_row_is_no_change(create_project):
+    project = create_project("folded")
+    history = started_history()
+
+    project.set_expanded(False)
+
+    assert not history.record()
+    assert not history._undo
+
+
+def test_undoing_an_edit_keeps_a_row_closed(create_project):
+    project = create_project("before")
+    history = started_history()
+
+    project.description = "after"
+    project.save()
+    assert history.record()
+
+    project.set_expanded(False)
+    history.undo()
+
+    restored = Project.from_id(project.uuid)
+    assert restored.description == "before"
+    assert not restored.expanded
+
+
+def test_a_row_put_back_comes_back_open(create_project):
+    project = create_project("dropped")
+    project.set_expanded(False)
+    history = started_history()
+
+    project.drop()
+    assert history.record()
+    history.undo()
+
+    assert Project.from_id("Project_1").expanded

@@ -25,13 +25,13 @@ from todooit.ui.pane_layout import (
 )
 
 
-def everything(_uuid: str) -> bool:
+def everything(_model) -> bool:
     return True
 
 
 def all_but(*collapsed):
     ids = {model.uuid for model in collapsed}
-    return lambda uuid: uuid not in ids
+    return lambda model: model.uuid not in ids
 
 
 def project_pane(project, expanded=everything, sort_mode=None):

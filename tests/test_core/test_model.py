@@ -1,5 +1,5 @@
 from tests.test_core.core_base import *  # noqa
-from todooit.api.project import Project
+from todooit.api import Project, Todo, manager
 
 
 def test_creation_and_deletion(create_project):
@@ -94,3 +94,72 @@ def test_shifts_across_a_run_filed_at_one_index(create_project):
     first, second = projects[0].siblings[:2]
     assert first.shift_down()
     assert [p.id for p in first.siblings][:2] == [second.id, first.id]
+
+
+# ------------------- Expansion state --------------------
+
+
+def test_new_rows_start_expanded(create_project, create_todo):
+    assert create_project().expanded
+    assert create_todo().expanded
+
+
+def test_set_expanded_saves_only_a_change(create_project):
+    project = create_project()
+    revision = manager.revision
+
+    project.set_expanded(True)
+    assert manager.revision == revision
+
+    project.set_expanded(False)
+    assert manager.revision == revision + 1
+    assert not project.expanded
+
+
+def test_expansion_survives_a_reconnect(tmp_path):
+    path = str(tmp_path / "todooit.db")
+    manager.connect(path)
+
+    project = Project(description="folded")
+    project.save()
+    todo = project.add_todo()
+    todo.description = "folded task"
+    todo.save()
+
+    project.set_expanded(False)
+    todo.set_expanded(False)
+    project_id, todo_id = project.uuid, todo.uuid
+    manager.session.close()
+
+    manager.connect(path)
+
+    assert not Project.from_id(project_id).expanded
+    assert not Todo.from_id(todo_id).expanded
+    manager.session.close()
+
+
+def test_a_database_from_before_expansion_gets_the_column(tmp_path):
+    path = str(tmp_path / "todooit.db")
+    manager.connect(path)
+
+    project = Project(description="old")
+    project.save()
+    todo = project.add_todo()
+    todo.save()
+    project_id, todo_id = project.uuid, todo.uuid
+    manager.session.close()
+
+    # What a database written before the column existed looks like
+    with manager.engine.begin() as connection:
+        connection.exec_driver_sql("ALTER TABLE todo DROP COLUMN expanded")
+        connection.exec_driver_sql("ALTER TABLE project DROP COLUMN expanded")
+
+    manager.connect(path)
+
+    assert Project.from_id(project_id).expanded
+    assert Todo.from_id(todo_id).expanded
+
+    # And it can be written
+    Project.from_id(project_id).set_expanded(False)
+    assert not Project.from_id(project_id).expanded
+    manager.session.close()

@@ -14,6 +14,11 @@ from tests.test_ui.ui_base import (
     visible_todos,
 )
 from todooit.api import BIN, TODAY, Project, Todo
+from todooit.ui.tui import Todooit
+
+
+def shown(tree) -> list:
+    return [option.id for option in tree_options(tree)]
 
 
 async def test_projects_tree_basics():
@@ -650,3 +655,63 @@ async def test_indenting_a_colored_project_says_it_was_recolored():
         assert home.color == 2
         message = notification_message(app)
         assert message is not None and "recolored" in message
+
+
+async def test_a_collapsed_project_stays_collapsed_after_a_relaunch(tmp_path):
+    """Expansion is stored with the project, so a relaunch draws the tree as it was left"""
+
+    path = str(tmp_path / "todooit.db")
+
+    async with Todooit(db_path=path).run_test(size=(120, 36)) as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        outer = await new_project(pilot, "outer")
+        inner = outer.add_project()
+        inner.description = "inner"
+        inner.save()
+        ptree.force_refresh()
+        ptree.highlight_id(outer.uuid)
+        await pilot.pause()
+
+        ptree.toggle_expand()
+        await pilot.pause()
+        assert inner.uuid not in shown(ptree)
+
+    async with Todooit(db_path=path).run_test(size=(120, 36)) as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        assert outer.uuid in shown(ptree)
+        assert inner.uuid not in shown(ptree)
+
+        ptree.highlight_id(outer.uuid)
+        ptree.toggle_expand()
+        await pilot.pause()
+        assert inner.uuid in shown(ptree)
+
+
+async def test_always_expand_projects_leaves_the_stored_state_alone():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        outer = await new_project(pilot, "outer")
+        inner = outer.add_project()
+        inner.description = "inner"
+        inner.save()
+        outer.set_expanded(False)
+        ptree.force_refresh()
+        await pilot.pause()
+        assert inner.uuid not in shown(ptree)
+
+        app.api.vars.always_expand_projects = True
+        ptree.force_refresh()
+        await pilot.pause()
+        assert inner.uuid in shown(ptree)
+        assert not Project.from_id(outer.uuid).expanded
+
+        app.api.vars.always_expand_projects = False
+        ptree.force_refresh()
+        await pilot.pause()
+        assert inner.uuid not in shown(ptree)

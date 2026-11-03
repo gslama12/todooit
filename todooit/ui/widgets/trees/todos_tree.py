@@ -156,7 +156,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         return project_groups(self.model, self.sort_mode)
 
     def pane_rows(self) -> List[PaneRow]:
-        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expaned)
+        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expanded)
 
     def option_for(self, row: PaneRow) -> Option:
         """Headings and context rows are drawn but never land the cursor."""
@@ -172,8 +172,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _get_parent(self, id: str) -> Optional[Todo]:
         return Todo.from_id(id).parent_todo
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return super().is_node_expaned(_id) or self.api.vars.always_expand_todos
+    def is_node_expanded(self, model) -> bool:
+        return super().is_node_expanded(model) or self.api.vars.always_expand_todos
 
     @property
     def formatter(self) -> "TodoFormatter":
@@ -248,7 +248,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
             # Ensure it's reachable — its own parent may also have just been rebuilt, and closed
             if parent is not None and not parent.is_root:
-                tree.expanded_nodes[parent.uuid] = True
+                parent.set_expanded(True)
 
         tree.force_refresh()
 

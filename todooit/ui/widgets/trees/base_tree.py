@@ -1,4 +1,3 @@
-from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from textual import events, on
@@ -12,10 +11,6 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 class BaseTree(OptionList, can_focus=True, inherit_bindings=False):
-    # Expanded state per node uuid; defaults to expanded so a tree isn't
-    # opened already hiding its own contents. Only collapsing sets False.
-    expanded_nodes = defaultdict(lambda: True)
-
     @property
     def api(self) -> "TodooitAPI":
         return self.tui.api

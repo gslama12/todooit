@@ -48,13 +48,6 @@ async def press_writing(pilot: Pilot, write: Callable[[], object]) -> None:
 
 
 def run_pilot():
-    # Expansion state lives on the tree *class* and model uuids repeat
-    # between one :memory: database and the next, so a row expanded in one
-    # test would come up expanded in another
-    from todooit.ui.widgets.trees.base_tree import BaseTree
-
-    BaseTree.expanded_nodes.clear()
-
     return Todooit(db_path=TEMP_DB_PATH).run_test(size=(120, 36))
 
 

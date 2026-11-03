@@ -178,8 +178,8 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def _get_parent(self, id: str) -> Optional[Project]:
         return Project.from_id(id).parent_project
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return super().is_node_expaned(_id) or self.api.vars.always_expand_projects
+    def is_node_expanded(self, model) -> bool:
+        return super().is_node_expanded(model) or self.api.vars.always_expand_projects
 
     @property
     def formatter(self) -> "ProjectFormatter":
@@ -209,7 +209,6 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         project = self.current_model
 
         self._renderers.pop(project.uuid, None)
-        self.expanded_nodes.pop(project.uuid, None)
 
         move_project_to_bin(project)
         return True

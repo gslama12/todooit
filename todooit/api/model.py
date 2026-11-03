@@ -1,5 +1,6 @@
 from typing import Any, Generic, List, Optional, TypeVar
 
+from sqlalchemy import true
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from typing_extensions import Protocol, Self
@@ -43,6 +44,10 @@ class TodooitModel(BaseModel, BaseModelMixin, Generic[ChangeT]):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     order_index: Mapped[int] = mapped_column(default=-1)
+    # Whether the panes draw this row open, its children on the rows below.
+    # Stored so the trees come back as they were left; kept out of undo history.
+    # The server default also covers raw inserts (migration, undo putting a row back).
+    expanded: Mapped[bool] = mapped_column(default=True, server_default=true())
 
     @property
     def uuid(self) -> str:
@@ -143,6 +148,13 @@ class TodooitModel(BaseModel, BaseModelMixin, Generic[ChangeT]):
 
     def save(self) -> None:
         manager.save(self)
+
+    def set_expanded(self, expanded: bool) -> None:
+        """Opens or closes this row in the panes, saved only when it changes"""
+
+        if self.expanded != expanded:
+            self.expanded = expanded
+            self.save()
 
     # ------------------- Moving between levels --------------------
 

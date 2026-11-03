@@ -266,7 +266,7 @@ class MainScreen(BaseScreen):
         parent = project.parent_project
 
         while parent is not None and not parent.is_root:
-            tree.expanded_nodes[parent.uuid] = True
+            parent.set_expanded(True)
             parent = parent.parent_project
 
         tree.force_refresh()
@@ -361,7 +361,7 @@ class MainScreen(BaseScreen):
         parent = project.parent_project
 
         while parent is not None and not parent.is_root:
-            projects_tree.expanded_nodes[parent.uuid] = True
+            parent.set_expanded(True)
             parent = parent.parent_project
 
         projects_tree.force_refresh()
@@ -370,7 +370,7 @@ class MainScreen(BaseScreen):
         tree = await self.show_project(project)
 
         for step in todo.ancestors:
-            tree.expanded_nodes[step.uuid] = True
+            step.set_expanded(True)
 
         tree.force_refresh()
         self.app.set_focus(tree)

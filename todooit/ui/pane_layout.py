@@ -30,7 +30,8 @@ HEADING = "heading"
 CONTEXT = "context"
 MODEL = "model"
 
-Expanded = Callable[[str], bool]
+# Whether a model is drawn open, its children on the rows below
+Expanded = Callable[[Any], bool]
 Children = Callable[[Any], List[Any]]
 
 
@@ -144,7 +145,7 @@ class _Node:
 def _family(model: Any, children: Children, expanded: Expanded) -> _Node:
     """A row with whatever of its own family it is expanded to show"""
 
-    under = children(model) if expanded(model.uuid) else []
+    under = children(model) if expanded(model) else []
     return _Node(model, under=[_family(child, children, expanded) for child in under])
 
 
@@ -162,7 +163,7 @@ def _picked(rows: List[TodoRow], children: Children, expanded: Expanded) -> List
             nodes.append(_family(row.todo, children, expanded))
             continue
 
-        shown = row.is_context or expanded(row.todo.uuid)
+        shown = row.is_context or expanded(row.todo)
         under = _picked(row.under, children, expanded) if shown else []
         nodes.append(_Node(row.todo, row.is_context, under))
 
