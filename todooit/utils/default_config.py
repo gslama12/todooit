@@ -653,6 +653,14 @@ def key_setup(api: TodooitAPI, _):
 
 @subscribe(Startup)
 def layout_setup(api: TodooitAPI, _):
+    # The projects pane takes the width its widest row needs with every project
+    # expanded, so folding never shifts the split, and the tasks pane the rest.
+    # Capped at a quarter of the screen, the most the old fixed split ever gave
+    # it: past that, long names wrap as they always have. Off, the split goes
+    # back to that fixed quarter.
+    api.vars.projects_pane_auto_width = True
+    api.vars.projects_pane_max_width = 0.25
+
     api.layouts.project_layout = [
         ProjectWidget.description,
     ]

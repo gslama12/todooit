@@ -49,6 +49,12 @@ FLASH_LIMIT = 5
 
 
 class DualSplit(Container):
+    # The split when the projects pane isn't sized to its rows
+    FIXED_COLUMNS = "1fr 3fr"
+
+    # What the grid was last set to, so an unchanged width costs no relayout
+    _fitted_columns: Optional[str] = None
+
     DEFAULT_CSS = """
     DualSplit {
         layout: grid;
@@ -64,6 +70,53 @@ class DualSplit(Container):
         }
     }
     """
+
+
+    def _columns(self) -> str:
+        """
+        The grid's columns: the projects pane as wide as its widest row needs
+        (every project expanded), capped to a share of the screen, and the
+        tasks pane taking the rest
+        """
+
+        tree = self.query_one(ProjectsTree)
+        vars = tree.api.vars
+
+        if not vars.projects_pane_auto_width:
+            return self.FIXED_COLUMNS
+
+        switcher = self.query_one("#project_switcher")
+
+        width = tree.outer_width() + switcher.styles.margin.width
+
+        total = self.size.width or self.app.size.width
+        cap = int(total * vars.projects_pane_max_width)
+
+        if cap > 0:
+            width = min(width, cap)
+
+        return f"{width} 1fr"
+
+    def fit_projects_pane(self) -> None:
+        """Resizes the split to the projects pane's rows; a no-op when nothing changed"""
+
+        if not self.is_mounted:
+            return
+
+        columns = self._columns()
+
+        if columns != self._fitted_columns:
+            self._fitted_columns = columns
+            self.styles.grid_columns = columns
+
+    @on(ProjectsTree.Remeasure)
+    def _remeasure(self, event: ProjectsTree.Remeasure) -> None:
+        event.stop()
+        self.fit_projects_pane()
+
+    def on_resize(self, _: events.Resize) -> None:
+        # The cap is a share of the screen, so it moves with the terminal
+        self.fit_projects_pane()
 
 
 class MainScreen(BaseScreen):

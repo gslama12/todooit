@@ -18,6 +18,8 @@ class VarManager(ApiComponent):
         self._always_expand_projects = False
         self._always_expand_todos = False
         self._todo_sort: Optional[TodoSortModeType] = "priority"
+        self._projects_pane_auto_width = True
+        self._projects_pane_max_width = 0.25
 
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
@@ -50,6 +52,29 @@ class VarManager(ApiComponent):
     @always_expand_todos.setter
     def always_expand_todos(self, value: bool):
         self._always_expand_todos = value
+
+    @property
+    def projects_pane_auto_width(self) -> bool:
+        """
+        Whether the projects pane is sized to its widest row (with every project
+        expanded) rather than held at a fixed quarter of the screen
+        """
+
+        return self._projects_pane_auto_width
+
+    @projects_pane_auto_width.setter
+    def projects_pane_auto_width(self, value: bool):
+        self._projects_pane_auto_width = value
+
+    @property
+    def projects_pane_max_width(self) -> float:
+        """The most of the screen's width an auto-sized projects pane may take (0-1)"""
+
+        return self._projects_pane_max_width
+
+    @projects_pane_max_width.setter
+    def projects_pane_max_width(self, value: float):
+        self._projects_pane_max_width = value
 
     @property
     def show_confirm(self):

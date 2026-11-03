@@ -1,10 +1,13 @@
 from typing import TYPE_CHECKING, List, Optional
 
+from rich.measure import Measurement
 from textual import on
+from textual.message import Message
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, fixed_projects, move_project_to_bin
 from todooit.ui.api.events import ProjectSelected
+from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
 
 from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
@@ -35,6 +38,12 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     BOTTOM_RULE_ID = "todooit-bottom-projects-rule"
 
     FIXED_MESSAGE = "[b]{}[/b] is a fixed project and can't be changed"
+
+    # Far wider than any terminal, so a measured row never wraps
+    MEASURE_WIDTH = 1000
+
+    class Remeasure(Message):
+        """The rows may have changed width: whoever sizes the pane should look again"""
 
     def __init__(self, model: Project) -> None:
         render_dict = ProjectRenderDict(self)
@@ -101,9 +110,62 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
             self._bottom_gap = gap
             self.refresh_options()
 
+            # Lines are otherwise only recounted at the next paint; recount now so
+            # the pane's height (and with it the scrollbar) is settled before then
+            self._update_lines()
+
     def _force_refresh(self) -> None:
+        # The rows are laid out with no gap first and the gap then fills what is
+        # left. Laid out against the old gap, rows just unfolded would overflow
+        # the pane for a moment and put the scrollbar up -- and with the pane
+        # exactly as wide as its widest row, the column the scrollbar takes
+        # wraps that row, which keeps it overflowing and the scrollbar up.
+        self._bottom_gap = 0
         super()._force_refresh()
         self._sync_bottom_gap()
+        self.post_message(self.Remeasure())
+
+    def _fully_expanded_rows(self) -> List[PaneRow]:
+        """Every row the pane could ever draw: the whole tree opened up, plus the fixed projects"""
+
+        rows = tree_rows(
+            self.visible_children(self.model), self.visible_children, lambda _: True
+        )
+
+        return rows + [plain_row(project.uuid) for project in fixed_projects()]
+
+    def content_width(self) -> int:
+        """
+        Cells the widest row needs with every project expanded, whatever is
+        expanded right now, so folding never changes it. Rows are measured as
+        drawn, edge padding on both sides included, and the column titles too.
+        """
+
+        # Before the config has laid out the columns a row is an empty table,
+        # which can't be measured; the refresh that follows the layout will be
+        if not self.render_layout:
+            return 0
+
+        console = self.app.console
+        options = console.options.update_width(self.MEASURE_WIDTH)
+
+        renderables = [self.render_row(row) for row in self._fully_expanded_rows()]
+        renderables.append(self.make_header())
+
+        return max(
+            Measurement.get(console, options, renderable).maximum
+            for renderable in renderables
+        )
+
+    def outer_width(self) -> int:
+        """content_width plus the pane's own border/padding, and the scrollbar when one is up"""
+
+        width = self.content_width() + self.styles.gutter.width
+
+        if self.show_vertical_scrollbar:
+            width += self.styles.scrollbar_size_vertical
+
+        return width
 
     def _remeasure_bottom_gap(self) -> None:
         """Re-measures a frame later, since layout from a resizing event settles after this call runs."""
@@ -122,6 +184,11 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
     def on_resize(self, _) -> None:
         self._sync_bottom_gap()
+
+    def watch_show_vertical_scrollbar(self, _: bool) -> None:
+        # The scrollbar takes a column of its own, so the split has to make
+        # room for it -- and give it back once the rows fit again
+        self.post_message(self.Remeasure())
 
     def _stored_indices(self) -> List[int]:
         """
@@ -245,6 +312,11 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def start_edit(self, property: str) -> bool:
         return super().start_edit(property)
+
+    def stop_edit(self, cancel: bool = False):
+        # A committed name can widen (or narrow) the pane; typing alone never does
+        super().stop_edit(cancel)
+        self.post_message(self.Remeasure())
 
     @reject_fixed_node(FIXED_MESSAGE)
     def add_child_node(self):

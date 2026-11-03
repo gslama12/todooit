@@ -47,6 +47,7 @@ FEATURE_BY_MODULE = {
     "test_formatter": "formatters",
     "test_formatter_presets": "formatters",
     "test_project_tree": "projects",
+    "test_projects_pane_width": "projects",
     "test_tree_guides": "projects",
     "test_project_colors": "colors",
     "test_todo_tree": "todos",
