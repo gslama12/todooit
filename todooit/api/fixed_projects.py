@@ -249,10 +249,6 @@ class FixedProject:
     def todos(self) -> List[Todo]:
         return [todo for group in self.todo_groups for todo in group.todos]
 
-    @property
-    def total_todos(self) -> int:
-        return len(self.todos)
-
     # Nothing to reorder: a fixed project is its own only sibling
     def is_first_sibling(self) -> bool:
         return True

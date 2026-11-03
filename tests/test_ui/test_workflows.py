@@ -383,11 +383,11 @@ async def test_indenting_builds_a_task_out_of_rows():
         assert step.parent_todo == task
         assert len(tree_options(tree)) == 2
 
-        # The child count rides along with the parent's description
+        # The parent is open, its step drawn right below it, so no child count
         formatted = app.api.formatter.todos.description.format_value(
             task.description, task
         ).plain
-        assert "(1)" in formatted
+        assert "(1)" not in formatted
 
         # Pull it back out
         await pilot.press("U")

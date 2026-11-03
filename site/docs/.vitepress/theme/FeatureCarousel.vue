@@ -37,7 +37,7 @@ const features: Feature[] = [
   {
     title: 'Projects that nest',
     details:
-      'Projects hold projects. The <em>Tasks</em> column counts everything underneath at every level, and a color put on a project spreads down the whole tree.',
+      'Projects hold projects, as deep as you like. A folded one shows how many it hides, and a color put on a project spreads down the whole tree.',
     link: '/guide/projects',
     shot: 'nested-projects.svg',
     alt: 'Projects nested under projects in the left pane',

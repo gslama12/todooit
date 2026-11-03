@@ -374,7 +374,7 @@ async def test_a_wrapped_project_keeps_the_guides_under_it():
 
         # Nothing is drawn under it, so nothing wants the column its name
         # wraps into: the name carries straight on under where it started
-        assert lines[1].index("name") == margin
+        assert not lines[1][margin].isspace()
 
 
 async def test_a_project_with_children_carries_the_drop_through_its_name():

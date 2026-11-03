@@ -53,6 +53,36 @@ async def test_projects_tree_basics():
         assert len(tree_options(ptree)) == 5
 
 
+async def test_sub_project_count_shows_only_while_collapsed():
+    """
+    An open project has its sub projects on the rows below it, so the count
+    trailing its name is only drawn once it is folded shut
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        outer = await new_project(pilot, "outer")
+        inner = outer.add_project()
+        inner.description = "inner"
+        inner.save()
+        ptree.force_refresh()
+        ptree.highlight_id(outer.uuid)
+        await pilot.pause()
+
+        def drawn() -> str:
+            return ptree.formatter.description.format_value("outer", outer).plain
+
+        assert "(1)" not in drawn()
+
+        ptree.toggle_expand()
+        assert drawn().endswith("outer (1)")
+
+        ptree.toggle_expand()
+        assert "(1)" not in drawn()
+
+
 async def test_add_and_commit_with_enter():
     async with run_pilot() as pilot:
         app = await boot(pilot)

@@ -29,26 +29,6 @@ class ProjectDescription(SimpleInput[Project, str]):
         return "description"
 
 
-class ProjectTasks(SimpleInput[Project, int]):
-    """How many todos are nested under the project; derived, so never editable."""
-
-    editable = False
-
-    @property
-    def _property(self) -> str:
-        return "total_todos"
-
-    @property
-    def value(self) -> str:
-        # Recounted each render since todos come and go.
-        count = self.model_value
-
-        if not count:
-            return ""
-
-        return str(count)
-
-
 class Note(SimpleInput[Todo, str]):
     """
     The free text hanging off a todo, edited in its own window, never inline.

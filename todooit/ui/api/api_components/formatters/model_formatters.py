@@ -23,7 +23,6 @@ class TodoFormatter(ModelFormatterBase):
 class ProjectFormatter(ModelFormatterBase):
     def setup_formatters(self):
         self.description = self.get_formatter_store()
-        self.tasks = self.get_formatter_store()
 
     def trigger(self) -> None:
         for widget in self.api.app.screen.query(ProjectsTree):

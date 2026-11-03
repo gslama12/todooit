@@ -36,7 +36,8 @@ A brand new task thrown away without a name is dropped entirely.
 
 `N` files a task under the one the cursor is on, and steps nest as deep as you
 want them to. `h` folds a task shut again, so a pane can show the work without
-showing the detail of all of it at once.
+showing the detail of all of it at once. A folded task shows how many open
+steps it hides, e.g. `plan trip (4)`; an unfolded one drops the count.
 
 | Key | What it does |
 | --- | --- |

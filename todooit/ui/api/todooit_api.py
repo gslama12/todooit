@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from traceback import format_exc
-from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional, Union
 
 from todooit.api import (
     BIN,
@@ -8,6 +8,8 @@ from todooit.api import (
     TODAY,
     UPCOMING,
     History,
+    Project,
+    Todo,
     TodoSortModeType,
     binned_tasks,
     empty_bin,
@@ -322,6 +324,16 @@ class TodooitAPI:
     def toggle_expand_parent(self):
         """Toggle the expansion of the parent of the highlighted item"""
         self.focused.toggle_expand_parent()
+
+    def is_expanded(self, model: Union[Project, Todo]) -> bool:
+        """Whether the panes draw `model` open, with its children on the rows below it"""
+
+        if isinstance(model, Project):
+            always = self.vars.always_expand_projects
+        else:
+            always = self.vars.always_expand_todos
+
+        return always or ModelTree.expanded_nodes[model.uuid]
 
     def add_child_node(self):
         """Add a child to the highlighted item"""

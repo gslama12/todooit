@@ -265,7 +265,6 @@ def test_a_context_row_is_not_part_of_the_days_work(create_project):
     step.save()
 
     assert TODAY.todos == [step]
-    assert TODAY.total_todos == 1
 
 
 def test_today_headings_carry_the_project_path(create_project):

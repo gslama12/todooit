@@ -22,10 +22,9 @@ from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
 # Todo formatters
 
 
-# The task tally on a project and the child count trailing a todo description
-# share one color: the accent the column headers are drawn in, pulled towards the
-# background so the numbers annotate the rows they sit on instead of competing
-# with them.
+# The child count trailing a collapsed project or todo shares one color: the
+# accent the column headers are drawn in, pulled towards the background so the
+# number annotates the row it sits on instead of competing with it.
 COUNT_FADE = 0.4
 
 
@@ -196,13 +195,12 @@ def date_color_formatter(field: str):
     return wrapper
 
 
-# How many todos hang below this one, at any depth. Nesting is invisible while a
-# todo is collapsed, so the count rides along with the description, in the same
-# dimmed accent as the project pane's task tally.
+# How many todos hang below this one, at any depth. Only drawn while the todo is
+# collapsed: once it is open, the children are right there on the rows below.
 def todo_description_formatter(description: str, todo: Todo, api: TodooitAPI) -> str:
     count = todo.total_children
 
-    if not count:
+    if not count or api.is_expanded(todo):
         return description
 
     return f"{description} [{count_color(api)}]({count})[/]"
@@ -303,18 +301,6 @@ def binned_date_formatter(value: str, todo: Todo, api: TodooitAPI) -> str:
 
 
 # Project formatters
-
-
-# Every todo nested under the project, counted at every level; sub projects
-# are walked into but not counted themselves. It gets a column of its own, so
-# nothing but the number is needed. The column header is drawn in the accent
-# color, and the numbers under it in a dimmer shade of the same, so the pair
-# reads as one unit without competing with the descriptions beside it.
-def project_tasks_formatter(count: int, _: Project, api: TodooitAPI) -> str:
-    if not count:
-        return ""
-
-    return f"[{count_color(api)}]{count}[/]"
 
 
 # Projects can be colored the way folders and labels are: ten slots, typed
@@ -458,15 +444,15 @@ def gray_out_muted_project(value: str, project, api: TodooitAPI):
     ).markup
 
 
-# How many projects hang below this one, at any depth. Nesting is invisible
-# while a project is collapsed, so the count rides along with the name, in the
-# same dimmed accent as the task tally beside it.
+# How many projects hang below this one, at any depth. Only drawn while the
+# project is collapsed: once it is open, the sub projects are right there on the
+# rows below.
 def project_description_formatter(
     description: str, project: Project, api: TodooitAPI
 ) -> str:
     count = project.total_projects
 
-    if not count:
+    if not count or api.is_expanded(project):
         return description
 
     return f"{description} [{count_color(api)}]({count})[/]"
@@ -669,7 +655,6 @@ def key_setup(api: TodooitAPI, _):
 def layout_setup(api: TodooitAPI, _):
     api.layouts.project_layout = [
         ProjectWidget.description,
-        ProjectWidget.tasks,
     ]
     api.layouts.todo_layout = [
         TodoWidget.status,
@@ -739,9 +724,8 @@ def formatter_setup(api: TodooitAPI, _):
     api.formatter.todos.recurrence.add(recurrence_icon())
 
     # Added first => runs last, so the gray has the final say over the icon and
-    # the counts every formatter below hands out
+    # the count every formatter below hands out
     api.formatter.projects.description.add(gray_out_muted_project)
-    api.formatter.projects.tasks.add(gray_out_muted_project)
 
     # Added before the one below it => runs after it, so the icon ends up in
     # front of everything that formatter appends to the name, and the name is
@@ -749,7 +733,6 @@ def formatter_setup(api: TodooitAPI, _):
     api.formatter.projects.description.add(project_icon_formatter)
     api.formatter.projects.description.add(project_color_formatter)
     api.formatter.projects.description.add(project_description_formatter)
-    api.formatter.projects.tasks.add(project_tasks_formatter)
 
 
 # Status bar

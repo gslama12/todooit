@@ -96,7 +96,6 @@ api.layouts.todo_layout = [
 ]
 api.layouts.project_layout = [
     ProjectWidget.description,
-    ProjectWidget.tasks,
 ]
 ```
 
@@ -104,7 +103,7 @@ api.layouts.project_layout = [
 `binned`, `priority`, `recurrence`, `note`. `completed` is only drawn
 by the Completed pane and `binned` only by the Bin.
 
-`ProjectWidget`: `description`, `tasks`.
+`ProjectWidget`: `description`.
 
 ## Formatters
 
@@ -115,10 +114,12 @@ api.formatter.todos.description.add(lambda text, todo: text.upper())
 ```
 
 Stores: `api.formatter.todos.<field>` for every `TodoWidget` name above,
-and `api.formatter.projects.description` / `.tasks`.
+and `api.formatter.projects.description`.
 
 Each function is called as `(value, model)`, and is handed `api` as a third
 argument if it names one. It returns the new value, or `None` to decline.
+`api.is_expanded(model)` says whether a project or todo is drawn open, which
+is how the default config only shows a child count on collapsed rows.
 
 Two kinds, and the difference matters:
 

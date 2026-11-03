@@ -16,9 +16,10 @@ ones the app builds from them.
 | `K` / `L` | Move up / down among its siblings |
 | `c0`–`c9` | Color it (the same key again takes the color off) |
 
-Projects nest, and the **Tasks** column counts every todo under a project at
-every level. A child project inherits its parent's color; coloring a project
-colors everything filed under it.
+Projects nest. A collapsed project shows how many projects are folded away
+under it, e.g. `work (3)`; an expanded one drops the count, since its children
+are right there below it. A child project inherits its parent's color;
+coloring a project colors everything filed under it.
 
 The ten slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 `c5` purple, `c6` cyan, `c7` pink, `c8` brown, `c9` olive.

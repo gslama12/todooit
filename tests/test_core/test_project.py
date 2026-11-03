@@ -68,32 +68,6 @@ def test_root():
     assert len(Project.all()) == 0
 
 
-def test_total_todos_counts_open_work_at_every_level(create_project):
-    """The tally beside a project counts work left, however it is filed"""
-
-    from todooit.api import move_todo_to_bin
-
-    p = create_project("home")
-    sub = Project(description="garden", parent_project=p)
-    sub.save()
-
-    task = p.add_todo()
-    task.add_todo()
-    sub.add_todo()
-
-    # The task, its step, and the one in the sub project
-    assert p.total_todos == 3
-    assert sub.total_todos == 1
-
-    done = p.add_todo()
-    done.toggle_complete()
-    assert p.total_todos == 3
-
-    binned = p.add_todo()
-    move_todo_to_bin(binned)
-    assert p.total_todos == 3
-
-
 def test_total_projects(create_project):
     p = create_project("outer")
     assert p.total_projects == 0

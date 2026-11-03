@@ -1,4 +1,4 @@
-from ..inputs.model_inputs import ProjectDescription, ProjectTasks
+from ..inputs.model_inputs import ProjectDescription
 from .base_renderer import BaseRenderer, Project
 
 
@@ -9,4 +9,3 @@ class ProjectRender(BaseRenderer[Project]):
 
     def post_init(self):
         self.description = ProjectDescription(self.model)
-        self.tasks = ProjectTasks(self.model)

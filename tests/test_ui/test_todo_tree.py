@@ -134,6 +134,36 @@ async def test_add_child_and_expansion():
         assert len(tree_options(tree)) == 2
 
 
+async def test_child_count_shows_only_while_collapsed():
+    """
+    An open todo has its steps on the rows below it, so the count trailing its
+    description is only drawn once it is folded shut
+    """
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+
+        task = next(t for t in Todo.all() if t.description == "task")
+
+        def drawn() -> str:
+            return tree.formatter.description.format_value("task", task).plain
+
+        assert drawn() == "task"
+
+        await pilot.press("k", "h")
+        await pilot.pause()
+        assert drawn() == "task (1)"
+
+        await pilot.press("h")
+        await pilot.pause()
+        assert drawn() == "task"
+
+
 async def test_edit_description():
     async with run_pilot() as pilot:
         await create_and_move_to_todo(pilot)

@@ -83,18 +83,6 @@ class Project(TodooitModel[LevelChange]):
         return self.parent_project
 
     @property
-    def total_todos(self) -> int:
-        """
-        Pending, unbinned todos in here and in all sub projects, at every depth
-        """
-
-        return sum(project.total_todos for project in self.projects) + sum(
-            1 + todo.total_children
-            for todo in self.todos
-            if todo.pending and not todo.is_binned
-        )
-
-    @property
     def total_projects(self) -> int:
         return len(self.descendants)
 
