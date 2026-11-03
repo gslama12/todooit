@@ -1,5 +1,4 @@
 from ..inputs.model_inputs import (
-    Agent,
     Binned,
     Completed,
     Due,
@@ -26,6 +25,5 @@ class TodoRender(BaseRenderer[Todo]):
         self.binned = Binned(self.model)
         self.status = Status(self.model)
         self.priority = Priority(self.model)
-        self.agent = Agent(self.model)
         self.recurrence = Recurrence(self.model)
         self.note = Note(self.model)

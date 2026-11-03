@@ -40,6 +40,22 @@ class Manager:
 
         # Creates missing tables only; existing tables are never migrated
         BaseModel.metadata.create_all(bind=self.engine)
+        self._drop_retired_columns()
+
+    # Columns the model no longer has. Left in place they would break every
+    # insert, since they were created NOT NULL with only a Python-side default.
+    RETIRED_COLUMNS = (("todo", "agent"),)
+
+    def _drop_retired_columns(self) -> None:
+        with self.engine.begin() as connection:
+            for table, column in self.RETIRED_COLUMNS:
+                present = connection.exec_driver_sql(
+                    f"SELECT 1 FROM pragma_table_info('{table}') WHERE name = ?",
+                    (column,),
+                ).first()
+
+                if present:
+                    connection.exec_driver_sql(f"ALTER TABLE {table} DROP COLUMN {column}")
 
     def delete(self, obj):
         self.session.delete(obj)

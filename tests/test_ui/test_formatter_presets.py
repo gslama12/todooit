@@ -16,8 +16,6 @@ from todooit.ui.api.api_components.formatters._decorators import (
     MUTLIPLE_FORMATTER_ATTR,
 )
 from todooit.ui.api.formatter_presets import (
-    AGENT_ICON,
-    agent_icon,
     description_highlight_link,
     due_danger_today,
     recurrence_icon,
@@ -33,30 +31,12 @@ def color_at(markup: str, offset: int):
 
 
 def test_icon_formatters_stack_on_the_others():
-    for formatter in (agent_icon(), recurrence_icon(), description_highlight_link()):
+    for formatter in (recurrence_icon(), description_highlight_link()):
         assert getattr(formatter, MUTLIPLE_FORMATTER_ATTR, False)
 
     # A plain formatter, so it can decline and let the date through
     assert not getattr(due_danger_today(), MUTLIPLE_FORMATTER_ATTR, False)
 
-
-def test_agent_icon_only_on_flagged_rows():
-    formatter = agent_icon()
-
-    assert formatter("", SimpleNamespace(agent=False), API) == ""
-
-    marked = formatter("", SimpleNamespace(agent=True), API)
-    assert Text.from_markup(marked.markup).plain == AGENT_ICON
-    assert color_at(marked.markup, 0) == TokyoNight.primary.lower()
-
-
-def test_agent_icon_takes_its_own_icon_and_color():
-    marked = agent_icon(icon="A", color="#123456")(
-        "", SimpleNamespace(agent=True), API
-    )
-
-    assert marked.plain == "A"
-    assert color_at(marked.markup, 0) == "#123456"
 
 
 def test_recurrence_icon_leads_the_value():

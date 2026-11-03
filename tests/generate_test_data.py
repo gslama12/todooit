@@ -25,7 +25,6 @@ def gen_todo(parent):
         priority=priority,
         pending=randint(1, 3) == 3 if recurrence is None else True,
         recurrence=recurrence,
-        agent=randint(0, 3) == 3,
     )
 
     if isinstance(parent, Todo):

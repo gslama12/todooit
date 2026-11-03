@@ -10,7 +10,6 @@ class TodoFormatter(ModelFormatterBase):
         self.scheduled = self.get_formatter_store()
         self.completed = self.get_formatter_store()
         self.binned = self.get_formatter_store()
-        self.agent = self.get_formatter_store()
         self.recurrence = self.get_formatter_store()
         self.priority = self.get_formatter_store()
         self.status = self.get_formatter_store()

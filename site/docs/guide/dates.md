@@ -49,12 +49,14 @@ from now.
 
 ## How dates are drawn
 
-`Sa, 19.09.26`, with the time in parentheses when it is not midnight. A date
-that falls today shows a bold red **Today** instead.
+`Sa, 19.09.`, with the time in parentheses when it is not midnight. The year
+is left off to keep the columns tight; it is still stored, and editing the
+date shows it in full. A date that falls today shows a bold red **Today**
+instead.
 
 The color is the lead time: green when the task is done, red today or overdue,
-yellow within five working days, plain white beyond that. A calendar icon sits
-in front, and a different one once the date has passed.
+yellow within five working days, plain white beyond that. The calendar icon
+sits in the `Scheduled` and `Due` headers, not on each row.
 
 ## The calendar picker
 

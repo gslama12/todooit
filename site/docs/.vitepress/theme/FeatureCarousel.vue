@@ -115,20 +115,12 @@ const features: Feature[] = [
     alt: 'The move prompt completing a project name',
   },
   {
-    title: 'The agent flag',
-    details:
-      '<kbd>a</kbd> marks a task as handed to an AI that is off working on it: an hourglass in a column of its own. It says nothing about whether the task is done.',
-    link: '/guide/tasks#marking',
-    shot: 'workspace.svg',
-    alt: 'The workspace, with the agent column',
-  },
-  {
     title: 'Clipboard, both ways',
     details:
       '<kbd>ctrl+c</kbd> copies a description, <kbd>ctrl+n</kbd> a whole note without opening it, <kbd>ctrl+v</kbd> pastes a new task. Copying goes out through OSC 52 as well, so it carries out of ssh and out of WSL.',
     link: '/guide/search-move#clipboard',
     shot: 'workspace.svg',
-    alt: 'The workspace, with the Note column',
+    alt: 'The workspace, with the note icon column',
   },
   {
     title: 'Links, opened from the row',

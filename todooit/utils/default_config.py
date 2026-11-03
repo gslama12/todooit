@@ -10,7 +10,6 @@ from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
 from todooit.ui.api.events import ModeChanged, Startup
 from todooit.ui.api.formatter_presets import (
-    agent_icon,
     description_highlight_link,
     due_danger_today,
     recurrence_icon,
@@ -101,9 +100,9 @@ def _add_working_days(start: date, days: int) -> date:
 # `scheduled`, the day it is planned to be worked on. Both columns are rendered
 # by the formatters below, which differ only in the field they read.
 #
-# German date convention: weekday first, then day, dot separated, and the year
-# always spelled out as its last two digits. The time only shows up when it is
-# something other than midnight.
+# German date convention: weekday first, then day, dot separated, and no year
+# (see DATE_FORMAT). The time only shows up when it is something other than
+# midnight.
 def todo_date_formatter(value: Optional[datetime], _: Todo) -> str:
     if value is None:
         return ""
@@ -130,7 +129,8 @@ DATE_ICON_OVERDUE = " "
 
 
 # The calendar in front of a date, so a date column is recognisable as one from
-# across the row. It arrives with a status color of its own, which the color
+# across the row. Only the Completed pane's column carries it per row: the
+# scheduled and due columns have it once, in their header (TodosTree). It arrives with a status color of its own, which the color
 # formatter above it then drops in favor of one style over the whole column.
 def date_icon(field: str):
     @extra_formatter
@@ -208,18 +208,10 @@ def todo_description_formatter(description: str, todo: Todo, api: TodooitAPI) ->
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
-# The agent column has no text of its own: the flag is either set, and the
-# hourglass below draws it, or it is not, and the column is left blank. A
-# space rather than an empty string, for the same reason the note column
-# returns one -- the formatter store turns anything falsy into a dim, centered
-# "-", which is not the same as nothing.
-def todo_agent_formatter(agent: bool, _: Todo) -> str:
-    return " "
-
-
 # A sheet of paper on the rows whose note carries anything - text, files, or
-# both - and nothing at all on the ones that do not. The column is never wider than its own header, so the icon
-# marks the row without taking any room from the description.
+# both - and nothing at all on the ones that do not. The column has no header
+# and is only as wide as the icon, so it marks the row without taking any room
+# from the description.
 NOTE_ICON = ""
 
 
@@ -546,11 +538,6 @@ def key_setup(api: TodooitAPI, _):
     # be pressed on its own, and there is nothing in the left pane to tick off
     # anyway
     api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
-    # The hourglass, on the key it is named after: pressed when a task goes
-    # out to an AI, and pressed again when it comes back. It says nothing
-    # about the task being done -- that is still the tick above -- only that
-    # it is somebody else's to move for the moment
-    api.keys.set("a", api.toggle_agent, group=EDITING)
     # Throwing something away costs nothing and asks nothing: it goes to the
     # Bin, where "u" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
@@ -692,7 +679,6 @@ def layout_setup(api: TodooitAPI, _):
         # the deadline are read as the pair they are
         TodoWidget.scheduled,
         TodoWidget.due,
-        TodoWidget.agent,
         TodoWidget.recurrence,
         # Last on the row: a note is something a todo either has or has not,
         # read in one glance and never scanned against the columns beside it
@@ -708,7 +694,6 @@ def formatter_setup(api: TodooitAPI, _):
         api.formatter.todos.description.add(gray_out(strike=True))
         api.formatter.todos.due.add(gray_out())
         api.formatter.todos.scheduled.add(gray_out())
-        api.formatter.todos.agent.add(gray_out())
         api.formatter.todos.recurrence.add(gray_out())
         api.formatter.todos.note.add(gray_out())
 
@@ -735,7 +720,11 @@ def formatter_setup(api: TodooitAPI, _):
         # instead, and on any other day it declines and lets the date through.
         column.add(due_danger_today())
         column.add(date_color_formatter(field))
-        column.add(date_icon(field))  # added last => runs first
+
+        # The scheduled and due columns carry the calendar once, in their
+        # header, rather than on every row
+        if field == "completed_at":
+            column.add(date_icon(field))  # added last => runs first
 
     # The Bin's own date column, built out of the same date formatter, read a
     # day at a time the way the completion log is, and then marked and colored
@@ -744,10 +733,6 @@ def formatter_setup(api: TodooitAPI, _):
     api.formatter.todos.binned.add(due_danger_today())
     api.formatter.todos.binned.add(binned_date_formatter)
 
-    api.formatter.todos.agent.add(todo_agent_formatter)
-    # The hourglass is the column: it goes on over the blank the formatter
-    # above hands back, and only on the rows carrying the flag
-    api.formatter.todos.agent.add(agent_icon())
     api.formatter.todos.note.add(todo_note_formatter)
     api.formatter.todos.recurrence.add(todo_recurrence_formatter)
     # Marks the repeating todos, whose interval is easy to miss as bare text

@@ -174,7 +174,6 @@ def seed() -> Dict[str, Project]:
         priority: int = 0,
         scheduled: Optional[datetime] = None,
         due: Optional[datetime] = None,
-        agent: bool = False,
         recurrence: Optional[timedelta] = None,
         note: str = "",
         done: bool = False,
@@ -185,7 +184,6 @@ def seed() -> Dict[str, Project]:
         t.priority = priority
         t.scheduled = scheduled
         t.due = due
-        t.agent = agent
         t.recurrence = recurrence
         t.note = note
         t.save()
@@ -218,16 +216,15 @@ def seed() -> Dict[str, Project]:
     )
     todo(release, "Write the changelog", priority=2, scheduled=at(9))
     todo(release, "Tag and build", priority=3, due=at(days=2))
-    todo(release, "Draft the announcement", agent=True)
+    todo(release, "Draft the announcement")
     todo(release, "Update the install docs", scheduled=at(days=1))
 
     todo(work, "Review the migration PR", priority=2, scheduled=at(11))
     todo(
         work,
-        "Hand the flaky pilot test to the agent",
+        "Fix the flaky pilot test",
         priority=3,
         scheduled=at(),
-        agent=True,
     )
     todo(work, "Team standup", scheduled=at(9, 30), recurrence=timedelta(days=1))
     todo(work, "Expenses for August", scheduled=at(days=-2), priority=2)
@@ -235,13 +232,13 @@ def seed() -> Dict[str, Project]:
     todo(work, "Book the offsite room", scheduled=at(days=3))
     todo(work, "Interview debrief", priority=2, scheduled=at(days=1), due=at(days=1))
     todo(work, "Renew the TLS certificate", priority=1, due=at(days=5))
-    todo(work, "Write up the incident", agent=True, due=at(days=4))
+    todo(work, "Write up the incident", due=at(days=4))
     todo(work, "Plan the Q4 roadmap", scheduled=at(days=7))
     todo(work, "One-to-ones", scheduled=at(14), recurrence=timedelta(weeks=2))
     todo(work, "Clear the inbox", recurrence=timedelta(days=1))
     todo(work, "Chase the vendor contract", priority=2, due=at(days=10))
     todo(work, "Review the on-call rota", scheduled=at(days=8))
-    todo(work, "Update the runbook index", agent=True)
+    todo(work, "Update the runbook index")
     todo(work, "Sign off the design review", priority=3, due=at(days=11))
     todo(work, "Prep the board slides", scheduled=at(days=9), due=at(days=13))
     todo(work, "Close the old support tickets", priority=3)
@@ -301,7 +298,7 @@ def seed() -> Dict[str, Project]:
     todo(side, "Sketch the landing page", priority=2, scheduled=at(days=1))
     todo(side, "Pick a database", priority=1, due=at(days=9))
     todo(side, "Buy the domain", scheduled=at(days=4))
-    todo(side, "Read up on Pages deploys", agent=True)
+    todo(side, "Read up on Pages deploys")
     todo(side, "Write the README", scheduled=at(days=5))
 
     # --- Health -----------------------------------------------------------

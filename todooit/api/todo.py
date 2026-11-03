@@ -93,8 +93,6 @@ class Todo(TodooitModel["Outcome"]):
     due: Mapped[Optional[datetime]] = mapped_column(default=None)
     # Planned work day (as opposed to the `due` deadline)
     scheduled: Mapped[Optional[datetime]] = mapped_column(default=None)
-    # Marker: the todo has been handed off to an AI agent
-    agent: Mapped[bool] = mapped_column(default=False)
     recurrence: Mapped[Optional[Cadence]] = mapped_column(CadenceType, default=None)
     priority: Mapped[int] = mapped_column(default=0)
     pending: Mapped[bool] = mapped_column(default=True)
@@ -316,10 +314,6 @@ class Todo(TodooitModel["Outcome"]):
 
     def set_priority(self, priority: int) -> None:
         self.priority = priority
-        self.save()
-
-    def toggle_agent(self) -> None:
-        self.agent = not self.agent
         self.save()
 
     def toggle_complete(self) -> "Outcome":

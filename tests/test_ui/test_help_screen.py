@@ -105,9 +105,6 @@ async def test_every_visible_keybind_has_a_row():
         assert "p0-p3" in rows
         assert "p1" not in rows
 
-        # The agent flag is one key rather than a scale, so it is its own row
-        assert "a" in rows
-
         # So do the sort chords
         assert "SP/SD/SS" in rows
         assert "SP" not in rows

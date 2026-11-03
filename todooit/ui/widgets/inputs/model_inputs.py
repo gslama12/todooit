@@ -210,18 +210,6 @@ class Priority(SimpleInput[Todo, int]):
         return int(value)
 
 
-class Agent(SimpleInput[Todo, bool]):
-    """
-    Whether an AI has been handed the todo. A toggled flag, never typed into,
-    so the column is read-only with an empty buffer (like Note).
-    """
-
-    editable = False
-
-    def _get_default_value(self) -> str:
-        return ""
-
-
 class Status(SimpleInput[Todo, str]):
     def _get_default_value(self) -> str:
         val = self.model_value

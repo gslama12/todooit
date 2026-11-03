@@ -206,18 +206,6 @@ def test_completion_is_stamped(create_project):
     assert t.completed_at is None
 
 
-def test_agent_toggles(create_project):
-    p = create_project()
-    t = p.add_todo()
-    assert t.agent is False
-
-    t.toggle_agent()
-    assert t.agent is True
-
-    t.toggle_agent()
-    assert t.agent is False
-
-
 def test_descendants(create_project):
     p = create_project()
     t = p.add_todo()

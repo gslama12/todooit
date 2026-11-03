@@ -416,11 +416,6 @@ class TodooitAPI:
         if isinstance(self.focused, TodosTree):
             self.focused.set_priority(priority)
 
-    def toggle_agent(self):
-        """Mark the todo as handed to an AI, or take the mark back off"""
-        if isinstance(self.focused, TodosTree):
-            self.focused.toggle_agent()
-
     def set_project_color(self, color: int):
         """Color the project (the same key again takes the color back off)"""
         if isinstance(self.focused, ProjectsTree):

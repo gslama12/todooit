@@ -47,6 +47,9 @@ Model = Union[Todo, Project]
 # column titles, brighter than its own hairline, so it's found without being read
 HEADING_FADE = 0.25
 
+# The calendar the scheduled and due column headers are marked with
+DATE_COLUMN_ICON = "󰃰"
+
 
 class TodosTree(ModelTree[Model, TodoRenderDict]):
     BORDER_TITLE = "TASKS"
@@ -57,6 +60,16 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     NOT_NESTED = "This task is not a step of anything"
     show_header = True
     CHILDREN_ATTR = "todos"
+
+    # The checkbox and the note icon say what they are on their own, so their
+    # columns go untitled and stay only as wide as what they draw. The two date
+    # columns carry the calendar in their header instead of on every row
+    COLUMN_TITLES = {
+        "status": "",
+        "note": "",
+        "scheduled": f"{DATE_COLUMN_ICON} Scheduled",
+        "due": f"{DATE_COLUMN_ICON} Due",
+    }
 
     def __init__(self, model: Model) -> None:
         super().__init__(model, TodoRenderDict(self))
@@ -268,12 +281,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         assert isinstance(self.current_model, Todo)
 
         self.current_model.set_priority(priority)
-        self.update_current_prompt()
-
-    def toggle_agent(self):
-        assert isinstance(self.current_model, Todo)
-
-        self.current_model.toggle_agent()
         self.update_current_prompt()
 
     def show_note(self):

@@ -19,6 +19,7 @@ from todooit.api.exceptions import NoNodeError
 from todooit.ui.api.widgets import TodoWidget
 from todooit.ui.tui import Todooit
 from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
+from todooit.ui.widgets.trees.todos_tree import DATE_COLUMN_ICON
 
 
 def custom_formatter(value, todo):
@@ -188,6 +189,52 @@ async def test_todo_tree_layout():
         app.api.layouts.todo_layout = [TodoWidget.description]
         table = tree.render_row(tree._rows[tree.current.id])
         assert table.columns[0].header == "description"
+
+
+async def test_status_and_note_columns_go_untitled():
+    """The checkbox and the note icon need no header, so neither column is widened by one"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "nixos")
+
+        assert tree.column_title("status") == ""
+        assert tree.column_title("note") == ""
+        assert tree.column_title("description") == "Description"
+
+        tree.get_column_width.cache_clear()
+        assert tree.get_column_width("status") < len("Status")
+        assert tree.get_column_width("note") < len("Note")
+
+
+async def test_date_icon_sits_in_the_header_and_rows_drop_the_year():
+    """The calendar is drawn once per date column, and a row's date leaves the year off"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "nixos")
+
+        todo = tree.current_model
+        assert isinstance(todo, Todo)
+        when = datetime(date.today().year + 1, 3, 7)
+        todo.due = when
+        todo.scheduled = when
+        todo.save()
+
+        assert tree.column_title("due") == f"{DATE_COLUMN_ICON} Due"
+        assert tree.column_title("scheduled") == f"{DATE_COLUMN_ICON} Scheduled"
+
+        for column in ("due", "scheduled"):
+            drawn = getattr(tree.formatter, column).format_value(when, todo).plain
+            assert drawn.endswith("07.03.")
+            assert DATE_COLUMN_ICON not in drawn
+
+        # Stored in full all the same
+        assert todo.due.year == when.year
 
 
 async def test_incorrect_edit():
@@ -373,26 +420,6 @@ async def test_priority_keybinds():
         assert todo.priority == 0
 
 
-async def test_agent_keybind_toggles():
-    async with run_pilot() as pilot:
-        tree = await create_and_move_to_todo(pilot)
-
-        await pilot.press("n")
-        await commit_line(pilot, "nixos")
-
-        todo = tree.current_model
-        assert isinstance(todo, Todo)
-        assert todo.agent is False
-
-        await pilot.press("a")
-        await pilot.pause()
-        assert todo.agent is True
-
-        await pilot.press("a")
-        await pilot.pause()
-        assert todo.agent is False
-
-
 async def test_status_change():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
@@ -409,35 +436,6 @@ async def test_status_change():
 
         todo.toggle_complete()
         assert todo.status == "completed"
-
-
-async def test_agent_column_is_never_typed_into():
-    """
-    The flag is turned on and off with a key, so the column turns an edit down
-    even with the column drawn and the cursor sitting on the row
-    """
-
-    async with run_pilot() as pilot:
-        app = pilot.app
-        assert isinstance(app, Todooit)
-
-        tree = await create_and_move_to_todo(pilot)
-
-        await pilot.press("n")
-        await commit_line(pilot, "nixos")
-
-        todo = tree.current_model
-        assert isinstance(todo, Todo)
-
-        app.api.layouts.todo_layout = [TodoWidget.description]
-        assert not tree.start_edit("agent")  # column is not in the layout
-
-        app.api.layouts.todo_layout = [
-            TodoWidget.description,
-            TodoWidget.agent,
-        ]
-        assert not tree.start_edit("agent")  # and it is not editable either
-        assert todo.agent is False
 
 
 async def test_recurrence_change():

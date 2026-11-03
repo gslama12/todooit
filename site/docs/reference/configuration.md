@@ -101,7 +101,7 @@ api.layouts.project_layout = [
 ```
 
 `TodoWidget`: `status`, `description`, `due`, `scheduled`, `completed`,
-`binned`, `priority`, `recurrence`, `agent`, `note`. `completed` is only drawn
+`binned`, `priority`, `recurrence`, `note`. `completed` is only drawn
 by the Completed pane and `binned` only by the Bin.
 
 `ProjectWidget`: `description`, `tasks`.
@@ -132,7 +132,7 @@ default config relies on this — the graying that completed and binned rows get
 is added first so it has the final say.
 :::
 
-Ready-made ones live in `todooit.ui.api.formatter_presets`: `agent_icon`,
+Ready-made ones live in `todooit.ui.api.formatter_presets`:
 `description_highlight_link`, `due_danger_today` and `recurrence_icon`.
 
 ```python

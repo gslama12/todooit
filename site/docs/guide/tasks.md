@@ -7,7 +7,10 @@ projects nest under projects.
 
 ## Columns
 
-`Status`, `Description`, `Scheduled`, `Due`, `Agent`, `Recurrence`, `Note`.
+The status checkbox, `Description`, `Scheduled`, `Due`, `Recurrence`, and the
+note icon. The checkbox and note columns go untitled: what they draw says what
+they are, so they stay only as wide as that. The two date columns carry their
+calendar icon once, in the header, rather than on every row.
 
 The Completed pane swaps the two date columns for the day the task was
 finished; the Bin swaps them for the day it was thrown away.
@@ -101,7 +104,6 @@ moving it to another project, changes nothing but where it sits.
 | --- | --- |
 | `c` | Tick the task off (tasks pane only) |
 | `p0`–`p3` | Priority: `p1` most urgent, `p3` least, `p0` clears it |
-| `a` | Toggle the agent flag |
 
 The status checkbox carries the priority color, so urgency reads from the
 first column. A ticked task is struck through and grayed out, and moves to the
@@ -119,11 +121,6 @@ finish it at all; see [Recurrence](/guide/dates#recurrence).
 
 What does *not* happen is the other direction — a task with steps is ticked
 off by hand, and its last step being done does not tick it for you.
-
-::: info The agent flag
-An hourglass in a column of its own, for the tasks handed to an AI that is off
-working on them. It says nothing about the task being done.
-:::
 
 ## Moving
 

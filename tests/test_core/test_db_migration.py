@@ -216,7 +216,6 @@ def test_a_plain_todo_keeps_its_due_date_and_status(tmp_path):
 def test_new_columns_get_todooit_defaults(tmp_path):
     row = migrate_one(tmp_path)
 
-    assert row["agent"] == 0
     assert row["binned_at"] is None
     assert (row["origin_path"], row["note"], row["attachments"]) == ("", "", "")
 

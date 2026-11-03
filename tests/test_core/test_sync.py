@@ -1,5 +1,5 @@
 """
-What connecting lays down in a database: the schema's indexes, once
+What connecting lays down in a database: the schema's indexes, once, minus retired columns
 """
 
 import sqlite3
@@ -59,6 +59,38 @@ def test_connecting_twice_does_not_double_the_indexes():
 
         manager.connect(str(db))
         assert _index_names(db) == first
+
+        manager.session.close()
+        manager.engine.dispose()
+
+
+def _todo_columns(db: Path) -> set:
+    connection = sqlite3.connect(db)
+
+    try:
+        return {row[1] for row in connection.execute("PRAGMA table_info(todo)")}
+    finally:
+        connection.close()
+
+
+def test_connecting_drops_the_retired_agent_column():
+    """A database from before the agent flag was removed loses its column"""
+
+    with tempfile.TemporaryDirectory() as folder:
+        db = Path(folder) / "todooit.db"
+
+        manager.connect(str(db))
+        manager.session.close()
+        manager.engine.dispose()
+
+        connection = sqlite3.connect(db)
+        connection.execute("ALTER TABLE todo ADD COLUMN agent BOOLEAN NOT NULL DEFAULT 0")
+        connection.commit()
+        connection.close()
+        assert "agent" in _todo_columns(db)
+
+        manager.connect(str(db))
+        assert "agent" not in _todo_columns(db)
 
         manager.session.close()
         manager.engine.dispose()

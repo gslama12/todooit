@@ -254,7 +254,6 @@ def _todo(row: sqlite3.Row, report: Report) -> dict:
         "description": row["description"],
         "due": due,
         "scheduled": scheduled,
-        "agent": 0,
         "recurrence": cadence,
         "priority": URGENCY_TO_PRIORITY.get(row["urgency"], 0),
         "pending": pending,
