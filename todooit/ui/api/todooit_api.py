@@ -142,6 +142,13 @@ class TodooitAPI:
         )
 
     def handle_key(self, key: str) -> None:
+        # While flash labels are up every key is a label (or the way out), so
+        # none of them reaches the keybindings
+        focused = self.app.focused
+        if isinstance(focused, ModelTree) and focused.is_flashing:
+            focused.handle_flash_key(key)
+            return
+
         keymatch = self.keys.register_key(key)
 
         if keymatch.match_type == KeyMatchType.NoMatchFound:
@@ -283,6 +290,11 @@ class TodooitAPI:
     def go_to_bottom(self):
         """Move the cursor to the bottom of the list"""
         self.focused.action_last()
+
+    def flash_jump(self):
+        """Label the rows on screen and jump to the one whose label is typed"""
+
+        self.focused.start_flash()
 
     def edit(self, property: str):
         """Start editing a property of the focused item"""

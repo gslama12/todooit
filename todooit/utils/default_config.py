@@ -496,6 +496,10 @@ def key_setup(api: TodooitAPI, _):
     # project row is already standing in its own pane
     api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
+    # Flash mode, "t" for "to": a label on every row on screen in this pane,
+    # and typing one lands the cursor there -- the way to a row you can see
+    # without counting how far away it is
+    api.keys.set("t", api.flash_jump, group=NAVIGATION)
     # The desktop's top/bottom of a document too (a Mac's cmd+up/down,
     # passed on by the terminal); hidden, as gg/G already say it in help
     api.keys.set("<ctrl+home>", api.go_to_top, group=NAVIGATION, hidden=True)
@@ -761,6 +765,8 @@ def bar_background(api: TodooitAPI) -> str:
 MODE_COLORS = {
     "NORMAL": "primary",
     "INSERT": "secondary",
+    # The same red as the labels it puts up
+    "FLASH": "red",
 }
 
 

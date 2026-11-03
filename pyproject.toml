@@ -82,6 +82,7 @@ markers = [
   "move: moving and refiling",
   "sort: sorting",
   "search: search and goto",
+  "flash: flash mode (t) row labels",
   "editing: inline editing and the cursor",
   "config: the config API, loader and keys",
   "lifecycle: the todo lifecycle and the one refresh signal",

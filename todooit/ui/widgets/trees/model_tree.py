@@ -57,7 +57,7 @@ from ._decorators import (
     require_highlighted_node,
 )
 from ._render_dict import RenderDict
-from .base_tree import BaseTree
+from .flash_jump import FlashJump
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters._model_formatter_base import (
@@ -143,7 +143,7 @@ ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 RenderDictType = TypeVar("RenderDictType", bound=RenderDict)
 
 
-class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
+class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
     DEFAULT_CSS = """
     ModelTree {
         height: 1fr;
@@ -517,6 +517,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.highlighted = first if not self._options[first].disabled else None
 
     def _force_refresh(self) -> None:
+        # The rows are rebuilt, so flash labels would point at the wrong ones
+        self.cancel_flash()
+
         highlighted = self.highlighted
         self.clear_options()
         self._static_rows.clear()

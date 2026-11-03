@@ -8,7 +8,7 @@ from todooit.api import FixedProject, Project, Todo
 # A pane can show a stored project or a fixed one; events carry whichever it is.
 ProjectType = Union[Project, FixedProject]
 
-ModeType = Literal["NORMAL", "INSERT", "CONFIRM"]
+ModeType = Literal["NORMAL", "INSERT", "CONFIRM", "FLASH"]
 NotificationType = Literal["info", "warning", "error"]
 
 

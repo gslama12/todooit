@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
+from todooit.ui.widgets.trees.flash_jump import FLASH_ALPHABET
 
 from ._base import ApiComponent
 
@@ -20,6 +21,7 @@ class VarManager(ApiComponent):
         self._todo_sort: Optional[TodoSortModeType] = "priority"
         self._projects_pane_auto_width = True
         self._projects_pane_max_width = 0.25
+        self._flash_alphabet = FLASH_ALPHABET
 
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
@@ -75,6 +77,19 @@ class VarManager(ApiComponent):
     @projects_pane_max_width.setter
     def projects_pane_max_width(self, value: float):
         self._projects_pane_max_width = value
+
+    @property
+    def flash_alphabet(self) -> str:
+        """The keys flash mode (`t`) labels rows with, the nearest row first"""
+
+        return self._flash_alphabet
+
+    @flash_alphabet.setter
+    def flash_alphabet(self, value: str):
+        if len(set(value)) != len(value) or not value:
+            raise ValueError("flash_alphabet needs at least one key, none twice")
+
+        self._flash_alphabet = value
 
     @property
     def show_confirm(self):

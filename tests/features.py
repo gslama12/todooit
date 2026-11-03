@@ -64,6 +64,7 @@ FEATURE_BY_MODULE = {
     "test_note_markdown": "notes",
     "test_search": "search",
     "test_goto_item": "search",
+    "test_flash": "flash",
     "test_calendar": "dates",
     "test_clipboard_links": "links",
     "test_input_cursor": "editing",
