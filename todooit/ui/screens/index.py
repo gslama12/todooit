@@ -1,6 +1,6 @@
 from datetime import date
 from functools import partial
-from typing import Optional
+from typing import Optional, Tuple
 
 from rich.markup import escape
 from textual import events, on
@@ -263,7 +263,19 @@ class MainScreen(BaseScreen):
 
     @on(SpawnNote)
     def spawn_note(self, event: SpawnNote) -> None:
-        self.app.push_screen(NoteScreen(event.todo))
+        self.open_note(event.todo)
+
+    def open_note(self, todo: Todo, at: Optional[Tuple[int, int]] = None) -> None:
+        self.app.push_screen(NoteScreen(todo, at=at), self.note_closed)
+
+    def note_closed(self, _: None) -> None:
+        """Redraw the rows' note icons.
+
+        Note text is left out of the undo history, so `record_change` sees no
+        change when only the text was edited and wouldn't redraw anything.
+        """
+
+        self.refresh_panes(ChangedRows())
 
     @on(SpawnQuickAdd)
     def spawn_quick_add(self, _: SpawnQuickAdd) -> None:
@@ -387,7 +399,7 @@ class MainScreen(BaseScreen):
         # A hit inside a note opens that note at the matching line
         if found.hit is not None:
             hit = found.hit
-            self.app.push_screen(NoteScreen(found.todo, at=(hit.row, hit.column)))
+            self.open_note(found.todo, at=(hit.row, hit.column))
 
     @on(RevealTodo)
     async def reveal_moved_todo(self, event: RevealTodo) -> None:

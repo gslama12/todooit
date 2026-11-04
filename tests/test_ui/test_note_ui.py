@@ -14,9 +14,11 @@ from tests.test_ui.ui_base import (
     create_and_move_to_todo,
     run_pilot,
     set_clipboard,
+    visible_todos,
 )
 from todooit.api import PinnedNote, Todo
 from todooit.api.theme import TodooitThemeBase
+from todooit.ui.screens.index import MainScreen
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
 from todooit.ui.screens.note.document import FoldedDocument, HangingDocument
 from todooit.ui.screens.note.editor import MODE_INSERT, MODE_NORMAL, build_theme
@@ -36,7 +38,9 @@ from todooit.ui.screens.note.markup import (
     recount,
     scan_note,
 )
+from todooit.ui.screens.search import Found, NoteHit
 from todooit.utils import Opened
+from todooit.utils.default_config import NOTE_ICON
 from todooit.utils.links import fold_links
 
 # The address that started all this: too long to sit on a line of its own, let
@@ -317,6 +321,99 @@ async def test_attachment_alone_marks_the_row():
         todo.save()
 
         assert formatter.format_value(todo.note, todo).plain.strip() != ""
+
+
+def icon_drawn(pilot) -> bool:
+    """Whether the note icon is on the screen in the pane in front"""
+
+    tree = visible_todos(pilot.app)
+
+    return any(
+        NOTE_ICON in tree.render_line(y).text for y in range(tree.size.height)
+    )
+
+
+async def close_note(pilot) -> None:
+    """Out of the window from either mode, however many presses that takes"""
+
+    while isinstance(pilot.app.screen, NoteScreenBase):
+        await pilot.press("escape")
+        await pilot.pause()
+
+
+async def test_writing_a_note_shows_the_icon_on_close():
+    """The text isn't in the undo history, so closing has to redraw by itself"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        screen.editor.insert("something")
+        await close_note(pilot)
+
+        assert icon_drawn(pilot)
+
+
+async def test_emptying_a_note_takes_the_icon_away_on_close():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        screen.editor.insert("something")
+        await close_note(pilot)
+        assert icon_drawn(pilot)
+
+        await pilot.press(" ")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.clear()
+        await close_note(pilot)
+
+        assert not icon_drawn(pilot)
+
+
+async def test_closing_a_note_leaves_the_cursor_on_its_row():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot, "first")
+        await close_note(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "second")
+
+        tree = visible_todos(pilot.app)
+        assert tree.current_model.description == "second"
+
+        await pilot.press(" ")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.insert("something")
+        await close_note(pilot)
+
+        assert tree.current_model.description == "second"
+        assert pilot.app.focused is tree
+
+
+async def test_note_opened_from_the_finder_shows_the_icon_on_close():
+    async with run_pilot() as pilot:
+        await open_note(pilot)
+        await close_note(pilot)
+
+        main = pilot.app.screen
+        assert isinstance(main, MainScreen)
+
+        todo = Todo.all()[0]
+        await main.search_done(Found(todo, NoteHit(0, 0, "")))
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.insert("something")
+        await close_note(pilot)
+
+        assert icon_drawn(pilot)
 
 
 async def test_emph_and_bullet_markup():
