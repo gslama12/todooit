@@ -327,6 +327,14 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
     def render_row(self, row: PaneRow) -> RenderableType:
         return self._renderers[row.uuid].make_renderable(row)
 
+    def flash_label_column(self, index: int) -> int:
+        """Past the row's edge padding and guides: over its checkbox or icon."""
+
+        row = self._rows.get(self._options[index].id or "")
+        guides = row.guides if row else ""
+
+        return COLUMN_PADDING + cell_len(guides)
+
     def row_mark(self, model: ModelType) -> Text:
         """Marker drawn before a row's description; empty by default, overridden by panes that flag specific rows."""
 

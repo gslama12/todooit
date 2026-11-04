@@ -1,6 +1,7 @@
 """
-Flash mode (`t`, "to"): every row on screen in the focused pane gets a label at its
-left edge, and typing a label puts the cursor on that row.
+Flash mode (`f`, "flash"): every row on screen in the focused pane gets a label
+where its text starts, indent included, so the label is already where you are
+looking, and typing it puts the cursor on that row.
 
 Kept to the rows that are actually on screen, like flash.nvim / easymotion:
 the labels are for picking a row you can see, not for searching. While it is
@@ -144,8 +145,13 @@ class FlashJump(BaseTree):
 
         return None
 
-    def _flash_strip(self, strip: Strip, label: Optional[str]) -> Strip:
-        """A row's line with its text dimmed and, if it has one, its label over the left edge."""
+    def flash_label_column(self, index: int) -> int:
+        """The column the label of the row at `index` starts in."""
+
+        return 0
+
+    def _flash_strip(self, strip: Strip, label: Optional[str], column: int = 0) -> Strip:
+        """A row's line with its text dimmed and, if it has one, its label over it from `column` on."""
 
         theme = self.api.vars.theme
         background = Color.parse(theme.background1).rich_color
@@ -184,7 +190,16 @@ class FlashJump(BaseTree):
             len(label),
         )
 
-        return Strip.join([label_strip, dimmed.crop(len(label), strip.cell_length)])
+        # A pane too narrow for the indent still shows the whole label
+        column = max(min(column, strip.cell_length - len(label)), 0)
+
+        return Strip.join(
+            [
+                dimmed.crop(0, column),
+                label_strip,
+                dimmed.crop(column + len(label), strip.cell_length),
+            ]
+        )
 
     def render_line(self, y: int) -> Strip:
         strip = super().render_line(y)
@@ -198,4 +213,4 @@ class FlashJump(BaseTree):
             return strip
 
         label = self._flash_label_at(index) if offset == 0 else None
-        return self._flash_strip(strip, label)
+        return self._flash_strip(strip, label, self.flash_label_column(index))
