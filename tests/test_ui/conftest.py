@@ -31,7 +31,7 @@ _KEEP_BELOW = 0.2
 def _no_wall_clock_waits(monkeypatch):
     from textual.message_pump import MessagePump
 
-    from todooit.ui.screens.note import screen as note_screen
+    from todooit.ui.screens.note.screens import screen as note_screen
     from todooit.ui.tui import Todooit
     from todooit.ui.widgets.trees.model_tree import ModelTree
 

@@ -17,7 +17,7 @@ from tests.test_ui.test_note_ui import open_note
 from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.api.api_components.keys import MotionKeys
 from todooit.ui.screens import HelpScreen
-from todooit.ui.screens.note.editor import MODE_NORMAL
+from todooit.ui.screens.note.vim.modes import MODE_NORMAL
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 
 CONFIG_DIR = Path(__file__).parents[2] / "config"

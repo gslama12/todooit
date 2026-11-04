@@ -10,14 +10,12 @@ from rich.cells import cell_len
 from todooit.utils import (
     find_links,
     fold_links,
-    looks_like_path,
 )
 from todooit.utils.links import (
     EMPH_MARK,
     folded_emph,
     mark_pairs,
 )
-from todooit.utils.links import TITLE_MAX as LINK_TITLE_MAX
 
 # Stored as the actual glyph (not a "- " swapped at render time) since a
 # TextArea draws exactly the text it holds. One glyph per nesting level; past
@@ -399,36 +397,3 @@ def scan_note(lines) -> Iterator[list]:
         following = drawn[row + 1] if row + 1 < len(drawn) else ""
 
         yield list(scan_markup(line, following, found[row], lit[row]))
-
-
-# Brackets can't appear in a link name - they mark where the name stops
-NO_BRACKETS = str.maketrans("", "", "[]")
-
-
-def pasted_paths(text: str) -> list:
-    """Paths a paste consists of, one per line; [] unless every line is a path."""
-
-    lines = [line.strip().strip("\"'").strip() for line in text.splitlines()]
-    lines = [line for line in lines if line]
-
-    if not lines or not all(looks_like_path(line) for line in lines):
-        return []
-
-    return lines
-
-
-def pasted_link(text: str):
-    """The link a paste consists of, if it's one link long enough to be worth naming; None otherwise."""
-
-    stripped = text.strip()
-    links = find_links(stripped)
-
-    if len(links) != 1:
-        return None
-
-    link = links[0]
-
-    if link.title or (link.start, link.end) != (0, len(stripped)):
-        return None
-
-    return link if len(stripped) > LINK_TITLE_MAX else None

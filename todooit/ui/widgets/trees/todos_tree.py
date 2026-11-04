@@ -331,7 +331,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return
 
         # Imported here: the screens package imports the widgets
-        from todooit.ui.screens.note.markdown import to_markdown
+        from todooit.ui.screens.note.disp.markdown import to_markdown
 
         copy_text(self.app, to_markdown(note))
         self.post_message(BarNotification("Note copied to clipboard", "info"))

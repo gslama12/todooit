@@ -23,16 +23,12 @@ from todooit.utils import (
 )
 from todooit.utils.links import drawn_column
 
-from ..base import BaseScreen
+from ...base import BaseScreen
+from ..disp.markup import tidy_marks
+from ..disp.theme import THEME_NAME, build_theme
+from ..vim.editor import NoteEditor
+from ..vim.modes import MODE_INSERT, MODE_NORMAL
 from .attachments import AttachmentStrip
-from .editor import (
-    MODE_INSERT,
-    MODE_NORMAL,
-    THEME_NAME,
-    NoteEditor,
-    build_theme,
-)
-from .markup import tidy_marks
 
 # How long the editor sits still before the note is written back
 SAVE_DEBOUNCE = 0.4

@@ -25,7 +25,7 @@ from tests.test_ui.ui_base import (
     create_and_move_to_todo,
     run_pilot,
 )
-from todooit.ui.screens.note.editor import NoteEditor
+from todooit.ui.screens.note.vim.editor import NoteEditor
 from todooit.ui.widgets.inputs._input import Input
 
 # What WezTerm sends into todooit for each Esc-layer key

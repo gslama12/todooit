@@ -12,13 +12,13 @@ from tests.test_ui.ui_base import (
     run_pilot,
     set_clipboard,
 )
-from todooit.ui.screens.note.markdown import (
+from todooit.ui.screens.note.disp.markdown import (
     PASTE_INLINE,
     PASTE_STRIP,
     from_markdown,
     to_markdown,
 )
-from todooit.ui.screens.note.markup import EMPH_MARK, QUOTE_GLYPH
+from todooit.ui.screens.note.disp.markup import EMPH_MARK, QUOTE_GLYPH
 
 RULE = "─" * 10
 M = EMPH_MARK

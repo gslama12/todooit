@@ -20,9 +20,8 @@ from todooit.api import PinnedNote, Todo
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.screens.index import MainScreen
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
-from todooit.ui.screens.note.document import FoldedDocument, HangingDocument
-from todooit.ui.screens.note.editor import MODE_INSERT, MODE_NORMAL, build_theme
-from todooit.ui.screens.note.markup import (
+from todooit.ui.screens.note.disp.document import FoldedDocument, HangingDocument
+from todooit.ui.screens.note.disp.markup import (
     EMPH,
     EMPH_MARK,
     HEADER,
@@ -38,6 +37,8 @@ from todooit.ui.screens.note.markup import (
     recount,
     scan_note,
 )
+from todooit.ui.screens.note.disp.theme import build_theme
+from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
 from todooit.ui.screens.search import Found, NoteHit
 from todooit.utils import Opened
 from todooit.utils.default_config import NOTE_ICON
@@ -1448,7 +1449,7 @@ async def test_o_opens_a_folded_link_in_full():
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.screen.open_url",
+            "todooit.ui.screens.note.screens.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             screen = await open_note(pilot)
@@ -1964,7 +1965,7 @@ async def test_open_link_inside_the_note():
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.screen.open_url",
+            "todooit.ui.screens.note.screens.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             await open_note(pilot)
@@ -2328,7 +2329,7 @@ async def test_a_copied_file_leaves_no_text_to_paste(tmp_path):
         await pilot.press("escape")
         set_clipboard("")
 
-        with patch("todooit.ui.screens.note.editor.paste_files", lambda: [str(report)]):
+        with patch("todooit.ui.screens.note.vim.clipboard.paste_files", lambda: [str(report)]):
             await pilot.press("ctrl+v")
             await pilot.pause()
 
@@ -2413,7 +2414,7 @@ async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
         report = tmp_path / "Q3 report.pdf"
 
         with patch(
-            "todooit.ui.screens.note.screen.open_path",
+            "todooit.ui.screens.note.screens.screen.open_path",
             lambda path: opened.append(path) or Opened.OK,
         ):
             await pilot.press("escape")
