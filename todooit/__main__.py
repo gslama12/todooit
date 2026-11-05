@@ -16,9 +16,15 @@ def run_todooit(config: Optional[str] = None, db_path: Optional[str] = None):
         print(f"Config file {config} not found.")
         return
 
+    from todooit.api.note_migration import BackupFailed
     from todooit.ui.tui import Todooit
 
-    Todooit(config=config_path, db_path=db_path).run()
+    try:
+        app = Todooit(config=config_path, db_path=db_path)
+    except BackupFailed as error:
+        raise click.ClickException(str(error)) from error
+
+    app.run()
 
 
 @click.group(

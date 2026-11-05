@@ -1,10 +1,8 @@
 """
-Markdown into the note: what a paste takes in, and what old notes translate to
+Markdown into the note: what a paste takes in
 
-A note is stored as markdown. `from_markdown` evens out what a paste brings in
-(any bullet or heading form) to what typing it would have stored. `to_markdown`
-reads the format notes were stored in before: bullet glyphs, a quote bar, a
-title over a rule, zero-width emphasis marks.
+A note is stored as markdown, but draws only some of what markdown can write.
+`from_markdown` evens out what a paste brings in to the forms the note draws.
 """
 
 import re
@@ -22,26 +20,19 @@ PASTE_BLOCK = "block"  # cursor opens the line: its markup is converted
 PASTE_STRIP = "strip"  # cursor right after a marker: the pasted one is dropped
 PASTE_INLINE = "inline"  # cursor mid-line: only emphasis is converted
 
-# What a copy writes for each piece of the note's markup
+# What a paste is evened out to
 MD_BULLET = "- "
 MD_QUOTE = "> "
-MD_HEADER = "# "
 MD_RULE = "---"
 MD_EMPH = "**"
-
-# The old stored format, as `to_markdown` reads it
-EMPH_MARK = "\N{ZERO WIDTH SPACE}"
-OLD_QUOTE_GLYPH = "▎ "
-OLD_EMPH_RE = re.compile(rf"{EMPH_MARK}([^{EMPH_MARK}]+){EMPH_MARK}")
-OLD_ITEM_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[•◦▪] |(?P<number>\d+)\. )")
-OLD_QUOTE_RE = re.compile(rf"^[ \t]*{OLD_QUOTE_GLYPH}")
-OLD_RULE_RE = re.compile(r"^─{3,}[ \t]*$")
 
 # Markdown's block markup, as it may open a pasted line
 FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
 MD_QUOTE_RE = re.compile(r"^(?:[ \t]*>[ \t]?)+")
-ATX_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)(?P<title>.*?)(?:[ \t]+#+)?[ \t]*$")
-SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-{2,})[ \t]*$")
+ATX_RE = re.compile(
+    r"^ {0,3}(?P<level>#{1,6})(?:[ \t]+|$)(?P<title>.*?)(?:[ \t]+#+)?[ \t]*$"
+)
+SETEXT_RE = re.compile(r"^ {0,3}(?:(?P<double>=+)|-{2,})[ \t]*$")
 BREAK_RE = re.compile(r"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$")
 MD_BULLET_RE = re.compile(r"^(?P<indent>[ \t]*)[-*+](?:[ \t]+|$)")
 MD_ORDERED_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<number>\d{1,9})[.)](?:[ \t]+|$)")
@@ -55,92 +46,6 @@ ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!>])")
 # Escaped characters are parked on private-use code points while emphasis is
 # read, so `\*` can't open or close a pair, then put back as plain characters
 PARKED = 0xE000
-
-
-def _emph_out(line: str) -> str:
-    """A stored line with its emphasis pairs written as markdown, orphan marks dropped."""
-
-    def write(match: re.Match) -> str:
-        phrase = match.group(1)
-        words = phrase.strip()
-
-        if not words:
-            return phrase
-
-        # Markdown won't open a pair against a space, so spaces go outside it
-        lead = phrase[: len(phrase) - len(phrase.lstrip())]
-        trail = phrase[len(phrase.rstrip()) :]
-
-        return lead + MD_EMPH + words + MD_EMPH + trail
-
-    return OLD_EMPH_RE.sub(write, line).replace(EMPH_MARK, "")
-
-
-def to_markdown(text: str) -> str:
-    """
-    Text in the old stored format written as markdown.
-
-    A title over its rule becomes a `#` heading, a rule alone `---`, bullets
-    `- ` and the quote bar `> `. Nested items are indented to their parent's
-    words, which is where markdown looks for them (three columns under `1. `).
-    """
-
-    lines = text.split("\n")
-    out: List[str] = []
-
-    # Marker width at each depth of the list being written, for the indent
-    # its nested items need
-    widths = {}
-    quoted = False
-    row = 0
-
-    while row < len(lines):
-        line = lines[row]
-        following = lines[row + 1] if row + 1 < len(lines) else ""
-
-        if OLD_RULE_RE.match(line):
-            out.append(MD_RULE)
-            widths, quoted = {}, False
-            row += 1
-            continue
-
-        if line.strip() and OLD_RULE_RE.match(following):
-            out.append(MD_HEADER + _emph_out(line.strip()))
-            widths, quoted = {}, False
-            row += 2
-            continue
-
-        quote = OLD_QUOTE_RE.match(line)
-        bar = line[: quote.end()] if quote else ""
-        body = line[quote.end() :] if quote else line
-
-        # A line straight after a quote would be read as more of it
-        if quoted and not bar and line.strip():
-            out.append("")
-
-        quoted = bool(bar)
-
-        if bar:
-            bar = bar.replace(OLD_QUOTE_GLYPH, MD_QUOTE)
-
-        item = OLD_ITEM_RE.match(body)
-
-        if item:
-            depth = len(item.group("indent").expandtabs(len(INDENT))) // len(INDENT)
-            marker = MD_BULLET if item.group("number") is None else item.group("marker")
-
-            widths = {level: width for level, width in widths.items() if level < depth}
-            indent = "".join(" " * widths.get(level, len(INDENT)) for level in range(depth))
-            widths[depth] = len(marker)
-
-            body = indent + marker + body[item.end() :]
-        else:
-            widths = {}
-
-        out.append(bar + _emph_out(body))
-        row += 1
-
-    return "\n".join(out)
 
 
 def _emph_in(text: str) -> str:
@@ -237,8 +142,8 @@ def from_markdown(
     """
     Pasted markdown as the note stores it.
 
-    Headings of any depth (`#`..`######`, or underlined with `===`/`---`)
-    become `# `; a thematic break becomes `---`; `-`, `*` and `+` bullets `- `
+    Headings keep their level, and underlined ones (`===`/`---`) become `# `
+    and `## `; a thematic break becomes `---`; `-`, `*` and `+` bullets `- `
     at their depth; `1.` and `1)` items `1. `; `>` (nested or not) `> `; `_` and
     `__` emphasis `**`. Code blocks, code spans and links pass through.
 
@@ -305,7 +210,7 @@ def from_markdown(
             title = inline_markdown(heading.group("title"))
 
             # Headings are a whole-line construct; inside a quote only the words stay
-            out.append((bar or MD_HEADER) + title)
+            out.append((bar or heading.group("level") + " ") + title)
             row += 1
             continue
 
@@ -330,14 +235,16 @@ def from_markdown(
             continue
 
         # Text underlined with `===`/`---` is a heading too
-        if (
-            not bar
-            and body.strip()
-            and following is not None
-            and not fenced[row + 1]
-            and SETEXT_RE.match(following)
-        ):
-            out.append(MD_HEADER + inline_markdown(body.strip()))
+        underline = (
+            SETEXT_RE.match(following)
+            if not bar and body.strip() and following is not None and not fenced[row + 1]
+            else None
+        )
+
+        if underline:
+            marker = "# " if underline.group("double") else "## "
+
+            out.append(marker + inline_markdown(body.strip()))
             row += 2
             continue
 

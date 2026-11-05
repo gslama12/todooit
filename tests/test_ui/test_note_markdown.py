@@ -1,5 +1,6 @@
 """
-Notes and markdown: copies are written as markdown, pastes read as it
+Notes and markdown: a note is stored as markdown, so a copy gives it as it is,
+and a paste only evens out what the note wouldn't draw
 """
 
 import pytest
@@ -13,26 +14,21 @@ from tests.test_ui.ui_base import (
     set_clipboard,
 )
 from todooit.ui.screens.note.disp.markdown import (
-    EMPH_MARK,
-    OLD_QUOTE_GLYPH,
     PASTE_INLINE,
     PASTE_STRIP,
     from_markdown,
-    to_markdown,
 )
-
-RULE = "─" * 10
-M = EMPH_MARK
 
 
 @pytest.mark.parametrize(
     "markdown, stored",
     [
-        # Every heading depth is the note's one header
+        # A heading keeps its level; underlined ones are written the way the note draws
         ("# Title", "# Title"),
-        ("### Title ###", "# Title"),
+        ("### Title ###", "### Title"),
+        ("###### Title", "###### Title"),
         ("Title\n===", "# Title"),
-        ("Title\n---", "# Title"),
+        ("Title\n---", "## Title"),
         ("#hashtag", "#hashtag"),
         # Stars are read as they are, underscores become stars
         ("**bold** and *it*", "**bold** and *it*"),
@@ -84,26 +80,6 @@ def test_the_first_line_after_a_marker_drops_its_own():
     assert from_markdown("## title", PASTE_STRIP) == "title"
 
 
-@pytest.mark.parametrize(
-    "stored, markdown",
-    [
-        ("Title\n" + RULE + "\nbody", "# Title\nbody"),
-        ("above\n\n" + RULE, "above\n\n---"),
-        ("• a\n  ◦ b\n    ▪ c", "- a\n  - b\n    - c"),
-        # Markdown nests under a number at its words, three columns in
-        ("1. a\n  • b", "1. a\n   - b"),
-        (f"{OLD_QUOTE_GLYPH}quoted\nafter", "> quoted\n\nafter"),
-        (f"{OLD_QUOTE_GLYPH}• item", "> - item"),
-        (f"{M}bold{M} words", "**bold** words"),
-        (f"{M} spaced {M}", " **spaced** "),
-        (f"orphan{M} mark", "orphan mark"),
-        ("[docs](https://example.com)", "[docs](https://example.com)"),
-    ],
-)
-def test_to_markdown(stored, markdown):
-    assert to_markdown(stored) == markdown
-
-
 async def test_pasting_markdown_stores_it_and_numbers_the_list():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -114,7 +90,7 @@ async def test_pasting_markdown_stores_it_and_numbers_the_list():
         await pilot.pause()
 
         # The pasted list is numbered as a list typed in would be
-        assert editor.text == "# Plan\n- **one**\n1. a\n2. b"
+        assert editor.text == "## Plan\n- **one**\n1. a\n2. b"
         assert editor.cursor_location == (3, len("2. b"))
 
         await pilot.press("escape", "escape")
@@ -184,7 +160,9 @@ async def test_pasting_a_bullet_onto_a_bullet_makes_one():
         await pilot.pause()
 
 
-async def test_copying_a_note_from_the_list_writes_markdown():
+async def test_copying_a_note_from_the_list_gives_its_markdown_as_it_is():
+    stored = "## Plan\n* **one**\n   1. odd indent\n> quoted\nno gap\n\n---"
+
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
 
@@ -192,10 +170,10 @@ async def test_copying_a_note_from_the_list_writes_markdown():
         await commit_line(pilot, "task with a note")
 
         todo = tree.current_model
-        todo.note = f"• {M}one{M}\n  ◦ two"
+        todo.note = stored
         todo.save()
 
         await pilot.press("ctrl+n")
         await pilot.pause()
 
-        assert pilot.app.clipboard == "- **one**\n  - two"
+        assert pilot.app.clipboard == stored

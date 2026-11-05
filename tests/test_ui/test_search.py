@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from textual.pilot import Pilot
 from textual.widgets import ContentSwitcher
 
@@ -253,13 +254,14 @@ async def type_note_query(pilot: Pilot, words: str) -> None:
     await pilot.pause()
 
 
-def test_snippet_drops_the_line_mark_and_cuts_in_front_of_the_match():
-    assert snippet("- ask about the invoice", 16) == "ask about the invoice"
-    assert snippet("  1. first", 5) == "first"
-    assert snippet("> ## quoted heading", 5) == "quoted heading"
+def test_snippet_is_the_markdown_as_stored_cut_in_front_of_the_match():
+    assert snippet("- ask about the invoice", 16) == "- ask about the invoice"
+    assert snippet("  1. first", 5) == "  1. first"
+    assert snippet("> ## quoted heading", 5) == "> ## quoted heading"
 
-    # A link is shown by its name, the way the note draws it
-    assert snippet("see [the doc](https://example.com/x) now", 0) == "see the doc now"
+    # A link is shown as written, address and all
+    written = "see [the doc](https://example.com/x) now"
+    assert snippet(written, 0) == written
 
     long = "word " * 20 + "needle at the end"
     cut = snippet(long, long.index("needle"), lead=10)
@@ -439,3 +441,46 @@ async def test_picking_a_note_match_opens_the_note_on_its_line():
 
         todos = visible_todos(app)
         assert todos.current_model.description == "apps"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "## needle in a heading",
+        "**bold** needle after emphasis",
+        "    - a nested needle",
+        "> quoted **needle**",
+        "see [the doc](https://example.com/needle) now",
+    ],
+)
+async def test_a_note_match_opens_with_the_cursor_on_the_stored_match(line):
+    """Markup in front of the match counts: the column is the stored one"""
+
+    async with run_pilot() as pilot:
+        await seed(pilot)
+        write_notes({"apps": "a line above\n" + line})
+        await open_search(pilot)
+        await type_note_query(pilot, "needle")
+
+        # The result reads as the note is stored
+        assert pilot.app.screen.selected.hit.line == line
+
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+        assert screen.editor.cursor_location == (1, line.index("needle"))
+        assert screen.editor.document[1] == line
+
+
+@pytest.mark.parametrize("query, row", [("example.com", 0), ("##", 1)])
+async def test_a_note_search_finds_what_only_the_raw_markdown_has(query, row):
+    async with run_pilot() as pilot:
+        await seed(pilot)
+        write_notes({"apps": "see [the doc](https://example.com/x)\n## plan"})
+        await open_search(pilot)
+        await type_note_query(pilot, query)
+
+        assert [match.hit.row for match in pilot.app.screen._matches] == [row]

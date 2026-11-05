@@ -21,7 +21,6 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
-from todooit.utils.links import drawn_column
 
 from ...base import BaseScreen
 from ..disp.theme import THEME_NAME, build_theme
@@ -203,15 +202,13 @@ class NoteScreenBase(BaseScreen):
         """
         Put the cursor at a place in the note, scrolled to the middle.
         `column` is a stored-note column, which may be inside a link's address:
-        the row goes raw first, so that column is there to land on.
+        the row goes raw first, where drawn columns are the stored ones.
         """
 
         document = self.editor.document
         row = max(0, min(row, document.line_count - 1))
 
         self.editor.move_cursor((row, 0))
-
-        column = drawn_column(document.stored_line(row), column, raw=True)
 
         self.editor.move_cursor((row, column), center=True)
 

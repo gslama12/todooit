@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from todooit.paths import database_file
 
+from .note_migration import back_up_database, migrate_notes, migration_due
+
 
 class Manager:
     """
@@ -33,15 +35,27 @@ class Manager:
         if path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
 
+        # Looked at first: reading the marker would create a missing file
+        existed = Path(path).exists()
+
         connection_string = f"sqlite:///{path}"
 
         self.engine = create_engine(connection_string)
         self.session = Session(self.engine)
 
+        # The backup goes first, so it is the database as it was found
+        notes_due = migration_due(self.engine)
+
+        if notes_due and existed:
+            back_up_database(Path(path))
+
         # Creates missing tables only; existing tables are never migrated
         BaseModel.metadata.create_all(bind=self.engine)
         self._drop_retired_columns()
         self._add_new_columns()
+
+        if notes_due:
+            migrate_notes(self.engine)
 
     # Columns the model no longer has. Left in place they would break every
     # insert, since they were created NOT NULL with only a Python-side default.

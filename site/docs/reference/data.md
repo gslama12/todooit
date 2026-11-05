@@ -110,3 +110,8 @@ The database is one file. Copy it.
 ```bash
 cp ~/.local/share/todooit/todooit.db ~/todooit-backup.db
 ```
+
+todooit makes one backup itself. Notes are stored as markdown, and the first
+start on a database from before that copies it to a `backups` folder beside it
+(`~/.local/share/todooit/backups/`) and then converts every note, once and one
+way. If the copy fails, todooit stops with an error and changes nothing.

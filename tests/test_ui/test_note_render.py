@@ -426,7 +426,7 @@ async def test_a_paste_stores_markdown():
         await pilot.pause()
 
         # A rule straight under words would read as their underline elsewhere
-        assert editor.text == "# Plan\n- one\n> said\n\n---"
+        assert editor.text == "## Plan\n- one\n> said\n\n---"
 
         await leave(pilot)
 
