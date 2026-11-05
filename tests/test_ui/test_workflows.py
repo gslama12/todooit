@@ -43,7 +43,7 @@ async def test_a_task_s_whole_life():
 
         await pilot.press(" ")
         await pilot.pause()
-        await pilot.press(*list("remember the changelog"))
+        await pilot.press("i", *list("remember the changelog"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 

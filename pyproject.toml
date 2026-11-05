@@ -89,6 +89,7 @@ markers = [
   "placement: where a todo lives (its home, root and bin row)",
   "layout: the rows a pane draws (guides, blocks, context rows, banding)",
   "migration: migrating a dooit database (migration/db_migration.py)",
+  "vim: the vim engine and the note editor it drives",
 ]
 
 [tool.ruff.lint]

@@ -31,6 +31,7 @@ from .api_components import (
     LayoutManager,
     MotionKeys,
     VarManager,
+    VimManager,
 )
 from .events import (
     GotoFixedProject,
@@ -73,6 +74,7 @@ class TodooitAPI:
         self.formatter = Formatter(self)
         self.bar = BarManager(self)
         self.vars = VarManager(self)
+        self.vim = VimManager()
         self.history = History()
 
         self.css.refresh_css()

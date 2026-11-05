@@ -6,8 +6,9 @@ the hand rests on the home row the way it does for typing. This config moves
 them back to where vim has them, and moves the two bindings that were in the
 way somewhere else.
 
-The note window, the calendar, the help screen and the attachment strip steer
-with whatever keys the panes move with, so they follow along on their own.
+The calendar, the help screen and the attachment strip steer with whatever keys
+the panes move with, so they follow along on their own. A note's text has keys
+of its own, moved separately below.
 
 Use it as your config:
 
@@ -32,6 +33,15 @@ VIM_KEYS = {
 }
 
 
+# The same for the cursor inside a note
+VIM_NOTE_KEYS = {
+    "j": "h",  # left
+    "ö": "l",  # right
+    "l": "j",  # down (k, up, stays where it is)
+}
+
+
 @subscribe(Startup)
 def vim_keys(api: TodooitAPI, _):
     api.keys.remap(VIM_KEYS)
+    api.vim.keys.remap(VIM_NOTE_KEYS)

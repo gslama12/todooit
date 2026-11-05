@@ -2,33 +2,16 @@
 NORMAL mode: what each key does while the note is being read
 """
 
-from typing import Dict
-
-from todooit.ui.api.api_components.keys import MotionKeys
 from todooit.utils.links import folded_link_at
 
 from ..disp.markup import line_prefix
 from .editing import TextEditing
 
-# Line ends; the four direction keys are the panes' own (see `normal_motions`).
-# No other letter does anything.
+# Line ends. The direction keys and `i` are the engine's; these are on their way.
 NORMAL_MOTIONS = {
     "0": "cursor_line_start",
     "$": "cursor_line_end",
 }
-
-
-def normal_motions(motions: MotionKeys) -> Dict[str, str]:
-    return {
-        **NORMAL_MOTIONS,
-        motions.left: "cursor_left",
-        motions.right: "cursor_right",
-        motions.up: "cursor_up",
-        motions.down: "cursor_down",
-    }
-
-# Only key into INSERT; vim's a/I/A are intentionally omitted.
-INSERT_ENTRY = "i"
 
 # Scroll keys, on vim's u/d; bare since NORMAL is read-only.
 HALF_PAGE_UP = "u"
@@ -60,16 +43,12 @@ class NormalKeys(TextEditing):
 
             return True
 
-        if motion := normal_motions(self.app.api.motion_keys()).get(key):
+        if motion := NORMAL_MOTIONS.get(key):
             getattr(self, f"action_{motion}")()
             return True
 
         if key == "G":
             self.move_cursor(self.document.end)
-            return True
-
-        if key == INSERT_ENTRY:
-            self.enter_insert()
             return True
 
         if key in (HALF_PAGE_UP, HALF_PAGE_DOWN):

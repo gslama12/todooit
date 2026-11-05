@@ -15,7 +15,7 @@ class NoteEditor(NormalKeys, ClipboardEditing):
 
     Two modes: NORMAL (read-only, letters move the cursor) and INSERT (letters
     type). `i` enters INSERT; `escape` steps back to NORMAL, then to the todo.
-    Opens in NORMAL when the note has content, INSERT when empty.
+    Always opens in NORMAL. The vim engine takes each key first.
 
     Selecting/copying/pasting work in both modes; cut/paste switch to INSERT.
     The clipboard speaks markdown, as the note itself does.
@@ -67,21 +67,16 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
-        if self.read_only:
-            if self._handle_normal_key(key):
-                event.stop()
-                event.prevent_default()
-
-                # Restart the blink so a move mid-blink isn't hidden.
-                self._restart_blink()
-
-            # escape bubbles: with no mode left to leave, it should close the window.
+        if self.engine.feed(key):
+            self._pending_g = False
+            self._key_used(event)
             return
 
-        if key == "escape":
-            event.stop()
-            event.prevent_default()
-            self.enter_normal()
+        if self.read_only:
+            if self._handle_normal_key(key):
+                self._key_used(event)
+
+            # escape bubbles: with no mode left to leave, it should close the window.
             return
 
         # A Meta chord (`alt+d`) carries its letter, which TextArea would type;
@@ -96,6 +91,13 @@ class NoteEditor(NormalKeys, ClipboardEditing):
             return
 
         await super()._on_key(event)
+
+    def _key_used(self, event: events.Key) -> None:
+        event.stop()
+        event.prevent_default()
+
+        # Restart the blink so a move mid-blink isn't hidden.
+        self._restart_blink()
 
     def _handle_insert_key(self, event: events.Key) -> bool:
         """Handle an INSERT-mode key; True if handled, False to let it type."""

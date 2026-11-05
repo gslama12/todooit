@@ -107,12 +107,12 @@ async def test_the_terminals_own_paste_reads_markdown_too():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text("written")
+        editor.load_text("written\n")
         await pilot.press("escape")
         await pilot.pause()
 
-        editor.move_cursor((0, len("written")))
-        editor.post_message(events.Paste("\n> > **quoted**"))
+        editor.move_cursor((1, 0))
+        editor.post_message(events.Paste("> > **quoted**"))
         await pilot.pause()
 
         assert editor.text == "written\n> **quoted**"

@@ -21,6 +21,7 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
+from todooit.vim_engine import VimMotion
 
 from ...base import BaseScreen
 from ..disp.theme import THEME_NAME, build_theme
@@ -81,7 +82,7 @@ class NoteScreenBase(BaseScreen):
     ]
 
     # One line of hints per mode; keys that would do nothing here are omitted.
-    # `{move}` is filled in with the panes' direction keys (see `hint_for`).
+    # `{move}` is filled in with the keys that move here (see `hint_for`).
     HINTS = {
         MODE_NORMAL: (
             "i insert    {move} move    ud half page    o link    f files    "
@@ -215,12 +216,22 @@ class NoteScreenBase(BaseScreen):
     def hint_for(self, mode: str, picking_files: bool = False) -> str:
         """The hint line for `mode`, or for the strip while it has the keyboard."""
 
-        motions = self.api.motion_keys()
-        hint = self.FILES_HINT if picking_files else self.HINTS[mode]
+        if picking_files:
+            left, right, up, down = self.api.motion_keys()
+            return self.FILES_HINT.replace("{move}", f"{left}{right}/{up}{down}")
 
-        return hint.replace(
-            "{move}", f"{motions.left}{motions.right}/{motions.up}{motions.down}"
+        key_for = self.api.vim.keys.key_for
+        left, right, up, down = (
+            key_for(motion) or "?"
+            for motion in (
+                VimMotion.LEFT,
+                VimMotion.RIGHT,
+                VimMotion.UP,
+                VimMotion.DOWN,
+            )
         )
+
+        return self.HINTS[mode].replace("{move}", f"{left}{right}/{up}{down}")
 
     def mode_changed(self) -> None:
         """Redraw the mode chip in the border and the hint line under it."""

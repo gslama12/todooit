@@ -275,7 +275,7 @@ async def test_a_note_written_over_the_panes_is_not_a_step_to_take_back():
 
         await pilot.press(" ")
         await pilot.pause()
-        await pilot.press(*list("call them"))
+        await pilot.press("i", *list("call them"))
 
         # One escape out of INSERT, one to close the window
         await pilot.press("escape", "escape")

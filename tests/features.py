@@ -37,6 +37,7 @@ FEATURE_BY_MODULE = {
     "test_paths": "persistence",
     "test_sync": "persistence",
     "test_db_migration": "migration",
+    "test_vim_engine": "vim",
     # tests/test_ui
     "test_startup": "shell",
     "test_navigation": "shell",
@@ -73,4 +74,5 @@ FEATURE_BY_MODULE = {
     "test_key_resolve": "config",
     "test_loader": "config",
     "test_keyboard_layouts": "config",
+    "test_vim_note": "vim",
 }

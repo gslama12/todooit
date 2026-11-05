@@ -57,7 +57,7 @@ LONG_LINK_DRAWN = "atdfsds.sharepoint.com/…/AllItems.aspx"
 
 
 async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
-    """A project, a todo, and the note window opened on it with space"""
+    """A project, a todo, and its note opened with space, ready to be typed in"""
 
     await create_and_move_to_todo(pilot)
     await pilot.press("n")
@@ -68,6 +68,8 @@ async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
 
     screen = pilot.app.screen
     assert isinstance(screen, NoteScreen)
+
+    await pilot.press("i")
     return screen
 
 
@@ -75,10 +77,7 @@ async def test_space_opens_the_note_window():
     async with run_pilot() as pilot:
         screen = await open_note(pilot, "the todo")
 
-        # Titled by the todo, and opened ready to write: there is nothing in
-        # an empty note to have opened it to read
         assert screen.frame.border_title == "the todo"
-        assert screen.editor.mode == MODE_INSERT
 
 
 async def test_a_written_note_opens_to_be_read():
@@ -132,7 +131,7 @@ async def test_the_note_opens_on_what_it_holds():
         assert isinstance(screen, NoteScreen)
         assert screen.editor.text == "first draft"
 
-        await pilot.press("$", "i")  # to the end of the line, then INSERT
+        await pilot.press("i", "end")  # INSERT, where the line's end can be reached
         await pilot.press(*list(" and more"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1925,7 +1924,7 @@ async def test_pinned_note_via_m():
         assert isinstance(screen, PinnedNoteScreen)
         assert screen.frame.border_title == "Pinned Note"
 
-        await pilot.press(*list("a thought with no task yet"))
+        await pilot.press("i", *list("a thought with no task yet"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 
@@ -2174,7 +2173,7 @@ async def test_a_pasted_path_is_attached_beside_the_note(tmp_path):
         # Attaching is not typing: the note is not edited and the cursor is
         # left standing exactly where it was
         assert screen.editor.mode == MODE_NORMAL
-        assert screen.editor.cursor_location == (0, len("some words"))
+        assert screen.editor.cursor_location == (0, len("some words") - 1)
 
 
 async def test_what_is_attached_comes_back_with_the_note(tmp_path):
@@ -2285,7 +2284,7 @@ async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
         await pilot.pause()
         assert not screen.picking_files
         assert screen.editor.has_focus
-        assert screen.editor.cursor_location == (0, len("some words"))
+        assert screen.editor.cursor_location == (0, len("some words") - 1)
         assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL)
         assert "jö/kl move" in str(screen.hint.render())
 
@@ -2427,7 +2426,6 @@ async def test_the_pinned_note_carries_files_too(tmp_path):
         screen = pilot.app.screen
         assert isinstance(screen, PinnedNoteScreen)
 
-        await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "scratch.md")
 
         assert PinnedNote.get_attachments() == str(tmp_path / "scratch.md")

@@ -35,9 +35,10 @@ class TodooitFunction:
 
 class MotionKeys(NamedTuple):
     """
-    The four direction keys, as the panes move with them. The overlays (note,
-    calendar, help, attachment strip) steer with the same four, so a config
-    that moves the pane keys moves those along with them.
+    The four direction keys, as the panes move with them. The overlays
+    (calendar, help, attachment strip) steer with the same four, so a config
+    that moves the pane keys moves those along with them. The note's text has
+    its own keys, in `api.vim.keys`.
     """
 
     left: str

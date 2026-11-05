@@ -18,6 +18,7 @@ from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import ProjectWidget, TodoWidget
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
+from todooit.vim_engine import VimCommand, VimMotion
 
 # Todo formatters
 
@@ -470,6 +471,16 @@ def project_color_formatter(name: str, project, api: TodooitAPI) -> Optional[str
         return None
 
     return f"[{color}]{name}[/]"
+
+
+@subscribe(Startup)
+def vim_key_setup(api: TodooitAPI, _):
+    # The keys inside a note's text, apart from the panes' own
+    api.vim.keys.set("j", VimMotion.LEFT)
+    api.vim.keys.set("ö", VimMotion.RIGHT)
+    api.vim.keys.set("k", VimMotion.UP)
+    api.vim.keys.set("l", VimMotion.DOWN)
+    api.vim.keys.set("i", VimCommand.INSERT)
 
 
 @subscribe(Startup)

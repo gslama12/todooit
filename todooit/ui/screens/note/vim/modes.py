@@ -2,21 +2,29 @@
 The two keyboard modes and moving between them
 """
 
-from ..disp.view import NoteView
-from .host import EditorHost
+from typing import Optional
 
-# Keyboard mode: NORMAL reads/moves, INSERT types (same names as the status bar).
-MODE_NORMAL = "NORMAL"
-MODE_INSERT = "INSERT"
+from textual.widgets.text_area import Selection
+
+from todooit.vim_engine import MODE_INSERT, MODE_NORMAL, VimEngine
+
+from ..disp.view import NoteView
+from .buffer import NoteBuffer
+from .host import EditorHost
 
 
 class ModalEditor(NoteView):
-    """NORMAL reads and moves; INSERT types. `read_only` is what NORMAL *is*."""
+    """
+    The note as a host of the vim engine, which decides the mode.
+    `read_only` is what NORMAL *is*.
+    """
 
     def __init__(self, text: str) -> None:
-        # read_only is what NORMAL *is*; starts read_only unless there's
-        # non-whitespace to read. tab_behavior stays "focus" so escape bubbles.
-        super().__init__(text, read_only=bool(text.strip()))
+        # Always opens in NORMAL. tab_behavior stays "focus" so escape bubbles.
+        super().__init__(text, read_only=True)
+
+        # Built on first use, once there's an app to read the keymap from
+        self._engine: Optional[VimEngine] = None
 
     @property
     def host(self) -> EditorHost:
@@ -28,19 +36,41 @@ class ModalEditor(NoteView):
         return screen
 
     @property
+    def engine(self) -> VimEngine:
+        if self._engine is None:
+            self._engine = VimEngine(NoteBuffer(self), self.app.api.vim.keys)
+
+        return self._engine
+
+    @property
     def mode(self) -> str:
         return MODE_NORMAL if self.read_only else MODE_INSERT
 
     def enter_insert(self) -> None:
-        if not self.read_only:
-            return
-
-        self.read_only = False
-        self.host.mode_changed()
+        self.engine.set_mode(MODE_INSERT)
 
     def enter_normal(self) -> None:
-        if self.read_only:
-            return
+        self.engine.set_mode(MODE_NORMAL)
 
-        self.read_only = True
+    def show_mode(self, mode: str) -> None:
+        """Take on the mode the engine has just moved to."""
+
+        self.read_only = mode == MODE_NORMAL
         self.host.mode_changed()
+
+    def _validate_selection(self, selection: Selection) -> Selection:
+        """
+        In NORMAL the cursor stands on a character, however it got there: a
+        click, a page key, a search result. A selection may run past the last
+        one, to take the line's end with it.
+        """
+
+        selection = super()._validate_selection(selection)
+
+        if not self.read_only or not selection.is_empty:
+            return selection
+
+        row, column = selection.end
+        last = max(0, len(self._stored_line(row)) - 1)
+
+        return Selection.cursor((row, last)) if column > last else selection
