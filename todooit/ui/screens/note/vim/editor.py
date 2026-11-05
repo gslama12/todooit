@@ -11,18 +11,19 @@ from .normal import NormalKeys
 
 class NoteEditor(NormalKeys, ClipboardEditing):
     """
-    Plain text editor that styles emphasis, quotes and bullets as typed.
+    Plain text editor for a note written in markdown.
 
     Two modes: NORMAL (read-only, letters move the cursor) and INSERT (letters
     type). `i` enters INSERT; `escape` steps back to NORMAL, then to the todo.
     Opens in NORMAL when the note has content, INSERT when empty.
 
     Selecting/copying/pasting work in both modes; cut/paste switch to INSERT.
-    The clipboard speaks markdown: copies are written as it, pastes read as it.
+    The clipboard speaks markdown, as the note itself does.
 
-    Markup is typed like markdown (`- `, `1. `, `> `, `# `, `---`, `*stars*`)
-    and rendered on completion. The only keyboard-only action is nesting
-    (`tab`/`shift+tab`); a quote wraps a line, so markup nests inside it too.
+    Markup is typed like markdown (`- `, `1. `, `> `, `# `, `---`, `*stars*`),
+    stored as typed and drawn rendered off the cursor line. The only
+    keyboard-only action is nesting (`tab`/`shift+tab`); a quote wraps a line,
+    so markup nests inside it too.
 
     Files are attached, not typed: `ctrl+v` drops one in the footer strip;
     `f` focuses it.
@@ -102,11 +103,8 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         if event.key == "enter" and self._handle_enter():
             return True
 
-        if (
+        return (
             event.key == "backspace"
             and self.selection.is_empty
             and self._handle_backspace()
-        ):
-            return True
-
-        return self._render_typed(event.character)
+        )

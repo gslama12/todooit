@@ -2,7 +2,7 @@
 The two keyboard modes and moving between them
 """
 
-from ..disp.typed import TypedMarkupView
+from ..disp.view import NoteView
 from .host import EditorHost
 
 # Keyboard mode: NORMAL reads/moves, INSERT types (same names as the status bar).
@@ -10,7 +10,7 @@ MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
 
 
-class ModalEditor(TypedMarkupView):
+class ModalEditor(NoteView):
     """NORMAL reads and moves; INSERT types. `read_only` is what NORMAL *is*."""
 
     def __init__(self, text: str) -> None:

@@ -1,7 +1,7 @@
 """
 The note window, split by concern:
 
-- `disp`    the markup and how it's drawn, including as it's typed
+- `disp`    the markup and how it's drawn
 - `vim`     changing the text from the keyboard: modes, keys, clipboard
 - `screens` what the user sees: the window, the pinned note, the attachments
 

@@ -8,9 +8,9 @@ and a link drawn short can never point somewhere other than the address that
 is written behind it.
 
 This is also where the note's *folding* lives - the one translation between
-the text as it is stored and the text as it is drawn - so the other thing a
-note writes into a line and does not want drawn is folded here too: the
-zero-width marks a note puts either side of an emphasised phrase.
+the text as it is stored and the text as it is drawn - so the other things a
+note writes into a line and does not want drawn are folded here too: the stars
+either side of an emphasised phrase, and the `#` a heading opens with.
 """
 
 import os
@@ -198,38 +198,32 @@ def link_title(url: str) -> str:
     return drawn
 
 
-# What a note delimits an emphasised phrase with: one zero-width mark either
-# side of the words. The character is chosen in `ui/screens/note/`, which is
-# what puts it there and what draws what it means; it is named here because
-# this is the module that says what a line looks like on the page, and what a
-# mark looks like on the page is nothing at all.
-#
-# "Nothing at all" has to mean nothing at all. A mark left in the drawn line
-# would be a column of the page worth no columns of the terminal, and the two
-# disagreeing is how a window ends up with its right-hand edge - its border,
-# its scrollbar - drawn a column off on exactly the lines that carry emphasis.
-# It would also be a column the cursor could stand in and not be seen in, and
-# a column an `enter` could split a finished pair across. None of the three is
-# a problem once the marks are off the page altogether, which is what folding
-# them does
-EMPH_MARK = "\N{ZERO WIDTH SPACE}"
+# An emphasised phrase in a note, by markdown's own rule: a run of stars either
+# side, with something between them and neither side touching a space, so that
+# `a * b * c` stays arithmetic and `* item` stays a bullet.
+STAR_PAIR_RE = re.compile(r"(?<!\*)(\*{1,2})(?![\s*])(.+?)(?<![\s*])\1(?!\*)")
 
-# A finished pair: two marks with something written between them. A mark with
-# no partner is markup that was cut in half by an edit - it is drawn as
-# nothing, stands in no column and is tidied away the next time the note is
-# written back
-MARK_PAIR_RE = re.compile(rf"{EMPH_MARK}[^{EMPH_MARK}]+{EMPH_MARK}")
+# A heading: the marks only, which is what comes off the page. Any level, since
+# a note has the one heading style.
+HEADING_RE = re.compile(r"#{1,6} ")
 
 
-def mark_pairs(text: str) -> List[Tuple[int, int]]:
+def star_pairs(text: str) -> List[Tuple[int, int, int, int]]:
     """
-    Where each finished pair of emphasis marks is written: the column of the
-    opening mark and of the closing one, in the line as it is *stored*
+    Where each emphasised phrase's stars are written, in the line as it is
+    *stored*: (opening start, opening end, closing start, closing end). A star
+    inside a link belongs to the link, so the links are masked out first.
     """
+
+    masked = text
+
+    for link in find_links(text):
+        filler = "x" * (link.end - link.start)
+        masked = masked[: link.start] + filler + masked[link.end :]
 
     return [
-        (match.start(), match.end() - 1)
-        for match in MARK_PAIR_RE.finditer(text)
+        (match.start(1), match.end(1), match.start(2) + len(match.group(2)), match.end())
+        for match in STAR_PAIR_RE.finditer(masked)
     ]
 
 
@@ -272,9 +266,8 @@ def _fold(text: str, raw: bool = False) -> Folded:
     """
     One line folded: what is drawn, the links in it, and the two column maps
 
-    `raw` is a line the cursor or selection stands on: its links are drawn as
-    written, so no column of it is made up and an edit has nothing to widen. The
-    emphasis marks still come off, being worth no column on any line.
+    `raw` is a line the cursor or selection stands on: it is drawn exactly as
+    written, so no column of it is made up and an edit has nothing to widen.
 
     What the folding hides is the *markup* of a link and not its name. A link
     written `[the folder](url)` is drawn as `the folder`, and those words are
@@ -295,13 +288,13 @@ def _fold(text: str, raw: bool = False) -> Folded:
     reaching into a link swallow the whole link instead of cutting an address
     in half.
 
-    The emphasis marks are folded out on the same pass and are the other kind
-    of hidden markup: not an atom standing in for a run, but a character worth
-    no column that belongs to the words beside it. An opening mark goes with
-    the phrase it opens, so what is typed at the head of one lands in front of
-    the mark and outside the emphasis; a closing mark goes with the phrase
-    behind it, so what is typed at its tail lands past the mark and outside it
-    too. Emphasis is edited from the inside, never from either edge.
+    The stars of an emphasised phrase are folded out on the same pass and are
+    the other kind of hidden markup: not an atom standing in for a run, but
+    characters worth no column that belong to the words beside them. An opening
+    run goes with the phrase it opens, so what is inserted at the head of one
+    lands in front of it; a closing run goes with the phrase behind it, so what
+    is inserted at its tail lands past it. A heading's marks are hidden the same
+    way as an opening run.
     """
 
     drawn: List[str] = []
@@ -314,16 +307,31 @@ def _fold(text: str, raw: bool = False) -> Folded:
     at = 0
     width = 0
 
-    pairs = mark_pairs(text)
-    opening = {start for start, _ in pairs}
-    closing = {end for _, end in pairs}
+    pairs = [] if raw else star_pairs(text)
+
+    # Each hidden column, and whether a run of marks starts or ends the phrase there
+    opening = {
+        column: column == start
+        for start, end, _, _ in pairs
+        for column in range(start, end)
+    }
+    closing = {
+        column: column == start
+        for _, _, start, end in pairs
+        for column in range(start, end)
+    }
     started: List[int] = []
 
-    # How many marks are standing in front of the next drawn column. Held back
-    # rather than written straight out: an opening mark is only known to be in
-    # front of a column once that column arrives, and the run at the very end
-    # of a line is in front of the position one past it
+    # How many hidden columns are standing in front of the next drawn column.
+    # Held back rather than written straight out: an opening run is only known
+    # to be in front of a column once that column arrives, and the run at the
+    # very end of a line is in front of the position one past it
     hidden = 0
+
+    heading = None if raw else HEADING_RE.match(text)
+
+    if heading:
+        at = hidden = heading.end()
 
     def verbatim(start: int, end: int) -> None:
         """A run of the line that is drawn exactly as it is written"""
@@ -331,19 +339,16 @@ def _fold(text: str, raw: bool = False) -> Folded:
         nonlocal width, hidden
 
         for index in range(start, end):
-            if text[index] == EMPH_MARK:
-                if index in opening:
+            if index in opening:
+                if opening[index]:
                     started.append(width)
-                    hidden += 1
-                elif index in closing and started:
-                    emph.append((started.pop(), width))
 
-                # An orphan is neither, and is drawn as nothing by both: it
-                # goes with whatever comes after it, the same way an opening
-                # mark does, so that it cannot glue itself onto the word in
-                # front of it
-                else:
-                    hidden += 1
+                hidden += 1
+                continue
+
+            if index in closing:
+                if closing[index]:
+                    emph.append((started.pop(), width))
 
                 continue
 
@@ -401,7 +406,7 @@ def _fold(text: str, raw: bool = False) -> Folded:
     verbatim(at, len(text))
 
     # One past the end of the drawn line is one past the end of the stored
-    # one - behind any mark left standing there, which is markup the position
+    # one - behind any marks left standing there, which is markup the position
     # is in front of like any other
     written_at.append(len(text))
     opens.append(len(text) - hidden)
@@ -440,10 +445,8 @@ def folded_emph(text: str, raw: bool = False) -> List[Tuple[int, int]]:
     """
     Where the emphasised phrases of `text` land on the page: one (start, end)
     per finished pair, in drawn columns, with the marks themselves nowhere in
-    it because they are nowhere on the page
-
-    This is what draws the emphasis and what takes it off again, so the words
-    that are lit and the words a backspace unlights are always the same words.
+    it because they are nowhere on the page. None on a raw line, which has its
+    marks on the page and is lit from `star_pairs` instead.
     """
 
     return list(_fold(text, raw).emph)
@@ -519,10 +522,10 @@ def stored_range(
         opening = min(opening, written_start)
         closing = max(closing, written_end)
 
-    for phrase_start, phrase_end in folded.emph:
+    for (phrase_start, phrase_end), pair in zip(folded.emph, star_pairs(text)):
         if start <= phrase_start and end >= phrase_end:
-            opening = min(opening, folded.at[phrase_start] - 1)
-            closing = max(closing, folded.closes[phrase_end] + 1)
+            opening = min(opening, pair[0])
+            closing = max(closing, pair[3])
 
     return opening, closing
 

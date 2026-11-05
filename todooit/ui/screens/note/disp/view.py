@@ -21,6 +21,9 @@ from .document import (
 from .markup import (
     QUOTE_BAR,
     QUOTE_GLYPH,
+    RULE,
+    RULE_SPAN,
+    heading_span,
     scan_note,
 )
 
@@ -124,12 +127,54 @@ class NoteView(TextArea):
         self._refold()
 
     def _render_line(self, y: int) -> Strip:
+        """A row of the note, with the wash behind it if it's a heading's."""
+
+        strip = self._draw_row(y)
+        wrapped = self.wrapped_document
+        document = self.document
+        assert isinstance(wrapped, HangingDocument)
+        assert isinstance(document, FoldedDocument)
+
+        found = wrapped.row_at(y + self.scroll_offset.y)
+        span = heading_span(document.stored_line(found[0])) if found else None
+
+        return self._wash(strip, span) if span else strip
+
+    def _wash(self, strip: Strip, span: str) -> Strip:
+        """
+        Put the heading's background behind the whole row. Only over the note's
+        own background, so the cursor and a selection still show on it.
+        """
+
+        base = self._theme.base_style
+        background = base.bgcolor if base else None
+        wash = Style(bgcolor=self._theme.syntax_styles[span].bgcolor)
+
+        return Strip(
+            Segment(text, style + wash, control)
+            if style is not None and style.bgcolor == background
+            else Segment(text, style, control)
+            for text, style, control in strip
+        )
+
+    def _draw_row(self, y: int) -> Strip:
         """
         Render a wrapped continuation row, indented via blank padding columns (not real characters, so line offsets elsewhere are unaffected).
         """
 
         strip = super()._render_line(y)
-        pad = self.wrapped_document.pad_at(y + self.scroll_offset.y)
+        wrapped = self.wrapped_document
+        document = self.document
+        assert isinstance(wrapped, HangingDocument)
+        assert isinstance(document, FoldedDocument)
+
+        found = wrapped.row_at(y + self.scroll_offset.y)
+        block = document.block_at(found[0]) if found else None
+
+        if block:
+            return self._draw_block(strip, block)
+
+        pad = wrapped.pad_at(y + self.scroll_offset.y)
 
         if not pad:
             return strip
@@ -150,7 +195,7 @@ class NoteView(TextArea):
         body = body.crop_pad(max(0, body.cell_length - pad), pad, 0, style)
 
         # A wrapped quote keeps its bar on every row, not just the first
-        bar = self.wrapped_document.bar_at(y + self.scroll_offset.y)
+        bar = wrapped.bar_at(y + self.scroll_offset.y)
 
         if bar is not None:
             bar_style = style + self._theme.syntax_styles.get(QUOTE_BAR, Style())
@@ -158,6 +203,28 @@ class NoteView(TextArea):
             body = Strip.join(
                 [body.crop(0, bar), glyph, body.crop(bar + glyph.cell_length)]
             )
+
+        return Strip.join([gutter, body]) if gutter else body
+
+    def _draw_block(self, strip: Strip, block: str) -> Strip:
+        """A heading or a rule, across the whole width of the window, on one row."""
+
+        gutter_width = self.gutter_width
+        width = self.scrollable_content_region.width - gutter_width
+
+        if gutter_width:
+            gutter, body = strip.divide([gutter_width, strip.cell_length])
+        else:
+            gutter, body = None, strip
+
+        if block == RULE_SPAN:
+            trailing = list(body)[-1].style if body.cell_length else None
+            background = Style(bgcolor=trailing.bgcolor) if trailing else Style()
+            style = background + self._theme.syntax_styles.get(RULE_SPAN, Style())
+            body = Strip([Segment(RULE * width, style)])
+        else:
+            # A long title is cut at the window's edge, keeping it to one row
+            body = body.crop_extend(0, width, None)
 
         return Strip.join([gutter, body]) if gutter else body
 

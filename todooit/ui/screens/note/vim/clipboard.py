@@ -1,5 +1,5 @@
 """
-Copy, cut and paste: the clipboard speaks markdown, the note its own markup
+Copy, cut and paste: the clipboard speaks markdown, as the note itself does
 """
 
 from textual import events
@@ -18,7 +18,6 @@ from ..disp.markdown import (
     PASTE_INLINE,
     PASTE_STRIP,
     from_markdown,
-    to_markdown,
 )
 from ..disp.markup import RULE_RE, line_prefix
 from .editing import TextEditing
@@ -61,10 +60,10 @@ class ClipboardEditing(TextEditing):
 
     def action_copy(self) -> None:
         """
-        Copy the selection, or the whole note if none (overrides TextArea, which does nothing without a selection), written as markdown.
+        Copy the selection, or the whole note if none (overrides TextArea, which does nothing without a selection), as stored.
         """
 
-        copy_text(self.app, to_markdown(self.selected_text or self.text))
+        copy_text(self.app, self.selected_text or self.text)
 
     def action_paste(self) -> None:
         """
@@ -134,7 +133,7 @@ class ClipboardEditing(TextEditing):
             first = PASTE_INLINE
 
         above = self._stored_line(row - 1) if row > 0 else ""
-        converted = from_markdown(text, self.rule, first, above)
+        converted = from_markdown(text, first, above)
 
         # A pasted rule would swallow the words after the cursor (and stop being a rule)
         after = self.document[end[0]][end[1] :]
@@ -179,4 +178,4 @@ class ClipboardEditing(TextEditing):
         self.enter_insert()
         super().action_cut()
 
-        copy_text(self.app, to_markdown(removed))
+        copy_text(self.app, removed)

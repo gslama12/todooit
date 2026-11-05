@@ -2,16 +2,11 @@
 Editing keys: enter, backspace, nesting, clearing
 """
 
-from typing import Optional, Tuple
-
-from todooit.utils.links import folded_emph
-
+from ..disp.document import FoldedDocument
 from ..disp.markup import (
     INDENT,
     RULE_RE,
-    bullet_glyph,
     indent_depth,
-    item_number,
     line_prefix,
     marker_start,
     recount,
@@ -86,14 +81,6 @@ class TextEditing(ModalEditor):
         """
 
         row, column = self.cursor_location
-        pair = self._emph_ending_at(row, column)
-
-        if pair is not None:
-            # Cursor sits right after an emphasis's closing mark: backspace
-            # removes the emphasis instead of eating the last letter (marks are invisible).
-            self._take_emph_off(row, column, pair)
-            return True
-
         line = self.document[row]
         _, body = split_quote(line)
         _, bullet, _ = split_indent(body)
@@ -119,36 +106,6 @@ class TextEditing(ModalEditor):
 
         return True
 
-    def _emph_ending_at(
-        self, row: int, column: int
-    ) -> Optional[Tuple[int, int]]:
-        """
-        (start, end) of an emphasised phrase if the cursor sits right at its end, else None - that's where backspace removes the (invisible) marks.
-        """
-
-        # Only ever asked about the cursor's row, which is raw
-        for start, end in folded_emph(self._stored_line(row), raw=True):
-            if column == end:
-                return start, end
-
-        return None
-
-    def _take_emph_off(self, row: int, column: int, pair: Tuple[int, int]) -> None:
-        """
-        Remove both emphasis marks in `pair`, keeping the words (one replace - the marks are folded off-page, with no column to delete individually).
-        """
-
-        start, end = pair
-
-        self.replace(
-            self.document[row][start:end],
-            (row, start),
-            (row, end),
-            maintain_selection_offset=False,
-        )
-
-        self.move_cursor((row, end))
-
     def _nested_item(self, row: int) -> bool:
         """
         Whether the list item on `row` is nested (checked via indent, not the glyph; quoted items are measured after the bar).
@@ -161,7 +118,7 @@ class TextEditing(ModalEditor):
 
     def _set_depth(self, row: int, levels: int) -> None:
         """
-        Move a line `levels` steps in/out, rewriting its indent (snapping off-level indents) and re-glyphing the bullet. A quoted line nests after its bar, which stays put.
+        Move a line `levels` steps in/out, rewriting its indent (snapping off-level indents). A quoted line nests after its bar, which stays put.
         """
 
         # Stored line, not folded: rewriting folded text would overwrite link
@@ -172,9 +129,8 @@ class TextEditing(ModalEditor):
 
         depth = max(0, indent_depth(indent) + levels)
 
-        # A glyph shows its depth; a number is put right by the recount below
-        marker = bullet_glyph(depth) if item_number(bullet) is None else bullet
-        head = bar + INDENT * depth + (marker if bullet else "")
+        # A number is put right by the recount below
+        head = bar + INDENT * depth + bullet
 
         if head + rest == line:
             return
@@ -197,7 +153,10 @@ class TextEditing(ModalEditor):
         Number the list `row` sits in again (a no-op off a list); the cursor stays on its words.
         """
 
-        for at, start, end, marker in recount(self.document.lines, row):
+        document = self.document
+        assert isinstance(document, FoldedDocument)
+
+        for at, start, end, marker in recount(document.stored_lines, row):
             self.replace(marker, (at, start), (at, end), maintain_selection_offset=True)
 
     def action_indent(self) -> None:

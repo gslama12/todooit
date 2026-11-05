@@ -13,12 +13,13 @@ from tests.test_ui.ui_base import (
     set_clipboard,
 )
 from todooit.ui.screens.note.disp.markdown import (
+    EMPH_MARK,
+    OLD_QUOTE_GLYPH,
     PASTE_INLINE,
     PASTE_STRIP,
     from_markdown,
     to_markdown,
 )
-from todooit.ui.screens.note.disp.markup import EMPH_MARK, QUOTE_GLYPH
 
 RULE = "─" * 10
 M = EMPH_MARK
@@ -28,30 +29,30 @@ M = EMPH_MARK
     "markdown, stored",
     [
         # Every heading depth is the note's one header
-        ("# Title", "Title\n" + RULE),
-        ("### Title ###", "Title\n" + RULE),
-        ("Title\n===", "Title\n" + RULE),
-        ("Title\n---", "Title\n" + RULE),
+        ("# Title", "# Title"),
+        ("### Title ###", "# Title"),
+        ("Title\n===", "# Title"),
+        ("Title\n---", "# Title"),
         ("#hashtag", "#hashtag"),
-        # Every emphasis is the note's one emphasis
-        ("**bold** and *it*", f"{M}bold{M} and {M}it{M}"),
-        ("***both*** __u__ _x_", f"{M}both{M} {M}u{M} {M}x{M}"),
+        # Stars are read as they are, underscores become stars
+        ("**bold** and *it*", "**bold** and *it*"),
+        ("***both*** __u__ _x_", "***both*** **u** **x**"),
         ("snake_case_name", "snake_case_name"),
         ("a * b * c", "a * b * c"),
         (r"\*not\* emphasis", "*not* emphasis"),
-        # Every bullet is a glyph, nested by however the file indents
-        ("- a\n* b\n+ c", "• a\n• b\n• c"),
-        ("- a\n    - b\n        - c", "• a\n  ◦ b\n    ▪ c"),
-        ("- a\n\t- b", "• a\n  ◦ b"),
-        ("  - a\n    - b", "• a\n  ◦ b"),
+        # Every bullet is a dash, nested by however the file indents
+        ("- a\n* b\n+ c", "- a\n- b\n- c"),
+        ("- a\n    - b\n        - c", "- a\n  - b\n    - c"),
+        ("- a\n\t- b", "- a\n  - b"),
+        ("  - a\n    - b", "- a\n  - b"),
         # Enumerations keep their numbers (the editor recounts them)
-        ("1. a\n2) b\n   - c", "1. a\n2. b\n  ◦ c"),
-        # Quotes, nested or not, are the one quote bar
-        ("> a\n> > b\n>c", f"{QUOTE_GLYPH}a\n{QUOTE_GLYPH}b\n{QUOTE_GLYPH}c"),
-        ("> - a", f"{QUOTE_GLYPH}• a"),
+        ("1. a\n2) b\n   - c", "1. a\n2. b\n  - c"),
+        # Quotes, nested or not, are the one quote
+        ("> a\n> > b\n>c", "> a\n> b\n> c"),
+        ("> - a", "> - a"),
         # A thematic break is a rule, kept off the text above it
-        ("***", RULE),
-        ("text\n\n* * *", "text\n\n" + RULE),
+        ("***", "---"),
+        ("text\n\n* * *", "text\n\n---"),
         # Links, code and code blocks pass through as written
         ("[docs](https://example.com/a_b_c_)", "[docs](https://example.com/a_b_c_)"),
         ("`*ptr*`", "`*ptr*`"),
@@ -62,25 +63,25 @@ M = EMPH_MARK
     ],
 )
 def test_from_markdown(markdown, stored):
-    assert from_markdown(markdown, RULE) == stored
+    assert from_markdown(markdown) == stored
 
 
 def test_a_rule_pasted_under_text_keeps_off_it():
-    """Straight under a line of words, a rule would be that line's header"""
+    """Straight under a line of words, a rule would be that line's underline elsewhere"""
 
-    assert from_markdown("---", RULE, above="words") == "\n" + RULE
-    assert from_markdown("---", RULE, above="") == RULE
+    assert from_markdown("---", above="words") == "\n---"
+    assert from_markdown("---", above="") == "---"
 
 
-def test_the_first_line_mid_line_takes_only_emphasis():
-    assert from_markdown("# not *here*\n- but here", RULE, PASTE_INLINE) == (
-        f"# not {M}here{M}\n• but here"
+def test_the_first_line_mid_line_is_left_as_words():
+    assert from_markdown("# not _here_\n- but here", PASTE_INLINE) == (
+        "# not **here**\n- but here"
     )
 
 
 def test_the_first_line_after_a_marker_drops_its_own():
-    assert from_markdown("- item", RULE, PASTE_STRIP) == "item"
-    assert from_markdown("## title", RULE, PASTE_STRIP) == "title"
+    assert from_markdown("- item", PASTE_STRIP) == "item"
+    assert from_markdown("## title", PASTE_STRIP) == "title"
 
 
 @pytest.mark.parametrize(
@@ -91,8 +92,8 @@ def test_the_first_line_after_a_marker_drops_its_own():
         ("• a\n  ◦ b\n    ▪ c", "- a\n  - b\n    - c"),
         # Markdown nests under a number at its words, three columns in
         ("1. a\n  • b", "1. a\n   - b"),
-        (f"{QUOTE_GLYPH}quoted\nafter", "> quoted\n\nafter"),
-        (f"{QUOTE_GLYPH}• item", "> - item"),
+        (f"{OLD_QUOTE_GLYPH}quoted\nafter", "> quoted\n\nafter"),
+        (f"{OLD_QUOTE_GLYPH}• item", "> - item"),
         (f"{M}bold{M} words", "**bold** words"),
         (f"{M} spaced {M}", " **spaced** "),
         (f"orphan{M} mark", "orphan mark"),
@@ -103,36 +104,7 @@ def test_to_markdown(stored, markdown):
     assert to_markdown(stored) == markdown
 
 
-def test_a_note_survives_the_round_trip():
-    stored = (
-        "Plan\n" + RULE + "\n"
-        f"some {M}bold{M} words\n"
-        "• one\n  ◦ two\n"
-        "1. first\n2. second\n\n"
-        f"{QUOTE_GLYPH}said\n\n" + RULE
-    )
-
-    assert from_markdown(to_markdown(stored), RULE) == stored
-
-
-async def test_copying_the_note_writes_markdown():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-        editor = screen.editor
-
-        editor.load_text("Plan\n" + editor.rule + f"\n• one\n{QUOTE_GLYPH}{M}said{M}")
-        await pilot.pause()
-
-        await pilot.press("ctrl+c")
-        await pilot.pause()
-
-        assert pilot.app.clipboard == "# Plan\n- one\n> **said**"
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_pasting_markdown_writes_the_markup_it_types_as():
+async def test_pasting_markdown_stores_it_and_numbers_the_list():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
         editor = screen.editor
@@ -142,8 +114,8 @@ async def test_pasting_markdown_writes_the_markup_it_types_as():
         await pilot.pause()
 
         # The pasted list is numbered as a list typed in would be
-        assert editor.text == f"Plan\n{editor.rule}\n• {M}one{M}\n1. a\n2. b"
-        assert editor.cursor_location == (4, len("2. b"))
+        assert editor.text == "# Plan\n- **one**\n1. a\n2. b"
+        assert editor.cursor_location == (3, len("2. b"))
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -164,10 +136,10 @@ async def test_the_terminals_own_paste_reads_markdown_too():
         await pilot.pause()
 
         editor.move_cursor((0, len("written")))
-        editor.post_message(events.Paste("\n> **quoted**"))
+        editor.post_message(events.Paste("\n> > **quoted**"))
         await pilot.pause()
 
-        assert editor.text == f"written\n{QUOTE_GLYPH}{M}quoted{M}"
+        assert editor.text == "written\n> **quoted**"
         assert screen.editor.mode == "INSERT"
 
         await pilot.press("escape", "escape")
@@ -187,7 +159,7 @@ async def test_pasting_mid_line_leaves_line_markup_as_words():
         await pilot.press("ctrl+v")
         await pilot.pause()
 
-        assert editor.text == f"count: # 1 {M}more{M}"
+        assert editor.text == "count: # 1 *more*"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -198,7 +170,7 @@ async def test_pasting_a_bullet_onto_a_bullet_makes_one():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text("• ")
+        editor.load_text("- ")
         await pilot.pause()
 
         editor.move_cursor((0, 2))
@@ -206,7 +178,7 @@ async def test_pasting_a_bullet_onto_a_bullet_makes_one():
         await pilot.press("ctrl+v")
         await pilot.pause()
 
-        assert editor.text == "• item\n• next"
+        assert editor.text == "- item\n- next"
 
         await pilot.press("escape", "escape")
         await pilot.pause()

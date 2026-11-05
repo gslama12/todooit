@@ -1,5 +1,5 @@
 """
-The note's markdown-ish markup: constants, regexes and pure line parsing
+The note's markdown: constants, regexes, pure line parsing and how a line is drawn
 """
 
 import re
@@ -7,19 +7,15 @@ from typing import Container, Iterator, List, Optional, Sequence, Tuple
 
 from rich.cells import cell_len
 
-from todooit.utils import (
-    find_links,
-    fold_links,
-)
+from todooit.utils import fold_links
 from todooit.utils.links import (
-    EMPH_MARK,
+    HEADING_RE,
     folded_emph,
-    mark_pairs,
+    star_pairs,
 )
 
-# Stored as the actual glyph (not a "- " swapped at render time) since a
-# TextArea draws exactly the text it holds. One glyph per nesting level; past
-# the last, the deepest glyph is reused.
+# What a bullet is drawn as, off the cursor line. One glyph per nesting level;
+# past the last, the deepest glyph is reused.
 BULLET_GLYPHS = ("•", "◦", "▪")
 
 # One nesting level, in columns.
@@ -29,73 +25,35 @@ INDENT = "  "
 # below this the indent is dropped and the line wraps back at the margin.
 WRAP_MIN = 12
 
-# A header is a title line followed by a rule line. The same rule with no
-# title above it is a plain separator - told apart by whether there are words
-# directly above it.
+# What `---` is drawn as, repeated across the window.
 RULE = "─"
 
-# Rule width, before a narrow window shortens it.
-HEADER_WIDTH = 60
-
-# Quote bar glyph, stored in place of markdown's `>` (converted on input, so
-# what's on disk is already what's drawn).
+# What `> ` is drawn as: the same two columns, so no column moves.
 QUOTE_GLYPH = "▎ "
-QUOTE_MARK = ">"
-
-# A mark only opens a line when it has nothing but indent before it and a
-# space after it - otherwise `-` is a hyphen, `*` is emphasis, `#` a number
-# sign.
-
-# Typed forms of a bullet; both map to the same glyph (looked up by depth,
-# not stored here).
-BULLET_MARKS = ("-", "*")
-
-# `*` also opens emphasis when a pair surrounds a phrase; followed by a space
-# it's a bullet instead.
-EMPH_STAR = "*"
-
-# Markdown heading marker; any depth of `#` collapses to this note's one
-# heading style.
-HEADER_MARK = "#"
-
-# `---` becomes the rule (a `-` alone is a bullet instead).
-DASHES = "--"
 
 # What the styled spans are tagged with; the theme below maps them to styles
 EMPH = "note-emph"
 MARKER = "note-marker"
 BULLET_SPANS = tuple(f"note-bullet-{depth}" for depth in range(len(BULLET_GLYPHS)))
 RULE_SPAN = "note-rule"
-HEADER = "note-header"
+# One per heading level; every level past the last wears the last
+HEADER_SPANS = tuple(f"note-header-{level}" for level in (1, 2, 3))
 LINK = "note-link"
 QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
 QUOTE_ITEM = "note-quote-item"
 
-# Emphasis is delimited by EMPH_MARK, a zero-width space (defined in
-# utils/links.py, where the folding lives) so it costs no columns and holds
-# no cursor position - unlike `*`, which occupies a column.
-#
-# `*` pairs are still recognized (pasted or legacy notes) using markdown's own
-# rule: something between the stars, neither side touching a space, so
-# `a * b * c` stays arithmetic.
-EMPH_RE = re.compile(
-    rf"{EMPH_MARK}(?P<emph>[^{EMPH_MARK}]+){EMPH_MARK}"
-    r"|\*(?P<star>[^*\s](?:[^*]*[^*\s])?)\*"
-)
+# A mark only opens a line when it has nothing but indent before it and a space
+# after it - otherwise `-` is a hyphen, `*` is emphasis. A number keeps its own
+# figures, and is otherwise a bullet - colored, carried on, nested and unwound
+# the same way - whose count `recount` keeps straight.
+ITEM_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>[-*] |(?P<number>\d+)\. )")
 
-# A list item: a bullet glyph, or a number. A number keeps no glyph, and is
-# otherwise a bullet - colored, carried on, nested and unwound the same way -
-# whose count `recount` keeps straight.
-ITEM_RE = re.compile(
-    rf"^(?P<indent>[ \t]*)(?P<marker>[{''.join(BULLET_GLYPHS)}] |(?P<number>\d+)\. )"
-)
+QUOTE_RE = re.compile(r"^(?P<indent>[ \t]*)(?P<marker>> )")
 
-QUOTE_RE = re.compile(rf"^(?P<indent>[ \t]*)(?P<marker>{QUOTE_GLYPH})")
-
-# A line that's nothing but rule; three is the shortest run read as
+# A line that's nothing but dashes; three is the shortest run read as
 # intentional rather than a stray character.
-RULE_RE = re.compile(rf"^{RULE}{{3,}}[ \t]*$")
+RULE_RE = re.compile(r"^-{3,}[ \t]*$")
 
 
 def indent_depth(indent: str) -> int:
@@ -151,8 +109,8 @@ def recount(lines: Sequence[str], row: int) -> List[Tuple[int, int, int, str]]:
     that depth; a nested list, or one after a bullet, starts at 1. The list's
     first item keeps the number it was typed with, so `5.` can open one.
 
-    Only markers are rewritten (lines may carry folded links, which a whole-line
-    rewrite would lose), as (row, start, end, marker) edits.
+    `lines` are as stored. Only markers are rewritten, as (row, start, end,
+    marker) edits.
     """
 
     def item(at: int) -> Optional[Tuple[str, str, str]]:
@@ -214,30 +172,6 @@ def marker_start(line: str) -> int:
     return len(bar) + len(item.group("indent"))
 
 
-def star_pair(line: str, column: int) -> Optional[int]:
-    """Column of the `*` pairing with the one at `column`, or None if it closes nothing."""
-
-    opening = line.rfind(EMPH_STAR, 0, column)
-
-    if opening < 0:
-        return None
-
-    inner = line[opening + 1 : column]
-
-    if not inner or inner[0].isspace() or inner[-1].isspace():
-        return None
-
-    return opening
-
-
-def star_closing(line: str, column: int) -> Optional[int]:
-    """Column of the `*` pairing with one typed at `column` to open it, or None if it opens nothing."""
-
-    # star_pair run backwards: on the reversed line the closing star is an opening one.
-    opening = star_pair(line[::-1], len(line) - column)
-    return None if opening is None else len(line) - 1 - opening
-
-
 def split_indent(line: str) -> Tuple[str, str, str]:
     """Split a line (past its quote bar, if any) into (indent, list marker, rest); marker is "" if none."""
 
@@ -275,67 +209,99 @@ def hanging_width(line: str, tab_width: int = len(INDENT)) -> int:
     return cell_len(hanging_prefix(line).expandtabs(tab_width))
 
 
-def tidy_marks(text: str) -> str:
+def heading_level(line: str) -> int:
+    """How many `#` a heading opens with; 0 if `line` isn't a heading."""
+
+    heading = HEADING_RE.match(line)
+
+    return len(heading.group().rstrip()) if heading else 0
+
+
+def heading_span(line: str) -> Optional[str]:
+    """The span a heading's level wears, or None if `line` isn't a heading."""
+
+    level = heading_level(line)
+
+    return HEADER_SPANS[min(level, len(HEADER_SPANS)) - 1] if level else None
+
+
+def capitals(text: str) -> str:
     """
-    Strip emphasis marks that lost their pair (e.g. an edit cut a pair in
-    two). Run on save, not every keystroke - the fold hides orphans anyway.
-    """
-
-    if EMPH_MARK not in text:
-        return text
-
-    lines = []
-
-    for line in text.split("\n"):
-        keep = {column for pair in mark_pairs(line) for column in pair}
-
-        lines.append(
-            "".join(
-                character
-                for column, character in enumerate(line)
-                if character != EMPH_MARK or column in keep
-            )
-        )
-
-    return "\n".join(lines)
-
-
-def scan_markup(
-    line: str,
-    following: str = "",
-    links: Optional[list] = None,
-    emph: Optional[list] = None,
-) -> Iterator[Tuple[int, int, str]]:
-    """
-    Styled spans of one line, as (start, end, style) offsets in UTF-8 bytes -
-    `TextArea.render_line` maps offsets through a byte-to-codepoint table, so
-    character offsets would misplace on a multi-byte character.
-
-    `following` is the next line, needed to recognize a header (title + rule
-    below). `line` is the line as *drawn* (links folded, emphasis marks
-    removed); `links`/`emph` are recomputed from `line` if not given.
+    `text` in capitals, one character for one, so the fold's column maps still
+    hold: a letter with no single capital (`ß`) stays as it is.
     """
 
-    def byte(index: int) -> int:
-        return len(line[:index].encode("utf-8"))
+    return "".join(
+        char.upper() if len(char.upper()) == 1 else char for char in text
+    )
 
-    links = links if links is not None else find_links(line)
-    emph = emph if emph is not None else folded_emph(line)
+
+def block_kind(line: str) -> Optional[str]:
+    """The span of a line drawn whole across the window (heading, rule), else None."""
 
     if RULE_RE.match(line):
-        yield 0, byte(len(line)), RULE_SPAN
-        return
+        return RULE_SPAN
 
-    if RULE_RE.match(following) and line.strip():
-        # Whole line is the header; no bullets/emphasis parsed inside a title
-        yield 0, byte(len(line)), HEADER
+    return heading_span(line)
+
+
+def draw_line(line: str, raw: bool = False) -> str:
+    """
+    A stored line as the page shows it: folded, with its quote and bullet marks
+    swapped for their glyphs. A glyph takes the column its mark took, so these
+    swaps move nothing and the fold's column maps still hold. A top-level
+    heading is drawn in capitals. A raw line is handed out as written.
+    """
+
+    text = fold_links(line, raw)[0]
+
+    if raw:
+        return text
+
+    if heading_level(line) == 1:
+        return capitals(text)
+
+    bar, body = split_quote(line)
+
+    if bar:
+        start = len(bar) - len(QUOTE_GLYPH)
+        text = text[:start] + QUOTE_GLYPH + text[len(bar) :]
+
+    item = ITEM_RE.match(body)
+
+    if item and item.group("number") is None:
+        start = len(bar) + item.start("marker")
+        glyph = bullet_glyph(indent_depth(item.group("indent")))
+        text = text[:start] + glyph + text[start + len(glyph) :]
+
+    return text
+
+
+def scan_markup(line: str, raw: bool = False) -> Iterator[Tuple[int, int, str]]:
+    """
+    Styled spans of one stored line, as (start, end, style) offsets in UTF-8
+    bytes of the line as drawn - `TextArea.render_line` maps offsets through a
+    byte-to-codepoint table, so character offsets would misplace on a multi-byte
+    character. A line's opening marks take the same columns stored and drawn.
+    """
+
+    drawn = draw_line(line, raw)
+
+    def byte(index: int) -> int:
+        return len(drawn[:index].encode("utf-8"))
+
+    block = block_kind(line)
+
+    if block:
+        # Whole line, in one style; nothing is parsed inside a title
+        yield 0, byte(len(drawn)), block
         return
 
     bar, body = split_quote(line)
 
     if bar:
         # A quoted line is still styled for lists/links after this
-        yield 0, byte(len(line)), QUOTE
+        yield 0, byte(len(drawn)), QUOTE
         yield 0, byte(len(bar)), QUOTE_BAR
 
     # Bullet and numbered markers style the same way. Outside a quote, color
@@ -353,49 +319,26 @@ def scan_markup(
         )
 
     # Underlined exactly where `o` would open it
-    for link in links:
+    for link in fold_links(line, raw)[1]:
         yield byte(link.start), byte(link.end), LINK
 
-    # Zero-width marks are already off the page; only the words need styling
-    for start, end in emph:
+    # Off the cursor line the marks are off the page; only the words need styling
+    for start, end in folded_emph(line, raw):
         yield byte(start), byte(end), EMPH
 
-    # Star-delimited emphasis (pasted/mid-typing): stars are real columns, so
-    # the words are styled first and the stars marked over them
-    for match in EMPH_RE.finditer(line):
-        if match.group("star") is None:
-            continue
-
-        start, end = match.span()
-
-        yield byte(start + 1), byte(end - 1), EMPH
-        yield byte(start), byte(start + 1), MARKER
-        yield byte(end - 1), byte(end), MARKER
+    if raw:
+        # The stars are real columns here, so they're marked around the words
+        for opens, words, closes, end in star_pairs(line):
+            yield byte(words), byte(closes), EMPH
+            yield byte(opens), byte(words), MARKER
+            yield byte(closes), byte(end), MARKER
 
 
 def scan_note(lines, raw_rows: Container[int] = ()) -> Iterator[list]:
     """
-    Styled spans for every line of a note, one list per line.
-
-    Walks the whole note (not line by line) because a header needs the line
-    below it. `lines` are as *stored*; spans land on the *drawn* text (links
-    folded to their names, except on `raw_rows`), folded here so spans and text
-    always match.
+    Styled spans for every stored line of a note, one list per line, landing on
+    the text as drawn: raw on `raw_rows`, rendered everywhere else.
     """
 
-    drawn = []
-    found = []
-    lit = []
-
     for row, line in enumerate(lines):
-        raw = row in raw_rows
-        text, links = fold_links(line, raw)
-
-        drawn.append(text)
-        found.append(links)
-        lit.append(folded_emph(line, raw))
-
-    for row, line in enumerate(drawn):
-        following = drawn[row + 1] if row + 1 < len(drawn) else ""
-
-        yield list(scan_markup(line, following, found[row], lit[row]))
+        yield list(scan_markup(line, row in raw_rows))

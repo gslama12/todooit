@@ -24,7 +24,6 @@ from todooit.utils import (
 from todooit.utils.links import drawn_column
 
 from ...base import BaseScreen
-from ..disp.markup import tidy_marks
 from ..disp.theme import THEME_NAME, build_theme
 from ..vim.editor import NoteEditor
 from ..vim.modes import MODE_INSERT, MODE_NORMAL
@@ -399,7 +398,7 @@ class NoteScreenBase(BaseScreen):
 
     def save(self) -> None:
         self._save_timer = None
-        self.store_note(tidy_marks(self.editor.text))
+        self.store_note(self.editor.text)
 
     def ask(self, prompt: str, answered: Callable[[], None]) -> None:
         """Put a question up in place of the hint line; one at a time, answered by the next keystroke."""

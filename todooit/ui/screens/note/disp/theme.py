@@ -11,7 +11,7 @@ from todooit.utils import blend
 from .markup import (
     BULLET_SPANS,
     EMPH,
-    HEADER,
+    HEADER_SPANS,
     LINK,
     MARKER,
     QUOTE,
@@ -21,6 +21,9 @@ from .markup import (
 )
 
 THEME_NAME = "todooit-note"
+
+# How far a heading's color is faded towards the note's background, behind it
+HEADER_WASH = 0.82
 
 
 def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
@@ -57,10 +60,19 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
                 span: Style(color=color, bold=True)
                 for span, color in zip(BULLET_SPANS, bullet_colors)
             },
-            # Section break: faint rule + title. No background on the title -
-            # would swallow the cursor (primary-on-background1).
+            # Section break: a faint rule.
             RULE_SPAN: Style(color=blend(theme.foreground1, theme.background2, 0.7)),
-            HEADER: Style(color=theme.primary, bold=True),
+            # One color per level, with a gentle wash of it behind the row.
+            **{
+                span: Style(
+                    color=color,
+                    bold=True,
+                    bgcolor=blend(color, theme.background2, HEADER_WASH),
+                )
+                for span, color in zip(
+                    HEADER_SPANS, (theme.blue, theme.purple, theme.cyan)
+                )
+            },
             # Same underline+italic a link wears on the todo rows.
             LINK: Style(color=theme.primary, underline=True, italic=True),
         },
