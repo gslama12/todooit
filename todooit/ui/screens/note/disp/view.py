@@ -2,6 +2,9 @@
 The text area a note is drawn in: folded markup, hanging lines, quote bars
 """
 
+from dataclasses import dataclass
+from typing import Optional, Sequence, Tuple
+
 from rich.segment import Segment
 from rich.style import Style
 from textual import events
@@ -19,17 +22,40 @@ from .document import (
     NoteEdit,
 )
 from .markup import (
+    BACKDROP,
     QUOTE_BAR,
     QUOTE_GLYPH,
     RULE,
     RULE_SPAN,
+    TARGET,
     heading_span,
     scan_note,
 )
 
 
+@dataclass(frozen=True)
+class Overlay:
+    """Something drawn over the note for a moment, whatever it's there for."""
+
+    # Rows dimmed from edge to edge
+    dimmed_rows: range
+
+    # (row, start column, end column, style name), in stored columns. Later ones
+    # go over earlier ones, and text folded off the page isn't drawn at all.
+    spans: Sequence[Tuple[int, int, int, str]]
+
+
 class NoteView(TextArea):
     """A TextArea that draws the note's markup instead of showing it raw."""
+
+    overlay: Optional[Overlay] = None
+
+    def show_overlay(self, overlay: Optional[Overlay]) -> None:
+        """Draw `overlay` over the note, or none."""
+
+        self.overlay = overlay
+        self._build_highlight_map()
+        self.refresh()
 
     def _set_document(self, text: str, language) -> None:
         """
@@ -136,9 +162,40 @@ class NoteView(TextArea):
         assert isinstance(document, FoldedDocument)
 
         found = wrapped.row_at(y + self.scroll_offset.y)
+
+        if found and self.overlay and found[0] in self.overlay.dimmed_rows:
+            return self._dim(strip)
+
         span = heading_span(document.stored_line(found[0])) if found else None
 
         return self._wash(strip, span) if span else strip
+
+    def _dim(self, strip: Strip) -> Strip:
+        """
+        A whole row put aside, whatever it's made of: nothing on it stands out,
+        except for the cursor and what's marked on it.
+        """
+
+        base = self._theme.base_style
+        cursor = self._theme.cursor_style
+        kept = {
+            cursor.bgcolor if cursor else None,
+            self._theme.syntax_styles[TARGET].bgcolor,
+        }
+        plain = Style(
+            color=self._theme.syntax_styles[BACKDROP].color,
+            bgcolor=base.bgcolor if base else None,
+            bold=False,
+            italic=False,
+            underline=False,
+        )
+
+        return Strip(
+            Segment(text, style, control)
+            if style is not None and style.bgcolor in kept
+            else Segment(text, (style or Style()) + plain, control)
+            for text, style, control in strip
+        )
 
     def _wash(self, strip: Strip, span: str) -> Strip:
         """
@@ -254,3 +311,20 @@ class NoteView(TextArea):
 
         for row, spans in enumerate(scan_note(lines, raw_rows)):
             highlights[row].extend(spans)
+
+        for row, start, end, name in self.overlay.spans if self.overlay else ():
+            assert isinstance(document, FoldedDocument)
+
+            drawn = document[row]
+            start = document._drawn((row, start))[1]
+            end = document._drawn((row, end))[1]
+
+            # The map counts in bytes; an end of 0 would mean the whole line
+            if start < end:
+                highlights[row].append(
+                    (
+                        len(drawn[:start].encode()),
+                        len(drawn[:end].encode()),
+                        name,
+                    )
+                )

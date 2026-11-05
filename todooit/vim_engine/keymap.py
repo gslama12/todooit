@@ -13,6 +13,19 @@ class VimMotion(Enum):
     RIGHT = "right"
     UP = "up"
     DOWN = "down"
+    WORD_FORWARD = "word_forward"
+    WORD_BACKWARD = "word_backward"
+    WORD_END = "word_end"
+    FIRST_NON_BLANK = "first_non_blank"
+    LAST_CHARACTER = "last_character"
+    LINE_ABOVE = "line_above"
+    LINE_BELOW = "line_below"
+    FIND_FORWARD = "find_forward"
+    FIND_BACKWARD = "find_backward"
+    TILL_FORWARD = "till_forward"
+    TILL_BACKWARD = "till_backward"
+    REPEAT_FIND = "repeat_find"
+    REVERSE_FIND = "reverse_find"
 
 
 class VimCommand(Enum):

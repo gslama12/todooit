@@ -8,6 +8,14 @@ from typing import Protocol, Tuple
 class Buffer(Protocol):
     """Text in lines and a cursor, as (row, column) into the raw text."""
 
+    @property
+    def line_count(self) -> int:
+        """How many lines there are; an empty text still has one."""
+
+    @property
+    def visible_rows(self) -> range:
+        """The lines on screen, in whole or in part."""
+
     def line(self, row: int) -> str:
         """The raw text of `row`."""
 

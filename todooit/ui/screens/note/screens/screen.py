@@ -85,7 +85,7 @@ class NoteScreenBase(BaseScreen):
     # `{move}` is filled in with the keys that move here (see `hint_for`).
     HINTS = {
         MODE_NORMAL: (
-            "i insert    {move} move    ud half page    o link    f files    "
+            "i insert    {move} move    ud half page    o link    gf files    "
             "ctrl+c copy    ctrl+d clear    esc close"
         ),
         # Markup marks, not keys to press. Kept to 80 columns (usual terminal
@@ -238,14 +238,22 @@ class NoteScreenBase(BaseScreen):
 
         mode = self.editor.mode
 
-        frame = self.frame
-
-        frame.border_subtitle = f" {mode} "
-        frame.set_class(mode == MODE_INSERT, "-insert")
+        self.pending_changed()
+        self.frame.set_class(mode == MODE_INSERT, "-insert")
 
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
             self.hint.update(self.hint_for(mode, self.picking_files))
+
+    def pending_changed(self) -> None:
+        """Redraw the mode chip, with any partial command beside it."""
+
+        editor = self.editor
+        pending = escape(editor.engine.pending)
+
+        self.frame.border_subtitle = (
+            f" {editor.mode} {pending} " if pending else f" {editor.mode} "
+        )
 
     def report(self, message: str) -> None:
         """

@@ -55,10 +55,6 @@ class NormalKeys(TextEditing):
             self.scroll_half_page(key == HALF_PAGE_UP)
             return True
 
-        if key == "f":
-            self.host.pick_files()
-            return True
-
         if key == "o":
             self._open_link_under_cursor()
             return True

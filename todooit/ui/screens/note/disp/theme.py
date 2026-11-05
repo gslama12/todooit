@@ -9,6 +9,7 @@ from todooit.api.theme import TodooitThemeBase
 from todooit.utils import blend
 
 from .markup import (
+    BACKDROP,
     BULLET_SPANS,
     EMPH,
     HEADER_SPANS,
@@ -18,6 +19,7 @@ from .markup import (
     QUOTE_BAR,
     QUOTE_ITEM,
     RULE_SPAN,
+    TARGET,
 )
 
 THEME_NAME = "todooit-note"
@@ -75,5 +77,8 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             },
             # Same underline+italic a link wears on the todo rows.
             LINK: Style(color=theme.primary, underline=True, italic=True),
+            # Text put aside, so the places to go stand out from it.
+            BACKDROP: Style(color=blend(theme.foreground1, theme.background2, 0.6)),
+            TARGET: Style(color=theme.background1, bgcolor=theme.red, bold=True),
         },
     )

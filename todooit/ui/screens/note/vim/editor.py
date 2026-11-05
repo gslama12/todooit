@@ -26,7 +26,7 @@ class NoteEditor(NormalKeys, ClipboardEditing):
     so markup nests inside it too.
 
     Files are attached, not typed: `ctrl+v` drops one in the footer strip;
-    `f` focuses it.
+    `gf` focuses it.
     """
 
     BINDINGS = [
@@ -67,8 +67,22 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
-        if self.engine.feed(key):
+        # `gf` can't be the engine's yet: `g` isn't, while `gg` is still here
+        if self._pending_g and key in ("f", "escape"):
             self._pending_g = False
+
+            if key == "f":
+                self.host.pick_files()
+
+            self._key_used(event)
+            return
+
+        used = self.engine.feed(key)
+        self.show_find_view()
+
+        if used:
+            self._pending_g = False
+            self.host.pending_changed()
             self._key_used(event)
             return
 

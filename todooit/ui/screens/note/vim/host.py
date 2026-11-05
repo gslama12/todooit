@@ -22,6 +22,9 @@ class EditorHost(Protocol):
     def mode_changed(self) -> None:
         """The keyboard mode changed: redraw whatever shows it."""
 
+    def pending_changed(self) -> None:
+        """The keys of a partial command changed: redraw whatever shows them."""
+
     def open_link(self, url: str) -> None:
         """Open `url`, reporting the outcome."""
 

@@ -168,7 +168,7 @@ async def test_normal_mode_answers_to_no_other_letter():
 
         assert screen.editor.mode == MODE_NORMAL
 
-        for key in ("a", "I", "A", "w", "b"):
+        for key in ("a", "I", "A", "q", "Q"):
             screen.editor.move_cursor((0, 0))
             await pilot.press(key)
             await pilot.pause()
@@ -2246,7 +2246,7 @@ async def test_a_pasted_sentence_is_still_a_sentence(tmp_path):
         assert "the file is in" in screen.editor.text
 
 
-async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
+async def test_gf_picks_the_files_up_and_escape_puts_them_down(tmp_path):
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
@@ -2254,14 +2254,14 @@ async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
         await pilot.press("escape")
 
         # Nothing attached: the key says so and the text keeps the keyboard
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert not screen.picking_files
         assert "Nothing attached" in str(screen.hint.render())
 
         await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
 
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert screen.picking_files
         assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL, True)
@@ -2296,7 +2296,7 @@ async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "one.md")
 
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.press("escape")
         await pilot.pause()
 
@@ -2316,7 +2316,7 @@ async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
             await pilot.press("escape")
             await attach(pilot, screen, report)
 
-            await pilot.press("f", "enter")
+            await pilot.press("g", "f", "enter")
             await pilot.pause()
 
             assert opened == [report]
@@ -2331,7 +2331,7 @@ async def test_xx_detaches_the_file_that_is_picked_out(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
 
-        await pilot.press("f", "j")          # onto the first of the two
+        await pilot.press("g", "f", "j")          # onto the first of the two
         await pilot.press("x", "x")
         await pilot.pause()
 
@@ -2377,7 +2377,7 @@ async def test_the_strip_grows_a_row_rather_than_hiding_a_file(tmp_path):
             assert name in drawn(screen)
 
         # Up and down walk the rows, and up off the top row is the way out
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert strip.row_of(strip.picked) == len(strip.rows) - 1
 
@@ -2403,7 +2403,7 @@ async def test_a_file_that_is_gone_is_offered_for_detaching(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "moved away.md")
 
-        await pilot.press("f", "enter")
+        await pilot.press("g", "f", "enter")
         await pilot.pause()
 
         assert screen.awaiting_answer

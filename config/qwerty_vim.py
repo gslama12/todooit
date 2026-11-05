@@ -38,6 +38,8 @@ VIM_NOTE_KEYS = {
     "j": "h",  # left
     "ö": "l",  # right
     "l": "j",  # down (k, up, stays where it is)
+    "h": ";",  # repeat the last f F t T
+    "H": ",",  # the same, the other way
 }
 
 
