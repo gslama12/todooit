@@ -204,6 +204,8 @@ async def test_emptying_the_bin_counts_what_goes_and_says_what_went():
         await pilot.press("x", "x")
         await pilot.pause()
 
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
 

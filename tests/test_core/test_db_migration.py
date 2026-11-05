@@ -22,7 +22,6 @@ from todooit.paths import HOME_ENV_VAR, database_file
 
 REPO = Path(__file__).parents[2]
 DOOIT_DDL = Path(__file__).with_name("dooit_v3.sql")
-LIVE_DB = Path(user_data_dir("todooit")) / "todooit.db"
 
 DUE = "2026-03-04 09:30:00.000000"
 
@@ -40,22 +39,40 @@ def _fingerprint(path: Path):
 
 
 @pytest.fixture(autouse=True, scope="module")
-def live_db_untouched():
-    """The real instance's database is the same file after these tests as before"""
+def default_db(tmp_path_factory):
+    """
+    A stand-in at the path the live database has when TODOOIT_HOME is unset
 
-    before = _fingerprint(LIVE_DB)
-    yield
-    assert _fingerprint(LIVE_DB) == before
+    Checked in place of the real file, which a running todooit writes to at any
+    moment, and which a migration going to the wrong place then cannot reach.
+    """
+
+    sandbox = tmp_path_factory.mktemp("default_location")
+
+    with pytest.MonkeyPatch.context() as patch:
+        # platformdirs goes by XDG_DATA_HOME on Linux and by HOME on macOS
+        patch.setenv("XDG_DATA_HOME", str(sandbox))
+        patch.setenv("HOME", str(sandbox))
+
+        path = Path(user_data_dir("todooit")) / "todooit.db"
+        assert path.is_relative_to(sandbox)
+
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"not to be touched")
+
+        before = _fingerprint(path)
+        yield path
+        assert _fingerprint(path) == before
 
 
 @pytest.fixture(autouse=True)
-def home(monkeypatch, tmp_path):
+def home(monkeypatch, tmp_path, default_db):
     """Every target these tests write is under pytest's temp dir"""
 
     monkeypatch.setenv(HOME_ENV_VAR, str(tmp_path / "home"))
 
     assert database_file().is_relative_to(tmp_path)
-    assert database_file() != LIVE_DB
+    assert database_file() != default_db
 
     return tmp_path / "home"
 

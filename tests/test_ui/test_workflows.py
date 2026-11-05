@@ -236,7 +236,9 @@ async def test_bin_round_trip_with_a_dropped_project():
         message = notification_message(app)
         assert message is not None and "abandoned" in message
 
-        # Empty the rest of the Bin for good
+        # Restoring went with the task, so back to the Bin to empty the rest of it
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
         await pilot.press("y")

@@ -15,6 +15,7 @@ from tests.test_ui.ui_base import (
 )
 from todooit.api import BIN, TODAY, Project, Todo
 from todooit.ui.tui import Todooit
+from todooit.ui.widgets.trees.projects_tree import ProjectsTree
 
 
 def shown(tree) -> list:
@@ -505,7 +506,7 @@ async def test_copy_description():
         assert app.clipboard == "nixos"
 
 
-async def test_pane_that_fits_has_no_scrollbar():
+async def test_pane_that_fits_has_no_scrollbar(monkeypatch):
     """
     The scrollbar keeps off a projects pane whose rows fit in it
 
@@ -537,6 +538,10 @@ async def test_pane_that_fits_has_no_scrollbar():
         # last row rather than below it
         assert ptree.virtual_size.height == ptree.scrollable_content_region.height
         assert not ptree.show_vertical_scrollbar
+
+        # The real case gets no resize, but the scrollbar forced up here brings
+        # one, which would put the gap right before the styles get the chance
+        monkeypatch.setattr(ProjectsTree, "on_resize", lambda self, _: None)
 
         # The gap a measurement taken against the unstyled pane would leave
         ptree._bottom_gap = fitted + 2
