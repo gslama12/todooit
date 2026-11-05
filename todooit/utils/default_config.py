@@ -810,8 +810,7 @@ def mode_label(api: TodooitAPI, mode: str) -> Text:
 
 
 # Today, written the way every other date in the app is written. Read off the
-# clock rather than out of an event: nothing happens in the app when midnight
-# passes, so the widget is what has to notice the day has turned.
+# clock rather than out of an event: no event fires when midnight passes.
 DATE_TICK = 60
 
 

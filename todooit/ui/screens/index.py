@@ -47,6 +47,9 @@ from .search import Found, SearchScreen
 # already says enough and flashing top-to-bottom adds little.
 FLASH_LIMIT = 5
 
+# How often, in seconds, the screen looks at whether the date has changed
+DAY_TICK = 60
+
 
 class DualSplit(Container):
     # The split when the projects pane isn't sized to its rows
@@ -534,3 +537,23 @@ class MainScreen(BaseScreen):
         self.call_after_refresh(
             lambda: self.post_message(GotoFixedProject(TODAY.key))
         )
+
+        self._day = date.today()
+        self.set_interval(DAY_TICK, self.refresh_on_new_day)
+
+    def refresh_on_new_day(self) -> None:
+        """Redraw every pane once the date has changed.
+
+        Today and Upcoming gather their rows by the date, but nothing happens
+        in the app at midnight to redraw them. Holds off during an edit or
+        under an overlay, and tries again on the next tick.
+        """
+
+        if self.app.screen is not self or self.mid_edit:
+            return
+
+        today = date.today()
+
+        if today != self._day:
+            self._day = today
+            self.refresh_panes(ChangedRows())

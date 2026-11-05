@@ -3,8 +3,10 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
-from datetime import datetime, timedelta
+import sys
+from datetime import date, datetime, timedelta
 
+import pytest
 from rich.style import Style as RichStyle
 from rich.styled import Styled
 from textual.style import Style
@@ -23,7 +25,8 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
-from todooit.api import Todo, move_project_to_bin, restore_todo
+from todooit.api import TODAY, UPCOMING, Todo, move_project_to_bin, restore_todo
+from todooit.ui.api.events import GotoFixedProject, SpawnHelp
 from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
 from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 
@@ -1326,3 +1329,151 @@ async def test_a_fixed_pane_gathers_its_blocks_once_per_redraw(monkeypatch):
 
         assert descriptions(today) == ["planned"]
         assert len(reads) == 1
+
+
+class NextDay(date):
+    """The date, as the clock reads it once midnight has passed"""
+
+    @classmethod
+    def today(cls):
+        return date.today() + timedelta(days=1)
+
+
+@pytest.fixture
+def turn_the_day(monkeypatch):
+    """Moves the clock past midnight for everything that gathers a pane"""
+
+    def turn():
+        for module in ("api.fixed_projects", "api.todo", "ui.screens.index"):
+            # Through sys.modules: `todooit.api` re-exports a function under
+            # the name of the fixed_projects module, shadowing it
+            monkeypatch.setattr(sys.modules[f"todooit.{module}"], "date", NextDay)
+
+    return turn
+
+
+async def go_to(pilot, key: str):
+    pilot.app.screen.post_message(GotoFixedProject(key))
+    await settle(pilot)
+
+
+async def tomorrows_task(pilot, name: str = "planned for tomorrow"):
+    """A task planned for tomorrow, with the Today pane in front (without it)"""
+
+    await create_and_move_to_todo(pilot)
+    await pilot.press("n")
+    await commit_line(pilot, name)
+    await schedule(pilot, "tomorrow")
+    await go_to(pilot, TODAY.key)
+
+
+async def test_a_new_day_brings_its_tasks_onto_today(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "planned for today")
+        await schedule(pilot, "today")
+        await pilot.press("n")
+        await commit_line(pilot, "planned for tomorrow")
+        await schedule(pilot, "tomorrow")
+
+        await go_to(pilot, TODAY.key)
+        tree = visible_todos(pilot.app)
+        assert descriptions(tree) == ["planned for today"]
+        was_on = tree.node.id
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        # Yesterday's task has slipped, so it leads; the cursor stays put
+        assert descriptions(tree) == ["planned for today", "planned for tomorrow"]
+        assert tree.node.id == was_on
+
+
+async def test_a_new_day_relabels_a_pane_out_of_sight(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+
+        await go_to(pilot, UPCOMING.key)
+        upcoming = visible_todos(pilot.app)
+        assert [row.label for row in upcoming._rows.values() if row.label] == [
+            "Tomorrow"
+        ]
+
+        await go_to(pilot, TODAY.key)
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await go_to(pilot, UPCOMING.key)
+
+        assert [row.label for row in upcoming._rows.values() if row.label] == ["Today"]
+
+
+async def test_the_same_day_redraws_nothing(monkeypatch):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        redraws = []
+        monkeypatch.setattr(
+            pilot.app.screen, "refresh_panes", lambda changed: redraws.append(changed)
+        )
+
+        pilot.app.screen.refresh_on_new_day()
+
+        assert redraws == []
+
+
+async def test_a_new_day_waits_for_an_edit_to_finish(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+        await go_to(pilot, UPCOMING.key)
+
+        tree = visible_todos(pilot.app)
+        await pilot.press("s")
+        await pilot.pause()
+        assert tree.is_editing
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        # The row being typed into is left alone, and the day isn't forgotten
+        assert tree.is_editing
+        assert [row.label for row in tree._rows.values() if row.label] == ["Tomorrow"]
+
+        await pilot.press("escape")
+        await pilot.pause()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        assert [row.label for row in tree._rows.values() if row.label] == ["Today"]
+
+
+async def test_a_new_day_waits_for_an_overlay_to_close(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+
+        main = pilot.app.screen
+        tree = visible_todos(pilot.app)
+
+        main.post_message(SpawnHelp())
+        await settle(pilot)
+        assert pilot.app.screen is not main
+
+        turn_the_day()
+        main.refresh_on_new_day()
+        await pilot.pause()
+        assert descriptions(tree) == []
+
+        await pilot.app.pop_screen()
+        await pilot.pause()
+        main.refresh_on_new_day()
+        await pilot.pause()
+
+        assert descriptions(tree) == ["planned for tomorrow"]
