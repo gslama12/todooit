@@ -141,13 +141,7 @@ class ClipboardEditing(TextEditing):
         if after and RULE_RE.match(converted.rsplit("\n", 1)[-1]):
             converted += "\n"
 
-        result = self._replace_via_keyboard(converted, start, end)
-
-        if result is None:
-            return
-
-        for pasted in range(row, result.end_location[0] + 1):
-            self._recount(pasted)
+        self._replace_via_keyboard(converted, start, end)
 
     def _paste_as_link(self, text: str) -> bool:
         """

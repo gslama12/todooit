@@ -100,11 +100,4 @@ class NoteEditor(NormalKeys, ClipboardEditing):
     def _handle_insert_key(self, event: events.Key) -> bool:
         """Handle an INSERT-mode key; True if handled, False to let it type."""
 
-        if event.key == "enter" and self._handle_enter():
-            return True
-
-        return (
-            event.key == "backspace"
-            and self.selection.is_empty
-            and self._handle_backspace()
-        )
+        return event.key == "enter" and self._handle_enter()

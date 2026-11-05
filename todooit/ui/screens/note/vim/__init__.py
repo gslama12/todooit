@@ -3,7 +3,7 @@ Changing the note's text from the keyboard:
 
 - `host`      `EditorHost`: all the editor asks of the window it's in
 - `modes`     `ModalEditor`: NORMAL and INSERT, and moving between them
-- `editing`   `TextEditing`: enter, backspace, nesting, clearing
+- `editing`   `TextEditing`: enter, nesting, clearing, renumbering
 - `clipboard` `ClipboardEditing`: copy, cut and paste
 - `normal`    `NormalKeys`: what each key does in NORMAL
 - `editor`    `NoteEditor`: the bindings, and which key goes where

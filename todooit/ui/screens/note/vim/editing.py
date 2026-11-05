@@ -1,11 +1,12 @@
 """
-Editing keys: enter, backspace, nesting, clearing
+Editing keys: enter, nesting, clearing, and keeping numbered lists counted
 """
+
+from textual.widgets.text_area import Location
 
 from ..disp.document import FoldedDocument
 from ..disp.markup import (
     INDENT,
-    RULE_RE,
     indent_depth,
     line_prefix,
     marker_start,
@@ -27,25 +28,6 @@ class TextEditing(ModalEditor):
 
         row, column = self.cursor_location
         line = self.document[row]
-
-        below = row + 1
-        closed = (
-            column == len(line)
-            and below < self.document.line_count
-            and RULE_RE.match(self.document[below])
-        )
-
-        if closed:
-            # Title + rule are one unit; enter from the title's end skips the rule into the section.
-            if below + 1 >= self.document.line_count:
-                self.insert(
-                    "\n",
-                    (below, len(self.document[below])),
-                    maintain_selection_offset=False,
-                )
-
-            self.move_cursor((below + 1, 0))
-            return True
 
         prefix = line_prefix(line)
 
@@ -70,38 +52,6 @@ class TextEditing(ModalEditor):
             # Empty top-level item: remove just the marker (a quoted
             # bullet loses the bullet first; the quote ends on the next enter).
             self.replace("", (row, glyph_at), (row, len(line)))
-            self.move_cursor((row, glyph_at))
-
-        return True
-
-    def _handle_backspace(self) -> bool:
-        """
-        Backspace where the (invisible) markup decides what it does; True if
-        handled, False to let it delete a plain character.
-        """
-
-        row, column = self.cursor_location
-        line = self.document[row]
-        _, body = split_quote(line)
-        _, bullet, _ = split_indent(body)
-
-        if not bullet or not 0 < column <= len(line_prefix(line)):
-            return False
-
-        # In the marker/indent: dedent one level (like enter on an
-        # empty item), rather than bite a glyph in half or eat the indent space by space.
-        if self._nested_item(row):
-            self._set_depth(row, -1)
-        else:
-            # A quoted item loses its bullet first; the quote ends on the next backspace.
-            glyph_at = marker_start(line)
-
-            self.replace(
-                "",
-                (row, glyph_at),
-                (row, len(line_prefix(line))),
-                maintain_selection_offset=False,
-            )
             self.move_cursor((row, glyph_at))
 
         return True
@@ -158,6 +108,30 @@ class TextEditing(ModalEditor):
 
         for at, start, end, marker in recount(document.stored_lines, row):
             self.replace(marker, (at, start), (at, end), maintain_selection_offset=True)
+
+    def _delete_via_keyboard(self, start: Location, end: Location):
+        result = super()._delete_via_keyboard(start, end)
+        self._recount_edit(start, end, result)
+
+        return result
+
+    def _replace_via_keyboard(self, insert: str, start: Location, end: Location):
+        result = super()._replace_via_keyboard(insert, start, end)
+        self._recount_edit(start, end, result)
+
+        return result
+
+    def _recount_edit(self, start: Location, end: Location, result) -> None:
+        """
+        Whatever a key typed or deleted, count the lists on the lines it left
+        behind; nothing to do if read_only refused the edit.
+        """
+
+        if result is None:
+            return
+
+        for row in range(min(start, end)[0], result.end_location[0] + 1):
+            self._recount(row)
 
     def action_indent(self) -> None:
         """

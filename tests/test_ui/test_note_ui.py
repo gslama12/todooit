@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from rich.cells import cell_len
 from textual.geometry import Offset
+from textual.widgets.text_area import Selection
 
 from tests.test_ui.ui_base import (
     boot,
@@ -652,23 +653,20 @@ async def test_an_edit_mid_list_moves_the_numbers_below_it():
         await pilot.pause()
 
 
-async def test_backspace_steps_a_nested_enumeration_out():
+async def test_backspace_takes_a_nested_numbers_marker_one_character_at_a_time():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        editor = screen.editor
 
-        await pilot.press(*list("1. top"))
-        await pilot.press("enter", "tab")
-        await pilot.press(*list("child"))
-        assert screen.editor.text == "1. top\n  1. child"
+        editor.text = "1. top\n  1. child"
+        editor.move_cursor((1, 5))
 
-        # From the head of the words: out a level first, renumbered
-        screen.editor.move_cursor((1, 5))
         await pilot.press("backspace")
-        assert screen.editor.text == "1. top\n2. child"
+        assert editor.text == "1. top\n  1.child"
 
-        # Then the number goes, and the words stay
         await pilot.press("backspace")
-        assert screen.editor.text == "1. top\nchild"
+        assert editor.text == "1. top\n  1child"
+        assert editor.cursor_location == (1, 3)
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1562,18 +1560,10 @@ async def test_an_empty_nested_bullet_steps_out_inside_a_quote_too():
         await pilot.pause()
 
 
-async def test_backspace_at_the_words_steps_a_nested_bullet_out():
-    """
-    The bug: `backspace` at the head of a nested item ate the marker
-
-    Which is the wrong end of the list to end: an item under another one is a
-    branch, and the key that walks back up it has to leave it an item. It
-    steps out a level at a time now, words and all, and the marker only goes
-    at the top, where there is no level left to step back to.
-    """
-
+async def test_backspace_takes_a_nested_bullets_marker_and_indent_like_any_text():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        editor = screen.editor
 
         await pilot.press(*list("- top"))
         await pilot.press("enter", "tab")
@@ -1582,44 +1572,149 @@ async def test_backspace_at_the_words_steps_a_nested_bullet_out():
         await pilot.press(*list("grandchild"))
 
         # Back to the head of the words, where the marker ends
-        screen.editor.move_cursor((2, 6))
+        editor.move_cursor((2, 6))
 
         await pilot.press("backspace")
-        assert screen.editor.text == "- top\n  - child\n  - grandchild"
+        assert editor.text == "- top\n  - child\n    -grandchild"
 
         await pilot.press("backspace")
-        assert screen.editor.text == "- top\n  - child\n- grandchild"
+        assert editor.text == "- top\n  - child\n    grandchild"
 
-        # At the top the marker goes, and the words stay
+        # The indent goes a space at a time, not a level at a time
         await pilot.press("backspace")
-        assert screen.editor.text == "- top\n  - child\ngrandchild"
+        assert editor.text == "- top\n  - child\n   grandchild"
 
-        # And with nothing in front of them a backspace is a backspace again
+        await pilot.press("backspace", "backspace", "backspace")
+        assert editor.text == "- top\n  - child\ngrandchild"
+
+        # And from the margin it joins the line above
         await pilot.press("backspace")
-        assert screen.editor.text == "- top\n  - childgrandchild"
+        assert editor.text == "- top\n  - childgrandchild"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
 
-async def test_backspace_steps_an_empty_nested_bullet_out_inside_a_quote():
-    """The same walk back up, with the bar left standing until the end"""
-
+async def test_backspace_takes_a_quoted_bullets_marker_like_any_text():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        editor = screen.editor
 
         await pilot.press(*list("> "))
         await pilot.press(*list("- item"))
         await pilot.press("enter", "tab")
 
         written = "> - item\n"
+        assert editor.text == written + ">   - "
 
         await pilot.press("backspace")
-        assert screen.editor.text == written + "> - "
+        assert editor.text == written + ">   -"
 
-        # The bar is the last thing to go, as it always was
+        await pilot.press("backspace", "backspace", "backspace")
+        assert editor.text == written + "> "
+
+        # The bar is two characters like any other two
         await pilot.press("backspace")
-        assert screen.editor.text == written + "> "
+        assert editor.text == written + ">"
+
+        await pilot.press("backspace")
+        assert editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_at_a_headings_end_stops_on_the_next_line():
+    """A `---` below is a line of its own, not part of the title to skip past"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "# Title\n---\nbody"
+        editor.move_cursor((0, 7))
+        await pilot.press("enter")
+
+        assert editor.text == "# Title\n\n---\nbody"
+        assert editor.cursor_location == (1, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_backspace_that_joins_two_lists_renumbers_them():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n\n1. c\n2. d"
+        editor.move_cursor((2, 0))
+        await pilot.press("backspace")
+
+        assert editor.text == "1. a\n2. b\n3. c\n4. d"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_taking_an_items_marker_away_leaves_the_rest_of_the_list_counted():
+    """What's left below is a list of its own, and its first item keeps its number"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c\n4. d"
+        editor.move_cursor((1, 0))
+        await pilot.press("delete")
+
+        assert editor.text == "1. a\n. b\n3. c\n4. d"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_deleting_a_line_out_of_a_list_closes_the_gap():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c"
+        editor.selection = Selection((0, 4), (1, 4))
+        await pilot.press("backspace")
+
+        assert editor.text == "1. a\n2. c"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_typing_a_new_item_into_a_list_takes_its_place_in_the_count():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n\n2. b\n3. c"
+        editor.move_cursor((1, 0))
+        await pilot.press(*list("9. new"))
+
+        assert editor.text == "1. a\n2. new\n3. b\n4. c"
+        assert editor.cursor_location == (1, 6)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_changing_a_lists_first_number_counts_on_from_it():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b"
+        editor.move_cursor((0, 0))
+        await pilot.press("delete", "5")
+
+        assert editor.text == "5. a\n6. b"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1724,6 +1819,31 @@ async def test_tab_indents_a_plain_line_too():
         # And no further out than the margin
         await pilot.press("shift+tab")
         assert screen.editor.text == "plain words"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_tab_nests_a_quoted_line_after_its_bar():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "> said\n> - item"
+        editor.move_cursor((0, 6))
+        await pilot.press("tab")
+        assert editor.text == ">   said\n> - item"
+        assert editor.cursor_location == (0, 8)
+
+        await pilot.press("shift+tab", "shift+tab")
+        assert editor.text == "> said\n> - item"
+
+        editor.move_cursor((1, 4))
+        await pilot.press("tab")
+        assert editor.text == "> said\n>   - item"
+
+        await pilot.press("shift+tab")
+        assert editor.text == "> said\n> - item"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
