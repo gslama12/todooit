@@ -117,7 +117,7 @@ class NormalKeys(TextEditing):
         """
 
         row, column = self.cursor_location
-        link = folded_link_at(self._stored_line(row), column)
+        link = folded_link_at(self._stored_line(row), column, raw=True)
 
         if link is None:
             self.host.report("No link under the cursor")

@@ -203,13 +203,16 @@ class NoteScreenBase(BaseScreen):
     def go_to(self, row: int, column: int) -> None:
         """
         Put the cursor at a place in the note, scrolled to the middle.
-        `column` is a stored-note column, converted to drawn since a folded
-        link ahead of it shortens the line.
+        `column` is a stored-note column, which may be inside a link's address:
+        the row goes raw first, so that column is there to land on.
         """
 
         document = self.editor.document
         row = max(0, min(row, document.line_count - 1))
-        column = drawn_column(document.stored_line(row), column)
+
+        self.editor.move_cursor((row, 0))
+
+        column = drawn_column(document.stored_line(row), column, raw=True)
 
         self.editor.move_cursor((row, column), center=True)
 

@@ -4,13 +4,19 @@ The text area a note is drawn in: folded markup, hanging lines, quote bars
 
 from rich.segment import Segment
 from rich.style import Style
+from textual import events
+from textual.document._document import EditResult
 from textual.strip import Strip
 from textual.widgets import TextArea
+from textual.widgets._text_area import Edit, Selection
+
+from todooit.utils.links import raw_column
 
 from .document import (
     FoldedDocument,
     HangingDocument,
     HangingNavigator,
+    NoteEdit,
 )
 from .markup import (
     QUOTE_BAR,
@@ -38,6 +44,84 @@ class NoteView(TextArea):
         self._build_highlight_map()
         self._rewrap_and_refresh_virtual_size()
         self.move_cursor((0, 0))
+
+    def _validate_selection(self, selection: Selection) -> Selection:
+        """
+        Make the rows a selection lands on raw, before anything reads them.
+
+        Every way of placing the cursor comes through here, each with a column
+        read off the row as it looks now, so this is where a column on a folded
+        row becomes the column of the same character on the raw one. A selection
+        keeps all its rows raw, so the column its far end holds stays good.
+        """
+
+        document = self.document
+
+        if not isinstance(document, FoldedDocument):
+            return super()._validate_selection(selection)
+
+        start = document.raw_location(selection.start)
+        end = document.raw_location(selection.end)
+
+        last = document.line_count - 1
+        top = min(start[0], end[0], last)
+        bottom = min(max(start[0], end[0]), last)
+
+        if document.show_raw(range(top, bottom + 1)):
+            self._refold()
+
+        return super()._validate_selection(Selection(start, end))
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        """A click at the head of a folded line means the character drawn there."""
+
+        document = self.document
+        assert isinstance(document, FoldedDocument)
+
+        row, column = self.get_target_document_location(event)
+        folded = row not in document.raw_rows
+
+        # Textual calls this on every class in turn; once is enough
+        event.prevent_default()
+        await super()._on_mouse_down(event)
+
+        if folded and column == 0:
+            first = raw_column(document.stored_line(row), 0)
+            self.selection = Selection.cursor((row, first))
+
+    def _refold(self) -> None:
+        """Redraw after a line changed height, keeping the top of the view where it is."""
+
+        wrapped = self.wrapped_document
+        assert isinstance(wrapped, HangingDocument)
+
+        top = wrapped.row_at(self.scroll_offset.y)
+
+        self._rewrap_and_refresh_virtual_size()
+        self._build_highlight_map()
+
+        if top is not None and self.is_mounted:
+            self.scroll_to(y=wrapped.y_of(*top), animate=False, immediate=True)
+
+        self.refresh()
+
+    def edit(self, edit: Edit) -> EditResult:
+        return super().edit(
+            NoteEdit(
+                edit.text,
+                edit.from_location,
+                edit.to_location,
+                edit.maintain_selection_offset,
+            )
+        )
+
+    def _undo_batch(self, edits) -> None:
+        super()._undo_batch(edits)
+        self._refold()
+
+    def _redo_batch(self, edits) -> None:
+        super()._redo_batch(edits)
+        self._refold()
 
     def _render_line(self, y: int) -> Strip:
         """
@@ -99,5 +183,7 @@ class NoteView(TextArea):
         document = self.document
         lines = getattr(document, "stored_lines", document.lines)
 
-        for row, spans in enumerate(scan_note(lines)):
+        raw_rows = getattr(document, "raw_rows", ())
+
+        for row, spans in enumerate(scan_note(lines, raw_rows)):
             highlights[row].extend(spans)

@@ -1321,58 +1321,70 @@ async def test_a_long_link_in_a_quote_stays_inside_the_block():
         await pilot.pause()
 
 
-async def test_a_link_stays_folded_with_the_cursor_on_it():
+async def test_the_cursor_line_shows_a_link_in_full():
     """
-    The cursor is not what unfolds a link - nothing is. A note is read with
-    the cursor somewhere in it, and a link that opened out under it would put
-    the address back on the page exactly when it is being looked at
+    Standing on a line shows what is written on it, columns and all; every
+    other line goes on showing the name
     """
+
+    written = "see [the folder](" + LONG_LINK + ") here"
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text(QUOTE_GLYPH + "see " + LONG_LINK + " here")
+        editor.load_text("a line\n" + written)
         await pilot.pause()
 
-        folded = QUOTE_GLYPH + "see " + LONG_LINK_DRAWN + " here"
+        assert editor.document.get_line(1) == "see the folder here"
 
-        for column in (0, 8, len(folded) - 1):
-            editor.move_cursor((0, column))
-            await pilot.pause()
+        editor.move_cursor((1, 0))
+        await pilot.pause()
 
-            assert editor.document.get_line(0) == folded
-            assert editor.wrapped_document.get_offsets(0) == []
+        assert editor.document.get_line(1) == written
 
-        # And the whole of the address is still in the note behind it
-        assert LONG_LINK in editor.text
+        # A cursor column on this line is a column of the stored text
+        editor.move_cursor((1, written.index("https")))
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, written.index("https"))
+        assert editor.document[1][editor.cursor_location[1]] == "h"
+
+        # Leaving folds it back, and nothing was lost behind the name
+        editor.move_cursor((0, 0))
+        await pilot.pause()
+
+        assert editor.document.get_line(1) == "see the folder here"
+        assert editor.text == "a line\n" + written
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
 
-async def test_a_name_is_edited_where_it_is_drawn():
+async def test_a_name_is_edited_on_the_stored_text():
     """
-    What the fold hides is the markup, not the name: the words on the page are
-    the words in the note, so they are retyped like any other words
+    The cursor line is the stored text, so a name is retyped like any other
+    words and the folded line picks the new name up
     """
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text("see [the folder](" + LONG_LINK + ") here")
+        editor.load_text("see [the folder](" + LONG_LINK + ") here\nbelow")
         await pilot.pause()
 
-        assert editor.document.get_line(0) == "see the folder here"
-
         # Between "the " and "folder"
-        editor.move_cursor((0, 8))
+        editor.move_cursor((0, 9))
         await pilot.press(*list("big "))
         await pilot.pause()
 
+        assert editor.text == "see [the big folder](" + LONG_LINK + ") here\nbelow"
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
         assert editor.document.get_line(0) == "see the big folder here"
-        assert editor.text == "see [the big folder](" + LONG_LINK + ") here"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1400,11 +1412,8 @@ async def test_indenting_a_line_keeps_the_address_on_it():
         await pilot.pause()
 
 
-async def test_an_edit_reaching_into_a_link_takes_the_whole_of_it():
-    """
-    Half a link left on the line is not something that could be written back
-    out as a note, so an edit that touches one swallows it
-    """
+async def test_backspace_on_the_cursor_line_takes_one_stored_character():
+    """Nothing is folded under the cursor, so nothing widens an edit into a link"""
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -1417,7 +1426,371 @@ async def test_an_edit_reaching_into_a_link_takes_the_whole_of_it():
         await pilot.press("backspace")
         await pilot.pause()
 
-        assert editor.text == "see "
+        assert editor.text == "see [](" + LONG_LINK
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_line_rewraps_with_its_hanging_indent_as_the_cursor_passes():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n• see [the folder](" + LONG_LINK + ") here")
+        await pilot.pause()
+
+        wrapped = editor.wrapped_document
+        assert isinstance(wrapped, HangingDocument)
+        assert wrapped.get_offsets(1) == []
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        # Wrapped, and every row past the first sits under the bullet's words
+        assert wrapped.get_offsets(1) != []
+        assert wrapped.hanging_pad(1, 1) == 2
+
+        editor.move_cursor((0, 0))
+        await pilot.pause()
+
+        assert wrapped.get_offsets(1) == []
+        assert wrapped.height == 2
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_line_above_the_view_changing_height_does_not_move_the_view():
+    filler = "\n".join(f"line {number}" for number in range(80))
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [the folder](" + LONG_LINK + ") here\n" + filler)
+        await pilot.pause()
+
+        wrapped = editor.wrapped_document
+        assert isinstance(wrapped, HangingDocument)
+        assert wrapped.get_offsets(0) != []
+
+        editor.scroll_to(y=20, animate=False, immediate=True)
+        await pilot.pause()
+
+        top_line = wrapped.row_at(editor.scroll_offset.y)
+        clicked = wrapped.row_at(editor.scroll_offset.y + 3)
+        assert clicked is not None
+
+        # The raw line above the view folds up when the click takes the cursor away
+        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 3))
+        await pilot.pause()
+
+        assert editor.cursor_location[0] == clicked[0]
+        assert wrapped.get_offsets(0) == []
+        assert wrapped.row_at(editor.scroll_offset.y) == top_line
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_moving_by_screen_row_crosses_raw_and_folded_lines():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a plain line up here\n" + written + "\nanother plain line")
+        await pilot.pause()
+
+        # Over the second "e" of "the" as the line is drawn folded
+        editor.move_cursor((0, 6))
+        editor.action_cursor_down()
+        await pilot.pause()
+
+        row, column = editor.cursor_location
+        assert (row, column) == (1, written.index("the") + 2)
+
+        # Down through the rows the raw line wraps to, and on past it
+        rows = len(editor.wrapped_document.get_offsets(1)) + 1
+
+        for _ in range(rows):
+            editor.action_cursor_down()
+            await pilot.pause()
+
+        assert editor.cursor_location[0] == 2
+        assert editor.document.get_line(1) == "see the folder here"
+
+        # And back up: on to the line and off it the other side, never stuck
+        visited = set()
+
+        for _ in range(rows + 2):
+            editor.action_cursor_up()
+            await pilot.pause()
+            visited.add(editor.cursor_location[0])
+
+        assert visited == {0, 1}
+        assert editor.cursor_location[0] == 0
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_folded_line_lands_on_the_character_clicked():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        # The "f" of "folder", drawn at column 8 of "see the folder here"
+        await pilot.click(editor, offset=(editor.gutter.left + 8, editor.gutter.top + 1))
+        await pilot.pause()
+
+        row, column = editor.cursor_location
+        assert (row, column) == (1, written.index("folder"))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_undoing_an_edit_made_on_a_line_the_cursor_has_left():
+    """An edit's columns were raw ones; by the time of the undo that row is folded"""
+
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written + "\nbelow")
+        await pilot.pause()
+
+        editor.move_cursor((0, len(written)))
+        await pilot.press("!")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        editor.action_undo()
+        await pilot.pause()
+
+        assert editor.text == written + "\nbelow"
+        assert editor.cursor_location == (0, len(written))
+        assert editor.document.get_line(0) == written
+
+        editor.action_redo()
+        await pilot.pause()
+
+        assert editor.text == written + "!\nbelow"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_emphasis_behind_a_link_is_found_on_the_cursor_line():
+    """The link's markup takes columns on this line; the emphasis has to count them"""
+
+    written = "[a](" + LONG_LINK + ") "
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written + EMPH_MARK + "loud" + EMPH_MARK)
+        await pilot.pause()
+
+        editor.move_cursor(editor.document.end)
+        await pilot.press("backspace")
+        await pilot.pause()
+
+        assert editor.text == written + "loud"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_go_to_lands_inside_a_links_address():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        column = written.index("AllItems")
+        screen.go_to(1, column)
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, column)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_joining_up_to_a_folded_line_keeps_its_link_whole():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [n](" + LONG_LINK + ")\nnext")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.press("backspace")
+        await pilot.pause()
+
+        assert editor.text == "see [n](" + LONG_LINK + ")next"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_joining_a_folded_line_up_keeps_its_link_whole():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("abc\n[n](" + LONG_LINK + ") tail")
+        await pilot.pause()
+
+        editor.move_cursor((0, 3))
+        await pilot.press("delete")
+        await pilot.pause()
+
+        assert editor.text == "abc[n](" + LONG_LINK + ") tail"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_before_a_link_lands_at_the_line_start_and_undoes_cleanly():
+    written = "abc [n](" + LONG_LINK + ") tail"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written)
+        await pilot.pause()
+
+        editor.move_cursor((0, 4))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, 0)
+
+        editor.action_undo()
+        await pilot.pause()
+
+        assert editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_start_of_a_folded_line_is_the_start_of_the_raw_one():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("[n](" + LONG_LINK + ") tail\nbelow")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        editor.action_note_start()
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_renumbering_another_row_leaves_the_cursor_on_its_words():
+    written = "1. see [n](" + LONG_LINK + ") tail"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written + "\n5. b")
+        await pilot.pause()
+
+        column = written.index("tail")
+        editor.move_cursor((0, column))
+        await pilot.press("tab")
+        await pilot.pause()
+
+        row, landed = editor.cursor_location
+        assert row == 0
+        assert editor.document[0][landed:] == "tail"
+        assert editor.text.split("\n")[1] == "1. b"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_pasting_lines_ending_in_a_link_leaves_the_cursor_past_it():
+    last = "second [n](" + LONG_LINK + ")"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        set_clipboard("first\n" + last)
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, len(last))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_short_bare_address_lands_on_the_character_clicked():
+    written = "see https://example.com/x here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        column = written.index("example")
+        await pilot.click(
+            editor, offset=(editor.gutter.left + column, editor.gutter.top + 1)
+        )
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, column)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_name_opening_the_line_lands_on_its_first_letter():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n[name](" + LONG_LINK + ") tail")
+        await pilot.pause()
+
+        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 1))
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, 1)
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1485,11 +1858,17 @@ async def test_pasting_a_long_link_leaves_it_unnamed():
         await pilot.press("ctrl+v")
         await pilot.pause()
 
-        assert editor.text == "[](" + LONG_LINK + ")"
-        assert editor.document.get_line(0) == LONG_LINK_DRAWN
+        written = "[](" + LONG_LINK + ")"
+
+        assert editor.text == written
 
         # Past the whole of it, where there is more of the note to write
-        assert editor.cursor_location == (0, len(LONG_LINK_DRAWN))
+        assert editor.cursor_location == (0, len(written))
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert editor.document.get_line(0) == LONG_LINK_DRAWN
 
         await pilot.press("escape", "escape")
         await pilot.pause()

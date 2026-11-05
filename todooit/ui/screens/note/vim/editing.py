@@ -126,7 +126,8 @@ class TextEditing(ModalEditor):
         (start, end) of an emphasised phrase if the cursor sits right at its end, else None - that's where backspace removes the (invisible) marks.
         """
 
-        for start, end in folded_emph(self._stored_line(row)):
+        # Only ever asked about the cursor's row, which is raw
+        for start, end in folded_emph(self._stored_line(row), raw=True):
             if column == end:
                 return start, end
 
@@ -196,15 +197,8 @@ class TextEditing(ModalEditor):
         Number the list `row` sits in again (a no-op off a list); the cursor stays on its words.
         """
 
-        cursor_row, column = self.cursor_location
-
         for at, start, end, marker in recount(self.document.lines, row):
-            self.replace(marker, (at, start), (at, end), maintain_selection_offset=False)
-
-            if at == cursor_row and column >= end:
-                column += len(marker) - (end - start)
-
-        self.move_cursor((cursor_row, column))
+            self.replace(marker, (at, start), (at, end), maintain_selection_offset=True)
 
     def action_indent(self) -> None:
         """

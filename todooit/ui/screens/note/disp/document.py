@@ -12,10 +12,12 @@ from textual.document._document_navigator import DocumentNavigator
 from textual.document._wrapped_document import WrappedDocument
 from textual.expand_tabs import get_tab_widths
 from textual.geometry import Offset
+from textual.widgets._text_area import Edit
 
 from todooit.utils import fold_links
 from todooit.utils.links import (
     drawn_column,
+    raw_column,
     stored_range,
 )
 
@@ -29,11 +31,44 @@ from .markup import (
 class FoldedDocument(Document):
     """
     The note as stored, handed out folded (links shortened to their names) as
-    drawn. The only place the two differ - everything above this class works
-    in drawn columns, everything below in stored ones. A folded link has no
-    cursor column inside its name, so an edit reaching into one is widened to
-    cover the whole `[name](url)`.
+    drawn, except on `raw_rows`, the rows the cursor or selection stands on,
+    whose links are handed out as written. The only place the two differ -
+    everything above this class works in drawn columns, everything below in
+    stored ones. A folded link has no cursor column inside its name, so an
+    edit reaching into one is widened to cover the whole `[name](url)`.
     """
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+
+        # A new document has its cursor at the top
+        self.raw_rows: range = range(1)
+
+    def _shown(self, row: int) -> str:
+        return fold_links(self._lines[row], row in self.raw_rows)[0]
+
+    def show_raw(self, rows: range) -> bool:
+        """Make `rows` the raw ones; True if that changed what any line looks like."""
+
+        changed = set(self.raw_rows) ^ set(rows)
+        self.raw_rows = rows
+
+        return any(
+            fold_links(self._lines[row])[0] != fold_links(self._lines[row], True)[0]
+            for row in changed
+            if row < len(self._lines)
+        )
+
+    def raw_location(self, location: tuple) -> tuple:
+        """Where a place on the page will be once its row is raw."""
+
+        row, column = location
+
+        # The start of a line stays the start, in front of any link's bracket
+        if row in self.raw_rows or column == 0:
+            return location
+
+        return row, raw_column(self._line(row), column)
 
     def _line(self, row: int) -> str:
         """One stored line; `row` is clamped into range."""
@@ -42,7 +77,7 @@ class FoldedDocument(Document):
 
     @property
     def lines(self) -> list:
-        return [fold_links(line)[0] for line in self._lines]
+        return [self._shown(row) for row in range(len(self._lines))]
 
     @property
     def stored_lines(self) -> list:
@@ -56,13 +91,16 @@ class FoldedDocument(Document):
         return self._line(row)
 
     def get_line(self, index: int) -> str:
-        return fold_links(self._lines[index])[0]
+        return self._shown(index)
 
     def __getitem__(self, line_index):
         if isinstance(line_index, slice):
-            return [fold_links(line)[0] for line in self._lines[line_index]]
+            return [
+                self._shown(row)
+                for row in range(*line_index.indices(len(self._lines)))
+            ]
 
-        return fold_links(self._lines[line_index])[0]
+        return self._shown(line_index)
 
     @property
     def end(self) -> tuple:
@@ -71,7 +109,7 @@ class FoldedDocument(Document):
     def _drawn(self, location: tuple) -> tuple:
         row, column = location
 
-        return row, drawn_column(self._line(row), column)
+        return row, drawn_column(self._line(row), column, row in self.raw_rows)
 
     def _stored_span(self, start: tuple, end: tuple) -> tuple:
         """
@@ -84,29 +122,82 @@ class FoldedDocument(Document):
         top_line = self._line(top_row)
         bottom_line = self._line(bottom_row)
 
+        top_raw = top_row in self.raw_rows
+        bottom_raw = bottom_row in self.raw_rows
+
         if top_row == bottom_row:
-            opening, closing = stored_range(top_line, top_column, bottom_column)
-        else:
-            opening, _ = stored_range(
-                top_line, top_column, len(fold_links(top_line)[0])
+            opening, closing = stored_range(
+                top_line, top_column, bottom_column, top_raw
             )
-            _, closing = stored_range(bottom_line, 0, bottom_column)
+        else:
+            # A span crossing a line break starts at the very end of its top
+            # line and stops at the very start of its bottom one, if it reaches
+            # them: a link's markup beside the break isn't in the span
+            top_width = len(fold_links(top_line, top_raw)[0])
+
+            if top_column >= top_width:
+                opening = len(top_line)
+            else:
+                opening, _ = stored_range(top_line, top_column, top_width, top_raw)
+
+            if bottom_column == 0:
+                closing = 0
+            else:
+                _, closing = stored_range(bottom_line, 0, bottom_column, bottom_raw)
 
         return (top_row, opening), (bottom_row, closing)
 
     def replace_range(self, start: tuple, end: tuple, text: str):
         top, bottom = self._stored_span(*sorted((start, end)))
 
+        # Read here: the base class asks `get_text_range`, which would take
+        # these stored columns for drawn ones
+        replaced = Document.get_text_range(self, top, bottom)
+
         result = super().replace_range(top, bottom, text)
 
         # Convert the edit's end back to drawn columns for the caller's cursor
-        return EditResult(self._drawn(result.end_location), result.replaced_text)
+        return EditResult(self._drawn(result.end_location), replaced)
 
     def get_text_range(self, start: tuple, end: tuple) -> str:
         # Returns the stored text, so a copied link carries its full address
         top, bottom = self._stored_span(*sorted((start, end)))
 
         return super().get_text_range(top, bottom)
+
+
+class NoteEdit(Edit):
+    """
+    An edit that remembers which rows were raw when it was made: its columns
+    mean that, whichever rows are raw by the time it is undone or redone.
+    """
+
+    _raw_rows: Optional[range] = None
+
+    def do(self, text_area, record_selection: bool = True) -> EditResult:
+        if self._raw_rows is None:
+            self._raw_rows = text_area.document.raw_rows
+
+        text_area.document.raw_rows = self._raw_rows
+
+        result = super().do(text_area, record_selection)
+
+        # On a redo the selection is from later than this edit, so its offset
+        # means nothing here: an edit that placed the cursor places it
+        if not record_selection and self.maintain_selection_offset:
+            self._updated_selection = None
+
+        return result
+
+    def undo(self, text_area) -> EditResult:
+        text_area.document.raw_rows = self._raw_rows
+
+        return super().undo(text_area)
+
+    def after(self, text_area) -> None:
+        text_area.document.raw_rows = self._raw_rows
+
+        super().after(text_area)
 
 
 class HangingDocument(WrappedDocument):
@@ -232,6 +323,22 @@ class HangingDocument(WrappedDocument):
             return self._hanging[line_index]
         except IndexError:
             return 0
+
+    def row_at(self, y_offset: int) -> Optional[Tuple[int, int]]:
+        """The (line, section) drawn at `y_offset` down the document, if any."""
+
+        try:
+            return self._offset_to_line_info[y_offset]
+        except IndexError:
+            return None
+
+    def y_of(self, line_index: int, section_offset: int) -> int:
+        """Inverse of `row_at`, for a line whose wrapping may have changed since."""
+
+        rows = self._line_index_to_offsets
+        offsets = rows[min(line_index, len(rows) - 1)]
+
+        return offsets[min(section_offset, len(offsets) - 1)]
 
     def pad_at(self, y_offset: int) -> int:
         """How far the row at `y_offset` down the document is pushed in."""

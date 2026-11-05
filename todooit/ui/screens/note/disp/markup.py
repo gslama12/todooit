@@ -3,7 +3,7 @@ The note's markdown-ish markup: constants, regexes and pure line parsing
 """
 
 import re
-from typing import Iterator, List, Optional, Sequence, Tuple
+from typing import Container, Iterator, List, Optional, Sequence, Tuple
 
 from rich.cells import cell_len
 
@@ -373,25 +373,27 @@ def scan_markup(
         yield byte(end - 1), byte(end), MARKER
 
 
-def scan_note(lines) -> Iterator[list]:
+def scan_note(lines, raw_rows: Container[int] = ()) -> Iterator[list]:
     """
     Styled spans for every line of a note, one list per line.
 
     Walks the whole note (not line by line) because a header needs the line
     below it. `lines` are as *stored*; spans land on the *drawn* text (links
-    folded to their names), folded here so spans and text always match.
+    folded to their names, except on `raw_rows`), folded here so spans and text
+    always match.
     """
 
     drawn = []
     found = []
     lit = []
 
-    for line in lines:
-        text, links = fold_links(line)
+    for row, line in enumerate(lines):
+        raw = row in raw_rows
+        text, links = fold_links(line, raw)
 
         drawn.append(text)
         found.append(links)
-        lit.append(folded_emph(line))
+        lit.append(folded_emph(line, raw))
 
     for row, line in enumerate(drawn):
         following = drawn[row + 1] if row + 1 < len(drawn) else ""

@@ -147,8 +147,6 @@ class ClipboardEditing(TextEditing):
         if result is None:
             return
 
-        self.move_cursor(result.end_location)
-
         for pasted in range(row, result.end_location[0] + 1):
             self._recount(pasted)
 
@@ -166,12 +164,7 @@ class ClipboardEditing(TextEditing):
         title = " ".join(self.selected_text.split()).translate(NO_BRACKETS)
         markdown = f"[{title}]({link.url})"
 
-        result = self._replace_via_keyboard(markdown, *self.selection)
-
-        if result is None:
-            return True
-
-        self.move_cursor(result.end_location)
+        self._replace_via_keyboard(markdown, *self.selection)
 
         return True
 

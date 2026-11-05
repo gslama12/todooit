@@ -268,9 +268,13 @@ class Folded:
 
 
 @lru_cache(maxsize=512)
-def _fold(text: str) -> Folded:
+def _fold(text: str, raw: bool = False) -> Folded:
     """
     One line folded: what is drawn, the links in it, and the two column maps
+
+    `raw` is a line the cursor or selection stands on: its links are drawn as
+    written, so no column of it is made up and an edit has nothing to widen. The
+    emphasis marks still come off, being worth no column on any line.
 
     What the folding hides is the *markup* of a link and not its name. A link
     written `[the folder](url)` is drawn as `the folder`, and those words are
@@ -354,6 +358,13 @@ def _fold(text: str) -> Folded:
     for link in find_links(text):
         verbatim(at, link.start)
 
+        if raw:
+            before = width
+            verbatim(link.start, link.end)
+            found.append(Link(before, width, link.url, link.title))
+            at = link.end
+            continue
+
         written = text[link.start : link.end]
         named = MD_LINK_RE.match(text, link.start) if link.title else None
         name = named.group("title") if named else ""
@@ -406,7 +417,7 @@ def _fold(text: str) -> Folded:
     )
 
 
-def fold_links(text: str) -> Tuple[str, List[Link]]:
+def fold_links(text: str, raw: bool = False) -> Tuple[str, List[Link]]:
     """
     `text` as the note draws it, and where the links landed in what it drew
 
@@ -420,12 +431,12 @@ def fold_links(text: str) -> Tuple[str, List[Link]]:
     what the page shows, and what is stored goes on being what was typed.
     """
 
-    folded = _fold(text)
+    folded = _fold(text, raw)
 
     return folded.text, list(folded.links)
 
 
-def folded_emph(text: str) -> List[Tuple[int, int]]:
+def folded_emph(text: str, raw: bool = False) -> List[Tuple[int, int]]:
     """
     Where the emphasised phrases of `text` land on the page: one (start, end)
     per finished pair, in drawn columns, with the marks themselves nowhere in
@@ -435,10 +446,10 @@ def folded_emph(text: str) -> List[Tuple[int, int]]:
     that are lit and the words a backspace unlights are always the same words.
     """
 
-    return list(_fold(text).emph)
+    return list(_fold(text, raw).emph)
 
 
-def folded_link_at(text: str, column: int) -> Optional[Link]:
+def folded_link_at(text: str, column: int, raw: bool = False) -> Optional[Link]:
     """
     The link standing at `column` of the drawn line, `text` being the line as
     it is stored
@@ -448,14 +459,16 @@ def folded_link_at(text: str, column: int) -> Optional[Link]:
     address.
     """
 
-    for link in _fold(text).links:
+    for link in _fold(text, raw).links:
         if link.start <= column < link.end:
             return link
 
     return None
 
 
-def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
+def stored_range(
+    text: str, start: int, end: int, raw: bool = False
+) -> Tuple[int, int]:
     """
     A run of the drawn line, as the run of the stored line behind it
 
@@ -468,7 +481,7 @@ def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
     not something that could be written back out as a note.
     """
 
-    folded = _fold(text)
+    folded = _fold(text, raw)
     last = len(folded.opens) - 1
     start = max(0, min(start, last))
     end = max(start, min(end, last))
@@ -514,7 +527,7 @@ def stored_range(text: str, start: int, end: int) -> Tuple[int, int]:
     return opening, closing
 
 
-def drawn_column(text: str, column: int) -> int:
+def drawn_column(text: str, column: int, raw: bool = False) -> int:
     """
     A column of the stored line, as a column of the line as it is drawn
 
@@ -523,9 +536,30 @@ def drawn_column(text: str, column: int) -> int:
     past what that markup was hidden behind.
     """
 
-    at = _fold(text).at
+    at = _fold(text, raw).at
 
     return min(bisect_left(at, column), len(at) - 1)
+
+
+def raw_column(text: str, column: int) -> int:
+    """
+    A column of the folded line, as the column of the same character once the
+    line is raw. What was made up out of an address has no such character, and
+    lands at the front of the link.
+    """
+
+    folded = _fold(text)
+    column = max(0, min(column, len(folded.at) - 1))
+    stored = folded.at[column]
+
+    # A short bare address is an atom to an edit, but its characters are real
+    for link, (start, end, _) in zip(folded.links, folded.written):
+        drawn = folded.text[link.start : link.end]
+
+        if link.start <= column < link.end and text[start:end] == drawn:
+            stored = start + column - link.start
+
+    return drawn_column(text, stored, raw=True)
 
 
 # How much of a URL is said back when one is opened: enough to tell two links
