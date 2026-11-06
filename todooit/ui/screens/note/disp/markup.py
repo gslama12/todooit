@@ -41,6 +41,7 @@ HEADER_SPANS = tuple(f"note-header-{level}" for level in (1, 2, 3))
 LINK = "note-link"
 BACKDROP = "note-backdrop"
 TARGET = "note-target"
+SEARCH_MATCH = "note-search-match"
 QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
 QUOTE_ITEM = "note-quote-item"

@@ -22,7 +22,7 @@ from tests.test_ui.ui_base import (
 from todooit.api import PinnedNote, Todo
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
 from todooit.ui.screens.note.disp.document import FoldedDocument
-from todooit.ui.screens.note.disp.markup import BACKDROP, TARGET
+from todooit.ui.screens.note.disp.markup import BACKDROP, SEARCH_MATCH, TARGET
 from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
 from todooit.vim_engine import VimCommand, VimMotion
 
@@ -2009,3 +2009,372 @@ async def test_a_reopened_note_has_nothing_to_undo():
         await pilot.press("u")
         await pilot.pause()
         assert screen.editor.text == "kept"
+
+
+# ------------------------------------------------------------------
+# ------------------------- Search ---------------------------------
+# ------------------------------------------------------------------
+
+
+def hint_text(screen) -> str:
+    return str(screen.hint.render())
+
+
+def lit(editor, y: int, x: int) -> bool:
+    return cell(editor, y, x).bgcolor == theme_of(editor)[SEARCH_MATCH].bgcolor
+
+
+async def test_the_search_prompt_is_in_the_hint_line_and_types_there():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo bar")
+        hints = hint_text(screen)
+
+        await pilot.press("?", "b", "a", "space")
+        await pilot.pause()
+
+        assert hint_text(screen).startswith("?ba ")
+        assert screen.editor.text == "foo bar"
+        assert screen.editor.mode == MODE_NORMAL
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert hint_text(screen) == hints
+
+
+async def test_the_prompt_is_labelled_with_the_key_that_opens_it():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+        pilot.app.api.vim.keys.remap({"?": "/"})
+
+        await pilot.press("/", "f")
+        await pilot.pause()
+
+        assert hint_text(screen).startswith("/f")
+
+
+async def test_typing_markup_in_the_prompt_shows_it_as_typed():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "[red] x")
+
+        await pilot.press(*"?[red]")
+        await pilot.pause()
+        assert hint_text(screen).startswith("?[red]")
+
+        await pilot.press("x", "enter")
+        await pilot.pause()
+        assert "Not found: [red]x" in hint_text(screen)
+
+
+async def test_a_backslash_in_the_prompt_shows_as_typed():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "a[b")
+
+        await pilot.press(*"?a[", "backslash")
+        await pilot.pause()
+
+        assert hint_text(screen).startswith("?a[\\█")
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert hint_text(screen).endswith("Not found: a[\\")
+
+
+async def test_a_rebound_prompt_key_is_written_as_the_hints_write_it():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+        pilot.app.api.vim.keys.remap({"?": "<ctrl+f>"})
+
+        await pilot.press("ctrl+f", "f")
+        await pilot.pause()
+
+        assert hint_text(screen).startswith("C-ff")
+
+
+async def test_a_message_expiring_leaves_the_prompt_standing():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+
+        await pilot.press("n")
+        await pilot.pause()
+        assert "No search yet" in hint_text(screen)
+
+        await pilot.press("?", "f")
+        await pilot.pause()
+        screen.mode_changed()
+        await pilot.pause()
+
+        assert hint_text(screen).startswith("?f")
+
+
+async def test_the_first_match_is_lit_and_scrolled_to_while_typing():
+    async with run_pilot() as pilot:
+        lines = [f"line {row}" for row in range(60)] + ["needle here"]
+        screen = await note_holding(pilot, "\n".join(lines))
+        editor = screen.editor
+        assert editor.scroll_offset.y == 0
+
+        await pilot.press(*"?need")
+        await pilot.pause()
+
+        assert editor.cursor_location == (60, 0)
+        assert editor.scroll_offset.y > 0
+
+        y = 60 - editor.scroll_offset.y
+        assert lit(editor, y, 1)
+        assert not lit(editor, y, 5)
+
+
+async def test_escape_in_the_prompt_restores_the_cursor_and_keeps_the_note_open():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc\ndef\nghi")
+        editor = screen.editor
+        editor.move_cursor((1, 1))
+
+        await pilot.press("?", "g", "h")
+        await pilot.pause()
+        assert editor.cursor_location == (2, 0)
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert pilot.app.screen is screen
+        assert editor.cursor_location == (1, 1)
+        assert not lit(editor, 2, 1)
+
+
+async def test_enter_confirms_and_the_highlights_stay_as_the_cursor_moves_off():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "aa foo\nbar\nfoo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter")
+        await pilot.pause()
+        assert editor.cursor_location == (0, 3)
+        assert screen.editor.engine.search_prompt is None
+
+        await pilot.press("l")
+        await pilot.pause()
+
+        assert editor.cursor_location[0] == 1
+        assert lit(editor, 0, 3)
+        assert lit(editor, 2, 2)
+        assert not lit(editor, 0, 0)
+
+
+async def test_escape_clears_highlights_first_and_closes_the_note_after():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo\nbar\nfoo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "l")
+        await pilot.pause()
+        assert lit(editor, 0, 0)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is screen
+        assert not lit(editor, 0, 0)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is not screen
+
+
+async def test_highlights_land_on_the_drawn_text_of_a_folded_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "[name](http://example.com) tail\n\nx")
+        editor = screen.editor
+        await pilot.press("G")
+        await pilot.pause()
+
+        await pilot.press(*"?tail", "enter")
+        await pilot.pause()
+        await pilot.press("G")
+        await pilot.pause()
+
+        # Drawn as `name tail`: the address takes up no room
+        document = editor.document
+        assert isinstance(document, FoldedDocument)
+        assert document[0] == "name tail"
+        assert lit(editor, 0, 5)
+        assert lit(editor, 0, 8)
+        assert not lit(editor, 0, 4)
+
+
+async def test_a_match_in_a_hidden_address_shows_only_once_the_line_is_raw():
+    async with run_pilot() as pilot:
+        stored = "[name](http://example.com) tail"
+        screen = await note_holding(pilot, "first\n\n" + stored)
+        editor = screen.editor
+
+        await pilot.press(*"?example")
+        await pilot.pause()
+
+        document = editor.document
+        assert isinstance(document, FoldedDocument)
+        assert editor.cursor_location == (2, stored.index("example"))
+        assert document[2] == stored
+        assert lit(editor, 2, stored.index("example") + 1)
+
+        # Off the line it folds, and what's matched goes with the address
+        await pilot.press("enter", "g", "g")
+        await pilot.pause()
+
+        assert document[2] == "name tail"
+        assert not any(lit(editor, 2, x) for x in range(9))
+
+
+async def test_highlights_follow_an_edit():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo bar")
+        editor = screen.editor
+
+        await pilot.press(*"?bar", "enter", "=", "i", "x")
+        await pilot.pause()
+
+        assert editor.text == "xfoo bar"
+        assert lit(editor, 0, 5)
+        assert not lit(editor, 0, 4)
+
+
+async def test_highlights_follow_an_undo_and_a_redo():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "xx foo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "=", "d", "w")
+        await pilot.pause()
+        assert editor.text == "foo"
+        assert lit(editor, 0, 1)
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "xx foo"
+        assert lit(editor, 0, 4)
+        assert not lit(editor, 0, 1)
+
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert editor.text == "foo"
+        assert lit(editor, 0, 1)
+
+
+async def test_searching_leaves_nothing_to_undo():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo bar")
+        editor = screen.editor
+
+        await pilot.press("x")
+        await pilot.press(*"?bar", "enter", "n", "*")
+        await pilot.press("u")
+        await pilot.pause()
+
+        assert editor.text == "foo bar"
+
+
+async def test_a_character_jump_shows_over_the_highlights_and_gives_them_back():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo bar\nfoo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "g", "g")
+        await pilot.pause()
+        assert lit(editor, 1, 0)
+
+        await pilot.press("f", "r")
+        await pilot.pause()
+        assert cell(editor, 1, 0).color == theme_of(editor)[BACKDROP].color
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is screen
+        assert lit(editor, 1, 0)
+
+
+async def test_n_and_big_n_say_when_they_wrap_in_the_hint_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo x foo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "n")
+        await pilot.pause()
+        assert editor.cursor_location == (0, 0)
+        assert "wrapped to the top" in hint_text(screen)
+
+        await pilot.press("N")
+        await pilot.pause()
+        assert editor.cursor_location == (0, 6)
+        assert "wrapped to the bottom" in hint_text(screen)
+
+
+async def test_n_with_no_search_yet_says_so_in_the_hint_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+
+        await pilot.press("N")
+        await pilot.pause()
+
+        assert "No search yet" in hint_text(screen)
+
+
+async def test_star_searches_the_word_under_the_cursor():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "Foo foobar foo")
+        editor = screen.editor
+
+        await pilot.press("*")
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 11)
+        assert lit(editor, 0, 0)
+        assert not lit(editor, 0, 4)
+
+
+async def test_the_last_search_lasts_into_another_note_with_nothing_lit_there():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo foo")
+        await pilot.press(*"?foo", "enter", "escape", "escape")
+        await pilot.pause()
+        assert pilot.app.screen is not screen
+
+        await pilot.press(" ")
+        await pilot.pause()
+        again = pilot.app.screen
+        assert isinstance(again, NoteScreen) and again is not screen
+        assert not lit(again.editor, 0, 0)
+
+        again.editor.move_cursor((0, 0))
+        await pilot.press("n")
+        await pilot.pause()
+
+        assert again.editor.cursor_location == (0, 4)
+        assert lit(again.editor, 0, 0)
+
+
+async def test_a_paste_doesnt_write_into_the_note_during_the_prompt():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+        editor = screen.editor
+
+        await pilot.press("?")
+        await editor._on_paste(events.Paste("pasted"))
+        await pilot.pause()
+
+        assert editor.text == "foo"
+        assert editor.mode == MODE_NORMAL
+        assert editor.engine.search_prompt == ""
+
+
+async def test_the_pinned_note_searches_too():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        PinnedNote.set_text("abc abc")
+        app.push_screen(PinnedNoteScreen())
+        await pilot.pause()
+
+        await pilot.press(*"?abc", "enter")
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, PinnedNoteScreen)
+        assert screen.editor.cursor_location == (0, 4)

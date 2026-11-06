@@ -19,6 +19,7 @@ from .markup import (
     QUOTE_BAR,
     QUOTE_ITEM,
     RULE_SPAN,
+    SEARCH_MATCH,
     TARGET,
 )
 
@@ -80,5 +81,6 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             # Text put aside, so the places to go stand out from it.
             BACKDROP: Style(color=blend(theme.foreground1, theme.background2, 0.6)),
             TARGET: Style(color=theme.background1, bgcolor=theme.red, bold=True),
+            SEARCH_MATCH: Style(color=theme.background1, bgcolor=theme.yellow),
         },
     )

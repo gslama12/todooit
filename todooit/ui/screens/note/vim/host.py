@@ -2,9 +2,10 @@
 What the editor needs from the window it's in, so it never imports that window
 """
 
-from typing import Iterable, Protocol, runtime_checkable
+from typing import Iterable, Protocol, Union, runtime_checkable
 
 from textual import events
+from textual.content import Content
 
 
 @runtime_checkable
@@ -25,14 +26,17 @@ class EditorHost(Protocol):
     def pending_changed(self) -> None:
         """The keys of a partial command changed: redraw whatever shows them."""
 
+    def prompt_changed(self) -> None:
+        """The search prompt opened, changed or closed: redraw whatever shows it."""
+
     def open_link(self, url: str) -> None:
         """Open `url`, reporting the outcome."""
 
     def pick_files(self) -> None:
         """Hand the keyboard to the note's attached files."""
 
-    def report(self, message: str) -> None:
-        """Show the user a short message."""
+    def report(self, message: Union[str, Content]) -> None:
+        """Show the user a short message, which is markup if it's a string."""
 
     def request_clear(self) -> None:
         """Ask whether to clear the whole note, and do so on a yes."""

@@ -10,11 +10,11 @@ from textual.geometry import Offset
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 
-from todooit.vim_engine import MODE_INSERT, MODE_NORMAL, FindView, VimEngine
+from todooit.vim_engine import MODE_INSERT, MODE_NORMAL, FindView, Search, VimEngine
 
 from ..disp.document import FoldedDocument
-from ..disp.markup import BACKDROP, TARGET
-from ..disp.view import NoteView, Overlay
+from ..disp.markup import BACKDROP, SEARCH_MATCH, TARGET
+from ..disp.view import NoteView, Overlay, OverlaySpan
 from .buffer import NoteBuffer
 from .history import NoteHistory, UndoStep
 from .host import EditorHost
@@ -29,14 +29,18 @@ class ModalEditor(NoteView):
     `read_only` is what NORMAL *is*.
     """
 
+    # Built on first use, once there's an app to read the keymap from. Up here
+    # since drawing, which asks after it, starts before `__init__` is through.
+    _engine: Optional[VimEngine] = None
+
+    # The search whose matches are drawn
+    _shown_search: Optional[Search] = None
+
     def __init__(self, text: str) -> None:
         # Always opens in NORMAL. tab_behavior stays "focus" so escape bubbles.
         super().__init__(text, read_only=True)
 
         self.history: NoteHistory = NoteHistory()
-
-        # Built on first use, once there's an app to read the keymap from
-        self._engine: Optional[VimEngine] = None
 
         # The character jump being shown
         self._find_view: Optional[FindView] = None
@@ -53,13 +57,22 @@ class ModalEditor(NoteView):
     @property
     def engine(self) -> VimEngine:
         if self._engine is None:
-            self._engine = VimEngine(NoteBuffer(self), self.app.api.vim.keys)
+            vim = self.app.api.vim
+            self._engine = VimEngine(
+                NoteBuffer(self), vim.keys, search_memory=vim.search
+            )
 
         return self._engine
 
     @property
     def mode(self) -> str:
         return MODE_NORMAL if self.read_only else MODE_INSERT
+
+    @property
+    def search_prompt(self) -> Optional[str]:
+        """What's typed in the search prompt, or None if it isn't open."""
+
+        return self.engine.search_prompt
 
     def enter_insert(self) -> None:
         self.engine.set_mode(MODE_INSERT)
@@ -177,6 +190,21 @@ class ModalEditor(NoteView):
         if view != self._find_view:
             self._find_view = view
             self.show_overlay(self._find_overlay(view) if view else None)
+
+    def show_search(self) -> None:
+        """Draw the matches of whichever search the engine now has on show."""
+
+        search = self.engine.lit_search
+
+        if search != self._shown_search:
+            self._shown_search = search
+            self.show_overlay(self.overlay)
+
+    def standing_spans(self) -> Sequence[OverlaySpan]:
+        if self._engine is None:
+            return ()
+
+        return [(*match, SEARCH_MATCH) for match in self._engine.search_matches]
 
     @on(TextArea.SelectionChanged)
     def _cursor_moved(self) -> None:

@@ -8,6 +8,7 @@ from typing import Callable, Optional, Tuple
 from . import motions
 from .buffer import Buffer
 from .keymap import VimAction, VimCommand, VimKeymap, VimMotion, VimOperator
+from .search import MatchSpan, Search, SearchMemory
 
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
@@ -96,16 +97,34 @@ class _ShownFind:
     both_ways: bool = False
 
 
+@dataclass
+class _SearchPrompt:
+    """A search being typed: what to go back to if it's cancelled, and the text."""
+
+    origin: Tuple[int, int]
+    lit_before: Optional[Search]
+    count: int
+    text: str = ""
+
+
 class VimEngine:
     """
     One editing session on one buffer. Always starts in NORMAL.
 
     `multiline=False` switches off `LINE_ONLY`, for a host with one line: their
     keys are left to the host, as if unbound.
+
+    `search_memory` holds the last search, for a host that wants it to outlive
+    this engine by handing the same one to the next.
     """
 
     def __init__(
-        self, buffer: Buffer, keys: VimKeymap, *, multiline: bool = True
+        self,
+        buffer: Buffer,
+        keys: VimKeymap,
+        *,
+        multiline: bool = True,
+        search_memory: Optional[SearchMemory] = None,
     ) -> None:
         self.buffer = buffer
         self.keys = keys
@@ -139,6 +158,24 @@ class VimEngine:
 
         # Whether the buffer is gathering edits into an undo step
         self._step_open = False
+
+        self._search_memory = search_memory or SearchMemory()
+        self._search_prompt: Optional[_SearchPrompt] = None
+
+        # The search whose matches are on show
+        self.lit_search: Optional[Search] = None
+
+    @property
+    def search_prompt(self) -> Optional[str]:
+        """What's typed in the search prompt, or None if it isn't open."""
+
+        return self._search_prompt.text if self._search_prompt else None
+
+    @property
+    def search_matches(self) -> Tuple[MatchSpan, ...]:
+        """The matches on show, as the text stands now, top to bottom."""
+
+        return tuple(self.lit_search.matches(self.buffer)) if self.lit_search else ()
 
     @property
     def pending(self) -> str:
@@ -206,6 +243,10 @@ class VimEngine:
     def _take_key(self, key: str) -> bool:
         if key == "escape":
             return self._escape()
+
+        if self._search_prompt is not None:
+            self._feed_search_prompt(self._search_prompt, key)
+            return True
 
         if self.mode != MODE_NORMAL:
             return False
@@ -328,8 +369,13 @@ class VimEngine:
         self._operator_count = self._operator_keys = ""
         self._finding = None
         self._replacing = False
+        self._search_prompt = None
 
     def _escape(self) -> bool:
+        if self._search_prompt is not None:
+            self._cancel_search_prompt(self._search_prompt)
+            return True
+
         if self.pending:
             self._cancel()
             return True
@@ -342,12 +388,16 @@ class VimEngine:
             self.set_mode(MODE_NORMAL)
             return True
 
-        return False
+        # With nothing on show there's nothing to clear, so it's the host's key
+        lit = bool(self.search_matches)
+        self.lit_search = None
+
+        return lit
 
     def _run(self, action: VimAction, count: int, counted: bool) -> None:
         if isinstance(action, VimCommand):
             self._shown_find = None
-            row, column = self.buffer.cursor
+            cursor = row, column = self.buffer.cursor
             line = self.buffer.line(row)
 
             if action is VimCommand.INSERT:
@@ -388,6 +438,11 @@ class VimEngine:
                 self._walk_history(self.buffer.undo, count)
             elif action is VimCommand.REDO:
                 self._walk_history(self.buffer.redo, count)
+            elif action is VimCommand.SEARCH:
+                self._search_prompt = _SearchPrompt(cursor, self.lit_search, count)
+                self.buffer.prompt_changed()
+            elif action is VimCommand.SEARCH_WORD:
+                self._search_word(cursor, count)
 
             return
 
@@ -451,6 +506,10 @@ class VimEngine:
             self._repeat_find(count, reverse=False)
         elif motion is VimMotion.REVERSE_FIND:
             self._repeat_find(count, reverse=True)
+        elif motion is VimMotion.SEARCH_NEXT:
+            self._repeat_search(count, forward=True)
+        elif motion is VimMotion.SEARCH_PREVIOUS:
+            self._repeat_search(count, forward=False)
 
     def _walk(self, step: motions.Step, count: int) -> None:
         """Take `step` up to `count` times, stopping once it gets nowhere."""
@@ -542,6 +601,94 @@ class VimEngine:
         )
         self.buffer.move_cursor(*shown.landed)
         return True
+
+    def _feed_search_prompt(self, prompt: _SearchPrompt, key: str) -> None:
+        """A key while typing a search. Only characters mean anything but these."""
+
+        if key == "enter":
+            self._confirm_search_prompt(prompt)
+            return
+
+        if key == "backspace":
+            if not prompt.text:
+                self._cancel_search_prompt(prompt)
+                return
+
+            prompt.text = prompt.text[:-1]
+        elif len(key) == 1:
+            prompt.text += key
+        else:
+            return
+
+        # Always from where it began, so the text alone decides where it stands
+        search = Search(prompt.text) if prompt.text else None
+        hit = search.next_from(self.buffer, prompt.origin, forward=True) if search else None
+
+        self.lit_search = search or prompt.lit_before
+        self.buffer.move_cursor(*(hit.place if hit else prompt.origin))
+        self.buffer.prompt_changed()
+
+    def _confirm_search_prompt(self, prompt: _SearchPrompt) -> None:
+        self._search_prompt = None
+        self.buffer.prompt_changed()
+
+        # Nothing typed means the last search again
+        search = Search(prompt.text) if prompt.text else self._search_memory.last
+
+        if search is not None:
+            self._search(search, prompt.count, prompt.origin, forward=True)
+
+    def _cancel_search_prompt(self, prompt: _SearchPrompt) -> None:
+        self._search_prompt = None
+        self.lit_search = prompt.lit_before
+        self.buffer.move_cursor(*prompt.origin)
+        self.buffer.prompt_changed()
+
+    def _search_word(self, cursor: Tuple[int, int], count: int) -> None:
+        row, column = cursor
+        line = self.buffer.line(row)
+        word = motions.word_at(line, column)
+
+        if word is None:
+            self.buffer.report("No word under the cursor")
+            return
+
+        start, end = word
+        search = Search(line[start:end], whole_word=True)
+        self._search(search, count, (row, start), forward=True)
+
+    def _repeat_search(self, count: int, *, forward: bool) -> None:
+        last = self._search_memory.last
+
+        if last is None:
+            self.buffer.report("No search yet")
+            return
+
+        self._search(last, count, self.buffer.cursor, forward=forward)
+
+    def _search(
+        self, search: Search, count: int, place: Tuple[int, int], *, forward: bool
+    ) -> None:
+        """Make `search` the last one and light it up, then go `count` matches along."""
+
+        self._search_memory.last = self.lit_search = search
+        wrapped = False
+
+        for _ in range(count):
+            hit = search.next_from(self.buffer, place, forward=forward)
+
+            if hit is None:
+                self.buffer.report(f"Not found: {search.text}")
+                return
+
+            place = hit.place
+            wrapped = wrapped or hit.wrapped
+
+        self.buffer.move_cursor(*place)
+
+        if wrapped:
+            end = "top" if forward else "bottom"
+            self.buffer.report(f"Search wrapped to the {end}")
 
     def _operate(
         self, operator: VimOperator, motion: VimMotion, count: int, counted: bool

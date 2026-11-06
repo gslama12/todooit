@@ -18,6 +18,8 @@ from todooit.vim_engine import (
     MODE_NORMAL,
     FindView,
     Register,
+    Search,
+    SearchMemory,
     VimCommand,
     VimEngine,
     VimKeymap,
@@ -43,6 +45,8 @@ class MemoryBuffer:
         self.redo_steps: List[Tuple[List[str], Tuple[int, int], List[str]]] = []
         self.step_start: Optional[Tuple[List[str], Tuple[int, int]]] = None
         self.step_edited = False
+        self.reports: List[str] = []
+        self.prompts_shown = 0
 
     @property
     def line_count(self) -> int:
@@ -120,6 +124,12 @@ class MemoryBuffer:
             self.undo_steps.append(step)
             self.lines, self.cursor = list(step[2]), step[1]
 
+    def report(self, message: str) -> None:
+        self.reports.append(message)
+
+    def prompt_changed(self) -> None:
+        self.prompts_shown += 1
+
     @property
     def text(self) -> str:
         return "\n".join(self.lines)
@@ -141,6 +151,10 @@ def default_keys() -> VimKeymap:
     keys.set("zz", VimCommand.CENTER_VIEW)
     keys.set("gx", VimCommand.OPEN_LINK)
     keys.set("gf", VimCommand.PICK_FILES)
+    keys.set("?", VimCommand.SEARCH)
+    keys.set("*", VimCommand.SEARCH_WORD)
+    keys.set("n", VimMotion.SEARCH_NEXT)
+    keys.set("N", VimMotion.SEARCH_PREVIOUS)
     return keys
 
 
@@ -2207,3 +2221,443 @@ def test_undo_works_on_a_single_line_host():
     feed(engine, "x")
     feed(engine, "u")
     assert buffer.text == "abc"
+
+
+# ------------------------------------------------------------------
+# ------------------------- Search ---------------------------------
+# ------------------------------------------------------------------
+
+
+def searched(
+    text: str, query: str, cursor: Tuple[int, int] = (0, 0), **options
+) -> VimEngine:
+    """An engine on `text` with `query` searched for and confirmed."""
+
+    engine = engine_on(text, cursor, **options)
+    feed(engine, "?" + query)
+    engine.feed("enter")
+    return engine
+
+
+def test_question_mark_opens_a_prompt_that_takes_every_character():
+    engine = engine_on("nothing here")
+
+    assert engine.search_prompt is None
+
+    feed(engine, "?")
+    assert engine.search_prompt == ""
+    assert engine.mode == MODE_NORMAL
+
+    # Keys that mean something in NORMAL are just text in here
+    feed(engine, "dd i")
+    assert engine.search_prompt == "dd i"
+    assert buffer_of(engine).text == "nothing here"
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_the_cursor_follows_the_first_match_forward_while_typing():
+    engine = engine_on("foo bar\nbaz bar\nfoo", (0, 0))
+
+    engine.feed("?")
+    engine.feed("b")
+    assert buffer_of(engine).cursor == (0, 4)
+
+    engine.feed("a")
+    assert buffer_of(engine).cursor == (0, 4)
+
+    engine.feed("z")
+    assert buffer_of(engine).cursor == (1, 0)
+
+
+def test_the_match_under_the_cursor_is_not_the_first_one():
+    assert buffer_of(searched("foo foo", "foo")).cursor == (0, 4)
+
+
+def test_while_typing_every_match_is_highlighted():
+    engine = engine_on("foo bar\nbaz foo")
+    feed(engine, "?foo")
+
+    assert engine.search_matches == ((0, 0, 3), (1, 4, 7))
+
+
+def test_backspace_narrows_back_and_an_empty_prompt_goes_back_to_the_start():
+    engine = engine_on("ab\nac", (0, 1))
+
+    feed(engine, "?ac")
+    assert buffer_of(engine).cursor == (1, 0)
+
+    engine.feed("backspace")
+    assert engine.search_prompt == "a"
+    assert buffer_of(engine).cursor == (1, 0)
+
+    engine.feed("backspace")
+    assert engine.search_prompt == ""
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.search_matches == ()
+
+
+def test_backspace_on_an_empty_prompt_closes_it():
+    engine = engine_on("abc")
+    feed(engine, "?")
+    engine.feed("backspace")
+
+    assert engine.search_prompt is None
+
+
+def test_a_key_with_no_character_does_nothing_in_the_prompt():
+    engine = engine_on("abc")
+    feed(engine, "?a")
+
+    assert engine.feed("tab") is True
+    assert engine.feed("<ctrl+d>") is True
+    assert engine.search_prompt == "a"
+
+
+def test_no_match_while_typing_leaves_the_cursor_where_it_began():
+    engine = engine_on("foo bar", (0, 2))
+    feed(engine, "?bar")
+    assert buffer_of(engine).cursor == (0, 4)
+
+    engine.feed("x")
+    assert buffer_of(engine).cursor == (0, 2)
+    assert engine.search_matches == ()
+
+
+def test_enter_confirms_and_keeps_the_cursor_on_the_match():
+    engine = searched("foo bar", "bar")
+
+    assert engine.search_prompt is None
+    assert buffer_of(engine).cursor == (0, 4)
+    assert engine.search_matches == ((0, 4, 7),)
+    assert buffer_of(engine).reports == []
+
+
+def test_enter_on_nothing_found_says_so():
+    engine = searched("foo", "[nope]", (0, 1))
+
+    assert buffer_of(engine).cursor == (0, 1)
+    assert buffer_of(engine).reports == ["Not found: [nope]"]
+
+
+def test_enter_on_an_empty_prompt_with_no_search_does_nothing():
+    engine = searched("foo", "", (0, 1))
+
+    assert engine.search_prompt is None
+    assert buffer_of(engine).cursor == (0, 1)
+    assert buffer_of(engine).reports == []
+
+
+def test_enter_on_an_empty_prompt_searches_again():
+    engine = searched("foo foo foo", "foo")
+    feed(engine, "?")
+    engine.feed("enter")
+
+    assert buffer_of(engine).cursor == (0, 8)
+
+
+def test_a_search_that_wraps_while_typing_says_so_when_confirmed():
+    engine = engine_on("bar foo", (0, 5))
+    feed(engine, "?bar")
+
+    assert buffer_of(engine).cursor == (0, 0)
+    assert buffer_of(engine).reports == []
+
+    engine.feed("enter")
+    assert buffer_of(engine).reports == ["Search wrapped to the top"]
+
+
+def test_escape_cancels_the_prompt_restoring_the_cursor_and_what_was_lit():
+    engine = searched("foo bar\nbaz", "foo")
+    place = buffer_of(engine).cursor
+
+    feed(engine, "?baz")
+    assert buffer_of(engine).cursor == (1, 0)
+    assert engine.search_matches == ((1, 0, 3),)
+
+    assert engine.feed("escape") is True
+    assert engine.search_prompt is None
+    assert buffer_of(engine).cursor == place
+    assert engine.search_matches == ((0, 0, 3),)
+
+    # The cancelled search isn't remembered
+    engine.feed("n")
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_the_prompt_tells_the_host_each_time_it_changes():
+    engine = engine_on("foo")
+
+    feed(engine, "?f")
+    assert buffer_of(engine).prompts_shown == 2
+
+    engine.feed("backspace")
+    assert buffer_of(engine).prompts_shown == 3
+
+    engine.feed("escape")
+    assert buffer_of(engine).prompts_shown == 4
+
+
+@pytest.mark.parametrize(
+    "query, cursor",
+    [
+        ("foo", (0, 4)),
+        ("FOO", (0, 8)),
+        ("Foo", (0, 4)),
+    ],
+)
+def test_case_is_ignored_unless_the_search_has_a_capital(query, cursor):
+    assert buffer_of(searched("foo Foo FOO", query)).cursor == cursor
+
+
+def test_search_is_plain_text_not_a_pattern():
+    assert buffer_of(searched("abc a.c", "a.c")).cursor == (0, 4)
+    assert buffer_of(searched("abc (x", "(x")).cursor == (0, 4)
+
+
+def test_a_search_matches_the_raw_text():
+    engine = searched("[name](http://url.example)", "url")
+
+    assert buffer_of(engine).cursor == (0, 14)
+
+
+def test_n_goes_forward_and_wraps_saying_so():
+    engine = searched("foo x foo", "foo")
+    assert buffer_of(engine).cursor == (0, 6)
+
+    engine.feed("n")
+    assert buffer_of(engine).cursor == (0, 0)
+    assert buffer_of(engine).reports[-1] == "Search wrapped to the top"
+
+
+def test_big_n_goes_backward_and_wraps_saying_so():
+    engine = searched("foo x foo y", "foo")
+    engine.feed("N")
+    assert buffer_of(engine).cursor == (0, 0)
+    assert buffer_of(engine).reports == []
+
+    engine.feed("N")
+    assert buffer_of(engine).cursor == (0, 6)
+    assert buffer_of(engine).reports[-1] == "Search wrapped to the bottom"
+
+
+def test_n_goes_across_lines_and_takes_a_count():
+    engine = searched("a\nb a\n\na\na", "a", (4, 0))
+    assert buffer_of(engine).cursor == (0, 0)
+
+    feed(engine, "2n")
+    assert buffer_of(engine).cursor == (3, 0)
+    feed(engine, "2N")
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_matches_never_overlap():
+    engine = searched("aaaaa", "aa")
+
+    assert engine.search_matches == ((0, 0, 2), (0, 2, 4))
+    assert buffer_of(engine).cursor == (0, 2)
+
+
+def test_a_count_on_the_prompt_goes_that_many_matches_along():
+    engine = engine_on("foo foo foo foo")
+    feed(engine, "3?foo")
+    assert buffer_of(engine).cursor == (0, 4)
+
+    engine.feed("enter")
+    assert buffer_of(engine).cursor == (0, 12)
+
+
+def test_n_with_no_search_yet_says_so():
+    engine = engine_on("foo")
+
+    for key in "nN":
+        buffer_of(engine).reports.clear()
+        assert engine.feed(key) is True
+        assert buffer_of(engine).reports == ["No search yet"]
+        assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_n_with_nothing_left_to_find_says_so():
+    engine = searched("foo", "foo")
+    buffer_of(engine).reports.clear()
+
+    feed(engine, "ö")
+    engine.keys.set("x", VimCommand.DELETE_LINE)
+    engine.feed("x")
+    assert buffer_of(engine).text == ""
+
+    engine.feed("n")
+    assert buffer_of(engine).reports == ["Not found: foo"]
+
+
+def test_a_lone_match_wraps_onto_itself():
+    engine = searched("foo", "foo")
+
+    assert buffer_of(engine).cursor == (0, 0)
+    assert buffer_of(engine).reports == ["Search wrapped to the top"]
+
+
+def test_star_searches_the_word_under_the_cursor_as_a_whole_word():
+    engine = engine_on("foo foobar foo", (0, 1))
+    engine.feed("*")
+
+    assert buffer_of(engine).cursor == (0, 11)
+    assert engine.search_matches == ((0, 0, 3), (0, 11, 14))
+    assert engine.search_prompt is None
+
+
+def test_star_ignores_case_even_with_a_capital():
+    engine = engine_on("Foo foo", (0, 0))
+    engine.feed("*")
+
+    assert buffer_of(engine).cursor == (0, 4)
+
+
+def test_star_counts_umlauts_and_underscores_as_the_word():
+    engine = engine_on("für fü_r fürs für")
+    engine.feed("*")
+
+    assert buffer_of(engine).cursor == (0, 14)
+
+
+def test_star_counts_a_combining_umlaut_as_the_word():
+    engine = engine_on("fu fu\u0308r fu")
+    engine.feed("*")
+
+    assert buffer_of(engine).cursor == (0, 8)
+
+
+def test_star_on_blanks_takes_the_next_word_on_the_line():
+    engine = engine_on("  foo foo", (0, 0))
+    engine.feed("*")
+
+    assert buffer_of(engine).cursor == (0, 6)
+
+
+def test_star_with_no_word_says_so():
+    engine = engine_on("foo\n  ", (1, 0))
+    engine.feed("*")
+
+    assert buffer_of(engine).reports == ["No word under the cursor"]
+    assert engine.search_matches == ()
+
+
+def test_n_after_star_stays_a_whole_word_search():
+    engine = engine_on("foo foobar foo")
+    feed(engine, "*n")
+
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_star_takes_a_count():
+    engine = engine_on("foo foo foo foo")
+    feed(engine, "2*")
+
+    assert buffer_of(engine).cursor == (0, 8)
+
+
+def test_highlights_stay_until_the_next_search():
+    engine = searched("foo bar", "foo")
+    feed(engine, "ö")
+
+    assert engine.search_matches == ((0, 0, 3),)
+
+    feed(engine, "?bar")
+    engine.feed("enter")
+    assert engine.search_matches == ((0, 4, 7),)
+
+
+def test_highlights_follow_the_text_as_it_changes():
+    engine = searched("foo bar foo", "foo")
+    buffer_of(engine).replace((0, 0), (0, 4), "")
+
+    assert engine.search_matches == ((0, 4, 7),)
+
+
+def test_escape_clears_highlights_without_leaving_it_to_the_host():
+    engine = searched("foo", "foo")
+
+    assert engine.feed("escape") is True
+    assert engine.search_matches == ()
+
+    # Now it's the host's, to close the window
+    assert engine.feed("escape") is False
+
+
+def test_escape_leaves_a_pending_command_before_the_highlights():
+    engine = searched("foo", "foo")
+    engine.keys.set("d", VimOperator.DELETE)
+    feed(engine, "d")
+
+    engine.feed("escape")
+    assert engine.pending == ""
+    assert engine.search_matches == ((0, 0, 3),)
+
+
+def test_escape_leaves_insert_before_the_highlights():
+    engine = searched("foo", "foo")
+    feed(engine, "i")
+
+    engine.feed("escape")
+    assert engine.mode == MODE_NORMAL
+    assert engine.search_matches == ((0, 0, 3),)
+
+    engine.feed("escape")
+    assert engine.search_matches == ()
+
+
+def test_a_search_with_nothing_to_show_doesnt_hold_escape_back():
+    engine = searched("foo", "nope")
+
+    assert engine.feed("escape") is False
+
+
+def test_after_escape_n_still_works_and_lights_the_matches_again():
+    engine = searched("foo foo", "foo")
+    engine.feed("escape")
+
+    engine.feed("n")
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.search_matches == ((0, 0, 3), (0, 4, 7))
+
+
+def test_the_last_search_outlives_the_engine_through_its_memory():
+    memory = SearchMemory()
+    first = engine_on("foo foo", search_memory=memory)
+    feed(first, "?foo")
+    first.feed("enter")
+
+    second = engine_on("x foo", search_memory=memory)
+    assert second.search_matches == ()
+
+    second.feed("n")
+    assert buffer_of(second).cursor == (0, 2)
+    assert memory.last == Search("foo")
+
+
+def test_an_operator_takes_a_search_motion():
+    engine = searched("foo bar foo", "foo")
+    assert buffer_of(engine).cursor == (0, 8)
+
+    engine.keys.set("d", VimOperator.DELETE)
+    feed(engine, "gg")
+    buffer_of(engine).cursor = (0, 0)
+    feed(engine, "dn")
+
+    assert buffer_of(engine).text == "foo"
+    assert engine.register == Register("foo bar ", linewise=False)
+
+
+def test_a_failed_search_motion_leaves_an_operator_with_nothing_to_take():
+    engine = engine_on("foo")
+    engine.keys.set("d", VimOperator.DELETE)
+    feed(engine, "dn")
+
+    assert buffer_of(engine).text == "foo"
+    assert buffer_of(engine).reports == ["No search yet"]
+    assert engine.pending == ""
+
+
+def test_a_single_line_host_can_search_too():
+    engine = searched("foo foo", "foo", multiline=False)
+
+    assert buffer_of(engine).cursor == (0, 4)

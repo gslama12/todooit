@@ -80,3 +80,9 @@ class Buffer(Protocol):
 
     def redo(self) -> None:
         """Put back the last step undone, if any, the cursor going to the same place."""
+
+    def report(self, message: str) -> None:
+        """Show the user a short message, in plain text."""
+
+    def prompt_changed(self) -> None:
+        """The search prompt opened, changed or closed: redraw whatever shows it."""

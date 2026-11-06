@@ -91,7 +91,11 @@ class ClipboardEditing(TextEditing):
         event.stop()
         event.prevent_default()
 
-        if self.host.awaiting_answer or not event.text:
+        if (
+            self.host.awaiting_answer
+            or self.search_prompt is not None
+            or not event.text
+        ):
             return
 
         if paths := pasted_paths(event.text):

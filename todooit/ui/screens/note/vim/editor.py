@@ -74,6 +74,7 @@ class NoteEditor(ClipboardEditing):
 
         used = self.engine.feed(key)
         self.show_find_view()
+        self.show_search()
 
         if used:
             self.host.pending_changed()

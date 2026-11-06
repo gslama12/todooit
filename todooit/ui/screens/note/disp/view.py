@@ -32,6 +32,9 @@ from .markup import (
     scan_note,
 )
 
+# (row, start column, end column, style name), in stored columns
+OverlaySpan = Tuple[int, int, int, str]
+
 
 @dataclass(frozen=True)
 class Overlay:
@@ -40,9 +43,9 @@ class Overlay:
     # Rows dimmed from edge to edge
     dimmed_rows: range
 
-    # (row, start column, end column, style name), in stored columns. Later ones
-    # go over earlier ones, and text folded off the page isn't drawn at all.
-    spans: Sequence[Tuple[int, int, int, str]]
+    # Later ones go over earlier ones, and text folded off the page isn't drawn
+    # at all.
+    spans: Sequence[OverlaySpan]
 
 
 class NoteView(TextArea):
@@ -56,6 +59,14 @@ class NoteView(TextArea):
         self.overlay = overlay
         self._build_highlight_map()
         self.refresh()
+
+    def standing_spans(self) -> Sequence[OverlaySpan]:
+        """
+        Spans drawn under any overlay, for as long as a subclass has some to give.
+        Asked again each time the note is redrawn, so they can follow its text.
+        """
+
+        return ()
 
     def _set_document(self, text: str, language) -> None:
         """
@@ -312,7 +323,9 @@ class NoteView(TextArea):
         for row, spans in enumerate(scan_note(lines, raw_rows)):
             highlights[row].extend(spans)
 
-        for row, start, end, name in self.overlay.spans if self.overlay else ():
+        overlay_spans = self.overlay.spans if self.overlay else ()
+
+        for row, start, end, name in (*self.standing_spans(), *overlay_spans):
             assert isinstance(document, FoldedDocument)
 
             drawn = document[row]

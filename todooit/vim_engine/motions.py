@@ -6,7 +6,7 @@ anything else that isn't blank, as in vim.
 """
 
 import unicodedata
-from typing import Callable, Iterable, Tuple
+from typing import Callable, Iterable, Optional, Tuple
 
 from .buffer import Buffer
 
@@ -26,6 +26,36 @@ def _kind(char: str) -> int:
     is_word = char.isalnum() or char == "_" or unicodedata.combining(char)
 
     return _WORD if is_word else _PUNCTUATION
+
+
+def is_whole_word(text: str, start: int, end: int) -> bool:
+    """Whether what's between these columns has no word running on from either end."""
+
+    return (start == 0 or _kind(text[start - 1]) != _WORD) and (
+        end == len(text) or _kind(text[end]) != _WORD
+    )
+
+
+def word_at(text: str, column: int) -> Optional[Tuple[int, int]]:
+    """Where the word under `column` is, or else the next one along, as `*` takes."""
+
+    start = column
+
+    while start < len(text) and _kind(text[start]) != _WORD:
+        start += 1
+
+    if start == len(text):
+        return None
+
+    end = start
+
+    while end < len(text) and _kind(text[end]) == _WORD:
+        end += 1
+
+    while start > 0 and _kind(text[start - 1]) == _WORD:
+        start -= 1
+
+    return start, end
 
 
 def next_word_start(buffer: Buffer, row: int, column: int) -> Place:

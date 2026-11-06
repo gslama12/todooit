@@ -32,6 +32,8 @@ class VimMotion(Enum):
     BOTTOM = "bottom"
     PARAGRAPH_UP = "paragraph_up"
     PARAGRAPH_DOWN = "paragraph_down"
+    SEARCH_NEXT = "search_next"
+    SEARCH_PREVIOUS = "search_previous"
 
 
 class VimCommand(Enum):
@@ -55,6 +57,8 @@ class VimCommand(Enum):
     REPLACE_CHAR = "replace_char"
     UNDO = "undo"
     REDO = "redo"
+    SEARCH = "search"
+    SEARCH_WORD = "search_word"
 
 
 class VimOperator(Enum):

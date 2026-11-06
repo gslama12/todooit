@@ -2,12 +2,13 @@
 The note window: a todo's note (or the pinned note) with its attachments
 """
 
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
+from textual.content import Content
 from textual.timer import Timer
 from textual.widgets import Static, TextArea
 
@@ -263,7 +264,29 @@ class NoteScreenBase(BaseScreen):
 
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
-            self.hint.update(self.hint_for(mode, self.picking_files))
+            self.hint.update(
+                self._search_prompt_line() or self.hint_for(mode, self.picking_files)
+            )
+
+    def prompt_changed(self) -> None:
+        """Redraw the hint line, where a search prompt stands in for the hints."""
+
+        if self._report_timer is not None:
+            self._report_timer.stop()
+
+        self.mode_changed()
+
+    def _search_prompt_line(self) -> Optional[Content]:
+        """The search being typed, as typed, with a cursor at its end."""
+
+        text = self.editor.search_prompt
+
+        if text is None:
+            return None
+
+        key = self.api.vim.keys.key_for(VimCommand.SEARCH)
+
+        return Content.from_markup(key_label(key or "")) + Content(f"{text}█")
 
     def pending_changed(self) -> None:
         """Redraw the mode chip, with any partial command beside it."""
@@ -275,9 +298,9 @@ class NoteScreenBase(BaseScreen):
             f" {editor.mode} {pending} " if pending else f" {editor.mode} "
         )
 
-    def report(self, message: str) -> None:
+    def report(self, message: Union[str, Content]) -> None:
         """
-        Show `message` in the hint line, restoring the hints after a timeout -
+        Show `message`, markup if it's a string, in the hint line, restoring the hints after a timeout -
         todooit's normal message bar is on the screen underneath this one.
         """
 

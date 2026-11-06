@@ -4,6 +4,8 @@ The note as the text the vim engine works on
 
 from typing import TYPE_CHECKING, Tuple
 
+from textual.content import Content
+
 from todooit.utils.links import folded_link_at
 
 from ..disp.document import HangingDocument
@@ -155,3 +157,10 @@ class NoteBuffer:
 
     def redo(self) -> None:
         self._editor.redo()
+
+    def report(self, message: str) -> None:
+        # The message can hold what was searched for, which is no markup of ours
+        self._editor.host.report(Content(message))
+
+    def prompt_changed(self) -> None:
+        self._editor.host.prompt_changed()

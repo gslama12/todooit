@@ -5,12 +5,14 @@ whatever text host implements `Buffer`. Imports nothing from the UI.
 - `buffer`  `Buffer`: all the engine asks of the text it edits
 - `keymap`  `VimKeymap`: which keys mean what, named by `VimMotion`/`VimCommand`/`VimOperator`
 - `motions` Where a motion lands, worked out from the text
+- `search`  `Search`: what a search looks for, and where it is in the text
 - `engine`  `VimEngine`: modes, pending keys, and carrying commands out
 """
 
 from .buffer import Buffer
 from .engine import MODE_INSERT, MODE_NORMAL, FindView, Register, VimEngine
 from .keymap import VimAction, VimCommand, VimKeymap, VimMotion, VimOperator
+from .search import Search, SearchMemory
 
 __all__ = [
     "MODE_INSERT",
@@ -18,6 +20,8 @@ __all__ = [
     "Buffer",
     "FindView",
     "Register",
+    "Search",
+    "SearchMemory",
     "VimAction",
     "VimCommand",
     "VimEngine",
