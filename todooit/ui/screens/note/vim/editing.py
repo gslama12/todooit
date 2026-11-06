@@ -2,14 +2,20 @@
 Editing keys: enter, nesting, clearing, and keeping numbered lists counted
 """
 
+from typing import Tuple
+
 from textual.widgets.text_area import Location
 
 from ..disp.document import FoldedDocument
 from ..disp.markup import (
     INDENT,
+    in_one_list,
     indent_depth,
+    item_number,
     line_prefix,
+    list_opening,
     marker_start,
+    ordered_marker,
     recount,
     split_indent,
     split_quote,
@@ -108,6 +114,57 @@ class TextEditing(ModalEditor):
 
         for at, start, end, marker in recount(document.stored_lines, row):
             self.replace(marker, (at, start), (at, end), maintain_selection_offset=True)
+
+    def replace_stored(
+        self, start: Tuple[int, int], end: Tuple[int, int], text: str
+    ) -> None:
+        """
+        As it is on a modal editor, and the lists around it counted again. The
+        edit itself stays literal, even on a marker: only numbers get put right.
+        """
+
+        document = self.document
+        assert isinstance(document, FoldedDocument)
+
+        row = start[0]
+
+        # Taking whole lines off a list's top: what's next in it takes its number
+        lines = document.stored_lines
+        takes_top = (
+            start[1] == end[1] == 0 and end[0] > row and in_one_list(lines, row, end[0])
+        )
+        opening = list_opening(lines, row) if takes_top else None
+
+        super().replace_stored(start, end, text)
+
+        if opening is not None:
+            self._hand_on_number(row, *opening)
+
+        # The line below too: this one may have just stopped being an item
+        for at in range(row, min(row + 2, document.line_count)):
+            self._recount(at)
+
+    def _hand_on_number(self, row: int, bar: str, indent: str, marker: str) -> None:
+        """Make `row` open its list with `marker`, if it's an item just like that."""
+
+        document = self.document
+        assert isinstance(document, FoldedDocument)
+
+        found = list_opening(document.stored_lines, row)
+
+        if found is None or found[:2] != (bar, indent) or found[2] == marker:
+            return
+
+        number = item_number(marker)
+        assert number is not None
+
+        column = len(bar) + len(indent)
+        self.replace(
+            ordered_marker(number),
+            (row, column),
+            (row, column + len(found[2])),
+            maintain_selection_offset=True,
+        )
 
     def _delete_via_keyboard(self, start: Location, end: Location):
         result = super()._delete_via_keyboard(start, end)

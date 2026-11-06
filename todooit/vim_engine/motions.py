@@ -54,6 +54,28 @@ def next_word_start(buffer: Buffer, row: int, column: int) -> Place:
             return row, 0
 
 
+def word_operand_end(buffer: Buffer, row: int, column: int) -> Place:
+    """
+    Where the last `w` of an operator stops: at the next word on this line, or
+    else the line's end, so `dw` on its last word leaves the line break. On an
+    empty line there's only the next line's start to go to.
+    """
+
+    text = buffer.line(row)
+
+    if not text:
+        return (row + 1, 0) if row < buffer.line_count - 1 else (row, 0)
+
+    if column < len(text) and (kind := _kind(text[column])) != _BLANK:
+        while column < len(text) and _kind(text[column]) == kind:
+            column += 1
+
+    while column < len(text) and _kind(text[column]) == _BLANK:
+        column += 1
+
+    return row, column
+
+
 def previous_word_start(buffer: Buffer, row: int, column: int) -> Place:
     """`b`: as `w`, an empty line counts as a word."""
 

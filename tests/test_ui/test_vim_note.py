@@ -21,6 +21,7 @@ from tests.test_ui.ui_base import (
 )
 from todooit.api import PinnedNote, Todo
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
+from todooit.ui.screens.note.disp.document import FoldedDocument
 from todooit.ui.screens.note.disp.markup import BACKDROP, TARGET
 from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
 from todooit.vim_engine import VimCommand, VimMotion
@@ -1099,7 +1100,7 @@ async def test_gf_with_nothing_attached_says_so():
         assert "Nothing attached" in str(screen.hint.render())
 
 
-@pytest.mark.parametrize("key", ["u", "d", "o", "0", "$"])
+@pytest.mark.parametrize("key", ["u", "o", "0", "$"])
 async def test_the_old_note_keys_do_nothing_now(key):
     opened: list = []
     text = "\n".join(f"https://example.com/{row}" for row in range(60))
@@ -1308,3 +1309,248 @@ async def test_a_long_note_scrolls_without_a_scrollbar():
         await pilot.press("ctrl+d")
         await pilot.pause()
         assert editor.scroll_offset.y > 0
+
+
+# --- The delete operator ------------------------------------------------------
+
+
+async def note_of(pilot, text: str, at=(0, 0)) -> NoteScreen:
+    """A note holding exactly `text`, with no list carried on by the typing of it."""
+
+    screen = await open_note(pilot)
+    await pilot.press("escape")
+    screen.editor.text = text
+    screen.editor.move_cursor(at)
+    await pilot.pause()
+    return screen
+
+
+async def test_bare_d_no_longer_scrolls_it_waits_for_a_motion():
+    text = "\n".join(f"line {row}" for row in range(60))
+
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, (30, 2))
+        editor = screen.editor
+        scrolled = editor.scroll_offset
+
+        await pilot.press("d")
+        await pilot.pause()
+
+        assert editor.text == text
+        assert editor.cursor_location == (30, 2)
+        assert editor.scroll_offset == scrolled
+        assert editor.engine.pending == "d"
+
+
+async def test_a_delete_goes_all_the_way_to_the_todo():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar baz")
+        todo = screen.todo
+
+        await pilot.press("d", "w")
+        assert screen.editor.text == "bar baz"
+        assert screen.editor.read_only
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert not isinstance(pilot.app.screen, NoteScreen)
+        assert todo.note == "bar baz"
+
+
+@pytest.mark.parametrize(
+    "keys, text",
+    [
+        (("2", "d", "3", "w"), "g h"),
+        (("d", "e"), " c d e f g h"),
+        (("x",), " b c d e f g h"),
+        (("D",), ""),
+        (("d", "_"), ""),
+        (("d", "t", "c"), "c d e f g h"),
+        (("d", "d"), ""),
+    ],
+)
+async def test_deletes_through_the_real_keymap(keys, text):
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "a b c d e f g h")
+
+        await pilot.press(*keys)
+
+        assert screen.editor.text == text
+        assert screen.editor.mode == MODE_NORMAL
+
+
+async def test_three_dd_deletes_three_lines():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "a\nb\nc\nd\ne", (1, 0))
+
+        await pilot.press("3", "d", "d")
+
+        assert screen.editor.text == "a\ne"
+        assert screen.editor.cursor_location == (1, 0)
+
+
+async def test_the_partial_command_shows_beside_the_chip_and_escape_cancels_it():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "abc def")
+        frame = screen.frame
+
+        await pilot.press("2")
+        await pilot.press("d")
+        assert frame.border_subtitle == " NORMAL 2d "
+
+        await pilot.press("3")
+        assert frame.border_subtitle == " NORMAL 2d3 "
+
+        # Cancels the command, and leaves the window open
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is screen
+        assert frame.border_subtitle == " NORMAL "
+        assert screen.editor.text == "abc def"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is not screen
+
+
+async def test_an_invalid_key_cancels_a_delete_and_goes_no_further():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "abc def")
+
+        await pilot.press("d", "q")
+
+        assert screen.frame.border_subtitle == " NORMAL "
+        assert screen.editor.text == "abc def"
+
+
+LINK = "[x](http://c.d)"
+
+
+@pytest.mark.parametrize(
+    "text, at, keys, after",
+    [
+        # Into a rendered row, where a stored column is not a drawn one
+        (f"abc\n{LINK}, tail", (0, 0), ("d", "f", ","), " tail"),
+        (f"{LINK}, tail\nzz", (1, 1), ("d", "F", ","), f"{LINK}z"),
+        # A line break at the end of a rendered row
+        (f"{LINK} tail\nb", (1, 0), ("d", "d"), f"{LINK} tail"),
+        (f"{LINK} tail\nb\nc", (1, 0), ("d", "l"), f"{LINK} tail"),
+        (f"a\n{LINK} tail\nb", (0, 0), ("d", "l"), "b"),
+        # On the raw row itself, the address is text like any other
+        (f"{LINK} tail", (0, 1), ("d", "w"), "[](http://c.d) tail"),
+        (f"{LINK} tail", (0, 1), ("x",), "[](http://c.d) tail"),
+    ],
+)
+async def test_a_delete_reads_stored_columns_on_rendered_rows_too(text, at, keys, after):
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, at)
+
+        await pilot.press(*keys)
+
+        assert screen.editor.text == after
+
+
+async def test_after_a_delete_only_the_cursor_line_is_raw():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, f"a\n{LINK}\nb\n{LINK}\nc", (0, 0))
+        editor = screen.editor
+
+        await pilot.press("d", "l")
+
+        assert editor.text == f"b\n{LINK}\nc"
+        assert editor.cursor_location == (0, 0)
+        assert isinstance(editor.document, FoldedDocument)
+        assert editor.document.raw_rows == range(1)
+        assert editor.document[1] != LINK
+
+
+async def test_a_delete_up_from_the_bottom_of_a_long_note_leaves_the_view_in_it():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "\n".join(f"line {n}" for n in range(100)))
+        editor = screen.editor
+
+        await pilot.press("G")
+        await pilot.pause()
+        assert editor.scroll_offset.y > 0
+
+        await pilot.press("d", "g", "g")
+        await pilot.pause()
+
+        assert editor.text == ""
+        assert editor.cursor_location == (0, 0)
+        assert editor.scroll_offset.y == 0
+
+
+@pytest.mark.parametrize(
+    "text, at, keys, after",
+    [
+        # dd anywhere in the list
+        ("1. a\n2. b\n3. c", (1, 0), ("d", "d"), "1. a\n2. c"),
+        ("1. a\n2. b\n3. c", (0, 0), ("d", "d"), "1. b\n2. c"),
+        ("1. a\n2. b\n3. c", (2, 0), ("d", "d"), "1. a\n2. b"),
+        ("1. a\n2. b\n3. c\n4. d", (0, 0), ("2", "d", "d"), "1. c\n2. d"),
+        # A list opening on another number keeps opening on it
+        ("5. a\n6. b\n7. c", (0, 0), ("d", "d"), "5. b\n6. c"),
+        # Quoted, and nested
+        ("> 1. a\n> 2. b", (0, 0), ("d", "d"), "> 1. b"),
+        ("1. a\n  1. x\n  2. y\n2. b", (1, 0), ("d", "d"), "1. a\n  1. y\n2. b"),
+        ("1. a\n  1. x\n2. b", (0, 0), ("d", "d"), "  1. x\n1. b"),
+        # The line between two lists goes: they're one list
+        ("1. a\n\n1. b", (1, 0), ("d", "d"), "1. a\n2. b"),
+        # Text before the list has nothing to do with its numbers
+        ("x\n1. a\n2. b", (0, 0), ("d", "d"), "1. a\n2. b"),
+        ("x\n1. a\n2. b", (1, 0), ("d", "d"), "x\n1. b"),
+        # Nor does a separate list below what went take over the deleted one's
+        ("1. a\n\n5. b\n6. c", (0, 0), ("2", "d", "d"), "5. b\n6. c"),
+        ("3. a\nplain\n1. b\n2. c", (0, 0), ("2", "d", "d"), "1. b\n2. c"),
+        ("1. a\nplain\n- x\n7. b", (0, 0), ("3", "d", "d"), "7. b"),
+        # A bullet takes over no number
+        ("- a\n1. b\n2. c", (0, 0), ("d", "d"), "1. b\n2. c"),
+        # Edits on a marker are literal, then the numbers are put right
+        ("1. a\n12. b\n13. c", (1, 1), ("x",), "1. a\n2. b\n3. c"),
+        ("1. a\n2. b", (1, 1), ("x",), "1. a\n2 b"),
+        ("1. a\n2. b", (0, 0), ("x",), ". a\n2. b"),
+        ("1. a\n2. b\n3. c", (1, 0), ("D",), "1. a\n\n3. c"),
+        ("1. a\n2. b", (0, 0), ("d", "w"), ". a\n2. b"),
+        ("- a", (0, 0), ("x",), " a"),
+        # The rest of the items' text is plain text
+        ("1. abc\n2. d", (0, 3), ("x",), "1. bc\n2. d"),
+    ],
+)
+async def test_deleting_from_a_list_counts_it_again(text, at, keys, after):
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, at)
+
+        await pilot.press(*keys)
+
+        assert screen.editor.text == after
+
+
+async def test_a_delete_works_in_the_pinned_note_too():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        PinnedNote.set_text("foo bar")
+
+        app.push_screen(PinnedNoteScreen())
+        await pilot.pause()
+
+        await pilot.press("d", "w")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert PinnedNote.get_text() == "bar"
+
+
+async def test_the_attachment_strip_keeps_its_own_x():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "abc")
+        screen.attach([__file__])
+        await pilot.press("g", "f")
+        await pilot.pause()
+
+        await pilot.press("x", "x")
+        await pilot.pause()
+
+        assert screen.editor.text == "abc"
+        assert not screen.files.paths

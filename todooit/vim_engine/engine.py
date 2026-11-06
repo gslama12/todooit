@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 from . import motions
 from .buffer import Buffer
-from .keymap import VimAction, VimCommand, VimKeymap, VimMotion
+from .keymap import VimAction, VimCommand, VimKeymap, VimMotion, VimOperator
 
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
@@ -27,6 +27,7 @@ LINE_ONLY = frozenset(
         VimMotion.PARAGRAPH_DOWN,
         VimCommand.CENTER_VIEW,
         VimCommand.PICK_FILES,
+        VimCommand.DELETE_LINE,
     }
 )
 
@@ -41,6 +42,30 @@ FIND_OFFSETS = {
     VimMotion.TILL_FORWARD: -1,
     VimMotion.TILL_BACKWARD: 1,
 }
+
+# Motions an operator takes whole lines of, and the character motions that take
+# the character they land on along. The rest stop short of it.
+LINEWISE = frozenset(
+    {
+        VimMotion.UP,
+        VimMotion.DOWN,
+        VimMotion.LINE_ABOVE,
+        VimMotion.LINE_BELOW,
+        VimMotion.HALF_PAGE_UP,
+        VimMotion.HALF_PAGE_DOWN,
+        VimMotion.TOP,
+        VimMotion.BOTTOM,
+    }
+)
+INCLUSIVE = frozenset({VimMotion.WORD_END, VimMotion.LAST_CHARACTER})
+
+
+@dataclass(frozen=True)
+class Register:
+    """What was last deleted, and whether it was whole lines."""
+
+    text: str
+    linewise: bool
 
 
 @dataclass(frozen=True)
@@ -89,6 +114,13 @@ class VimEngine:
         self._count = ""
         self._keys = ""
 
+        # The operator waiting for its motion: which, its count, and its keys
+        self._operator: Optional[VimOperator] = None
+        self._operator_count = ""
+        self._operator_keys = ""
+
+        self.register: Optional[Register] = None
+
         # The `f F t T` waiting for its character
         self._finding: Optional[VimMotion] = None
 
@@ -99,9 +131,9 @@ class VimEngine:
 
     @property
     def pending(self) -> str:
-        """The partial command so far, as typed: `2f`."""
+        """The partial command so far, as typed: `2d3f`."""
 
-        return self._count + self._keys
+        return self._operator_count + self._operator_keys + self._count + self._keys
 
     @property
     def find_view(self) -> Optional[FindView]:
@@ -155,10 +187,24 @@ class VimEngine:
         was_pending = bool(self.pending)
         self._keys += key if len(key) == 1 else f"<{key}>"
 
-        if self.keys.continues(self._keys):
-            return True
+        if self._operator is None:
+            action = self.keys.action_for(self._keys)
 
-        action = self.keys.action_for(self._keys)
+            if not isinstance(action, VimOperator) and self.keys.continues(self._keys):
+                return True
+        else:
+            whole = self._operator_keys + self._keys
+            action = self.keys.action_for(whole)
+
+            if action is None:
+                if self.keys.continues(self._keys) or self.keys.continues(whole):
+                    return True
+
+                action = self.keys.action_for(self._keys)
+
+                # Only a motion can follow an operator
+                if not isinstance(action, VimMotion):
+                    action = None
 
         if action is None or (action in LINE_ONLY and not self.multiline):
             # In the middle of a command, a wrong key only cancels it
@@ -166,13 +212,27 @@ class VimEngine:
             self._shown_find = None
             return was_pending
 
+        if isinstance(action, VimOperator):
+            self._operator = action
+            self._operator_count, self._operator_keys = self._count, self._keys
+            self._count = self._keys = ""
+            self._shown_find = None
+            return True
+
         if isinstance(action, VimMotion) and action in FIND_OFFSETS:
             self._finding = action
             self._shown_find = None
             return True
 
-        counted = bool(self._count)
-        self._run(action, self._take_count(), counted)
+        operator = self._operator
+        counted = bool(self._count or self._operator_count)
+        count = self._take_count()
+
+        if operator is not None and isinstance(action, VimMotion):
+            self._operate(operator, action, count, counted)
+        else:
+            self._run(action, count, counted)
+
         return True
 
     def set_mode(self, mode: str) -> None:
@@ -208,12 +268,14 @@ class VimEngine:
     def _take_count(self) -> int:
         """The count of the command just completed, which ends it. 1 if none."""
 
-        count = int(self._count or 1)
+        count = int(self._count or 1) * int(self._operator_count or 1)
         self._cancel()
         return count
 
     def _cancel(self) -> None:
         self._count = self._keys = ""
+        self._operator = None
+        self._operator_count = self._operator_keys = ""
         self._finding = None
 
     def _escape(self) -> bool:
@@ -245,6 +307,15 @@ class VimEngine:
                 self.buffer.open_link()
             elif action is VimCommand.PICK_FILES:
                 self.buffer.pick_files()
+            elif action is VimCommand.DELETE_LINE:
+                row = self.buffer.cursor[0]
+                self._delete_lines(row, row + count - 1)
+            elif action is VimCommand.DELETE_TO_LINE_END:
+                self._operate(
+                    VimOperator.DELETE, VimMotion.LAST_CHARACTER, count, counted
+                )
+            elif action is VimCommand.DELETE_CHAR:
+                self._operate(VimOperator.DELETE, VimMotion.RIGHT, count, counted)
 
             return
 
@@ -325,6 +396,7 @@ class VimEngine:
         """The key after `f F t T`. Only a character means anything there."""
 
         motion = self._finding
+        operator = self._operator
         assert motion is not None
 
         if len(key) != 1:
@@ -332,11 +404,15 @@ class VimEngine:
             return
 
         self._last_find = (motion, key)
-        self._find(motion, key, self._take_count())
+        origin = self.buffer.cursor
+        found = self._find(motion, key, self._take_count())
 
-    def _repeat_find(self, count: int, *, reverse: bool) -> None:
+        if operator is not None:
+            self._operate_on_find(origin, found, motion in FORWARD_FINDS)
+
+    def _repeat_find(self, count: int, *, reverse: bool) -> bool:
         if self._last_find is None:
-            return
+            return False
 
         motion, char = self._last_find
 
@@ -344,13 +420,16 @@ class VimEngine:
             self._show_find(motion, char)
 
         forward = (motion in FORWARD_FINDS) != reverse
-        self._jump(count, forward, may_stay=False)
 
-    def _find(self, motion: VimMotion, char: str, count: int) -> None:
+        return self._jump(count, forward, may_stay=False)
+
+    def _find(self, motion: VimMotion, char: str, count: int) -> bool:
         self._show_find(motion, char)
 
         # Standing right by the character already: t and T have arrived
-        self._jump(count, motion in FORWARD_FINDS, may_stay=FIND_OFFSETS[motion] != 0)
+        return self._jump(
+            count, motion in FORWARD_FINDS, may_stay=FIND_OFFSETS[motion] != 0
+        )
 
     def _show_find(self, motion: VimMotion, char: str) -> None:
         at = self.buffer.cursor
@@ -359,8 +438,11 @@ class VimEngine:
 
         self._shown_find = _ShownFind(motion in FORWARD_FINDS, at, targets, at)
 
-    def _jump(self, count: int, forward: bool, *, may_stay: bool) -> None:
-        """Go to the `count`th target along, or nowhere if there aren't that many."""
+    def _jump(self, count: int, forward: bool, *, may_stay: bool) -> bool:
+        """
+        Go to the `count`th target along, or nowhere if there aren't that many.
+        True if it got one, even one it was already on.
+        """
 
         shown = self._shown_find
         assert shown is not None
@@ -373,7 +455,7 @@ class VimEngine:
         ]
 
         if len(along) < count:
-            return
+            return False
 
         shown.landed = along[count - 1]
         shown.both_ways = shown.both_ways or (
@@ -381,6 +463,153 @@ class VimEngine:
             and (shown.landed > shown.origin) != shown.forward
         )
         self.buffer.move_cursor(*shown.landed)
+        return True
+
+    def _operate(
+        self, operator: VimOperator, motion: VimMotion, count: int, counted: bool
+    ) -> None:
+        """Carry out `operator` over what `motion` goes across from the cursor."""
+
+        self._shown_find = None
+
+        buffer = self.buffer
+        origin = row, column = buffer.cursor
+
+        if motion in LINEWISE:
+            self._operate_on_lines(motion, count, counted)
+        elif motion in (VimMotion.REPEAT_FIND, VimMotion.REVERSE_FIND):
+            reverse = motion is VimMotion.REVERSE_FIND
+            found = self._repeat_find(count, reverse=reverse)
+
+            # Takes the character it lands on only going forward
+            last = self._last_find
+            forward = last is not None and last[0] in FORWARD_FINDS
+            self._operate_on_find(origin, found, forward != reverse)
+        elif motion is VimMotion.RIGHT:
+            # The one place the cursor can't go, so not by moving it there
+            self._delete_text(
+                origin, (row, min(column + count, len(buffer.line(row)))), False
+            )
+        elif motion is VimMotion.WORD_FORWARD:
+            self._walk(motions.next_word_start, count - 1)
+            end = motions.word_operand_end(buffer, *buffer.cursor)
+            self._delete_text(origin, end, False)
+        else:
+            self._move(motion, count, counted)
+            target = buffer.cursor
+
+            # `}` with no blank line left has the note's last character to take
+            inclusive = motion in INCLUSIVE or (
+                motion is VimMotion.PARAGRAPH_DOWN and bool(buffer.line(target[0]))
+            )
+            self._delete_text(origin, target, inclusive)
+
+    def _operate_on_find(
+        self, origin: Tuple[int, int], found: bool, inclusive: bool
+    ) -> None:
+        """The operator's turn after a jump, which took the cursor there already."""
+
+        self._shown_find = None
+
+        if found:
+            self._delete_text(origin, self.buffer.cursor, inclusive)
+
+    def _operate_on_lines(self, motion: VimMotion, count: int, counted: bool) -> None:
+        """A motion that takes whole lines, worked out by line, never by screen row."""
+
+        buffer = self.buffer
+        row = buffer.cursor[0]
+        last = buffer.line_count - 1
+
+        if motion in (VimMotion.TOP, VimMotion.BOTTOM):
+            end = last if motion is VimMotion.BOTTOM else 0
+            target = min(count - 1, last) if counted else end
+        else:
+            if motion in (VimMotion.HALF_PAGE_UP, VimMotion.HALF_PAGE_DOWN):
+                count *= buffer.half_page
+
+            up = motion in (
+                VimMotion.UP,
+                VimMotion.LINE_ABOVE,
+                VimMotion.HALF_PAGE_UP,
+            )
+            target = max(0, row - count) if up else min(row + count, last)
+
+            # Nowhere to go is a motion that failed, so nothing to act on
+            if target == row:
+                return
+
+        self._delete_lines(min(row, target), max(row, target))
+
+    def _delete_text(
+        self, origin: Tuple[int, int], target: Tuple[int, int], inclusive: bool
+    ) -> None:
+        """Delete between two places in either order, then stand where it was."""
+
+        start, end = sorted((origin, target))
+        buffer = self.buffer
+
+        if inclusive:
+            end = end[0], min(end[1] + 1, len(buffer.line(end[0])))
+        elif end[1] == 0 and end[0] > start[0]:
+            # Stopping short of a line's start: the line break stays out of it,
+            # and from a line's start that makes it whole lines
+            if not buffer.line(start[0])[: start[1]].strip():
+                self._delete_lines(start[0], end[0] - 1, column=origin[1])
+                return
+
+            end = end[0] - 1, len(buffer.line(end[0] - 1))
+
+        if start == end:
+            buffer.move_cursor(*origin)
+            return
+
+        self.register = Register(self._text_between(start, end), linewise=False)
+        buffer.replace(start, end, "")
+        buffer.move_cursor(*start)
+        self._clamp()
+
+    def _delete_lines(
+        self, top: int, bottom: int, *, column: Optional[int] = None
+    ) -> None:
+        """Delete these lines, whatever is below or above to close the gap with."""
+
+        buffer = self.buffer
+        last = buffer.line_count - 1
+        bottom = min(bottom, last)
+
+        if column is None:
+            column = buffer.cursor[1]
+
+        self.register = Register(
+            "\n".join(buffer.line(row) for row in range(top, bottom + 1)),
+            linewise=True,
+        )
+
+        if bottom < last:
+            buffer.replace((top, 0), (bottom + 1, 0), "")
+        elif top > 0:
+            above = top - 1, len(buffer.line(top - 1))
+            buffer.replace(above, (bottom, len(buffer.line(bottom))), "")
+        else:
+            buffer.replace((0, 0), (bottom, len(buffer.line(bottom))), "")
+
+        row = min(top, buffer.line_count - 1)
+        buffer.move_cursor(row, min(column, self._last_column(row)))
+
+    def _text_between(self, start: Tuple[int, int], end: Tuple[int, int]) -> str:
+        if start[0] == end[0]:
+            return self.buffer.line(start[0])[start[1] : end[1]]
+
+        middle = [self.buffer.line(row) for row in range(start[0] + 1, end[0])]
+
+        return "\n".join(
+            [
+                self.buffer.line(start[0])[start[1] :],
+                *middle,
+                self.buffer.line(end[0])[: end[1]],
+            ]
+        )
 
     def _clamp(self) -> None:
         """In NORMAL the cursor stands on a character, so never past the last one."""

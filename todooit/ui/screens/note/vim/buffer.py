@@ -49,6 +49,11 @@ class NoteBuffer:
 
         self._editor.move_cursor((row, column))
 
+    def replace(
+        self, start: Tuple[int, int], end: Tuple[int, int], text: str
+    ) -> None:
+        self._editor.replace_stored(start, end, text)
+
     def move_rows(self, delta: int) -> None:
         editor = self._editor
         navigator = editor.navigator

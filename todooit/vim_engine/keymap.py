@@ -41,9 +41,18 @@ class VimCommand(Enum):
     CENTER_VIEW = "center_view"
     OPEN_LINK = "open_link"
     PICK_FILES = "pick_files"
+    DELETE_LINE = "delete_line"
+    DELETE_TO_LINE_END = "delete_to_line_end"
+    DELETE_CHAR = "delete_char"
 
 
-VimAction = Union[VimMotion, VimCommand]
+class VimOperator(Enum):
+    """Commands that act on the text a motion goes over."""
+
+    DELETE = "delete"
+
+
+VimAction = Union[VimMotion, VimCommand, VimOperator]
 
 
 class VimKeymap:
@@ -51,6 +60,9 @@ class VimKeymap:
     Bindings from keys to commands. A binding can take several keys in a row
     (`dd`); a key with a name rather than a character goes in angle brackets
     (`<ctrl+u>`), as in `api.keys`.
+
+    An operator's key wins over a longer binding starting with it: `d` is the
+    operator, and `dd` is what its keys and the next key are looked up as first.
     """
 
     def __init__(self) -> None:

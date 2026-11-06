@@ -162,6 +162,48 @@ def recount(lines: Sequence[str], row: int) -> List[Tuple[int, int, int, str]]:
     return edits
 
 
+def list_opening(lines: Sequence[str], row: int) -> Optional[Tuple[str, str, str]]:
+    """
+    (quote bar, indent, marker) of the numbered item on `row`, if it's the first
+    item of its list: the one `recount` leaves the number of alone.
+    """
+
+    def item(at: int) -> Tuple[str, str, str]:
+        bar, body = split_quote(lines[at])
+        indent, marker, _ = split_indent(body)
+
+        return bar, indent, marker
+
+    if row >= len(lines):
+        return None
+
+    bar, indent, marker = item(row)
+
+    if item_number(marker) is None:
+        return None
+
+    if row > 0:
+        above_bar, _, above_marker = item(row - 1)
+
+        if above_marker and above_bar == bar:
+            return None
+
+    return bar, indent, marker
+
+
+def in_one_list(lines: Sequence[str], top: int, bottom: int) -> bool:
+    """Whether these rows are all items of the one list, nothing breaking it up."""
+
+    def item(at: int) -> Tuple[str, str]:
+        bar, body = split_quote(lines[at])
+
+        return bar, split_indent(body)[1]
+
+    bar = item(top)[0]
+
+    return all(item(at)[1] and item(at)[0] == bar for at in range(top, bottom + 1))
+
+
 def marker_start(line: str) -> int:
     """Column where `line`'s innermost marker starts (list marker first, then quote bar) as a list is exited."""
 

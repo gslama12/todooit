@@ -18,7 +18,7 @@ from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import ProjectWidget, TodoWidget
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
-from todooit.vim_engine import VimCommand, VimMotion
+from todooit.vim_engine import VimCommand, VimMotion, VimOperator
 
 # Todo formatters
 
@@ -503,6 +503,10 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("zz", VimCommand.CENTER_VIEW)
     api.vim.keys.set("gx", VimCommand.OPEN_LINK)
     api.vim.keys.set("gf", VimCommand.PICK_FILES)
+    api.vim.keys.set("d", VimOperator.DELETE)
+    api.vim.keys.set("dd", VimCommand.DELETE_LINE)
+    api.vim.keys.set("D", VimCommand.DELETE_TO_LINE_END)
+    api.vim.keys.set("x", VimCommand.DELETE_CHAR)
 
 
 @subscribe(Startup)

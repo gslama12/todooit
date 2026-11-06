@@ -13,8 +13,8 @@ class NoteEditor(NormalKeys, ClipboardEditing):
     """
     Plain text editor for a note written in markdown.
 
-    Two modes: NORMAL (read-only, letters move the cursor) and INSERT (letters
-    type). `i` enters INSERT; `escape` steps back to NORMAL, then to the todo.
+    Two modes: NORMAL (read-only to the keyboard, letters are commands) and
+    INSERT (letters type). `i` enters INSERT; `escape` steps back to NORMAL, then to the todo.
     Always opens in NORMAL. The vim engine takes each key first.
 
     Selecting/copying/pasting work in both modes; cut/paste switch to INSERT.

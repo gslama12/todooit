@@ -16,10 +16,12 @@ from todooit.vim_engine import (
     MODE_INSERT,
     MODE_NORMAL,
     FindView,
+    Register,
     VimCommand,
     VimEngine,
     VimKeymap,
     VimMotion,
+    VimOperator,
 )
 
 
@@ -46,6 +48,13 @@ class MemoryBuffer:
 
     def move_cursor(self, row: int, column: int) -> None:
         self.cursor = (row, column)
+
+    def replace(
+        self, start: Tuple[int, int], end: Tuple[int, int], text: str
+    ) -> None:
+        head = self.lines[start[0]][: start[1]]
+        tail = self.lines[end[0]][end[1] :]
+        self.lines[start[0] : end[0] + 1] = (head + text + tail).split("\n")
 
     def _go_down(self, delta: int) -> None:
         row = max(0, min(self.cursor[0] + delta, self.line_count - 1))
@@ -1091,3 +1100,481 @@ def test_a_single_line_host_has_no_files_to_hand_over_but_can_open_a_link():
 
     feed(engine, "gx")
     assert buffer_of(engine).links_opened == 1
+
+
+# --- The delete operator ------------------------------------------------------
+
+
+def delete_keys() -> VimKeymap:
+    keys = motion_keys()
+    keys.set("f", VimMotion.FIND_FORWARD)
+    keys.set("F", VimMotion.FIND_BACKWARD)
+    keys.set("t", VimMotion.TILL_FORWARD)
+    keys.set("T", VimMotion.TILL_BACKWARD)
+    keys.set("h", VimMotion.REPEAT_FIND)
+    keys.set("H", VimMotion.REVERSE_FIND)
+    keys.set("d", VimOperator.DELETE)
+    keys.set("dd", VimCommand.DELETE_LINE)
+    keys.set("D", VimCommand.DELETE_TO_LINE_END)
+    keys.set("x", VimCommand.DELETE_CHAR)
+    return keys
+
+
+def deleting_on(
+    text: str, cursor: Tuple[int, int] = (0, 0), **options
+) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), delete_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        # Words
+        ("foo bar baz", (0, 0), "dw", "bar baz", (0, 0)),
+        ("foo bar baz", (0, 1), "dw", "fbar baz", (0, 1)),
+        ("foo, bar", (0, 0), "dw", ", bar", (0, 0)),
+        ("foo   bar", (0, 3), "dw", "foobar", (0, 3)),
+        ("foo bar", (0, 0), "de", " bar", (0, 0)),
+        ("foo bar", (0, 4), "db", "bar", (0, 0)),
+        ("foo bar", (0, 5), "db", "foo ar", (0, 4)),
+        # Characters on the line
+        ("abcd", (0, 2), "dj", "acd", (0, 1)),
+        ("abcd", (0, 2), "2dj", "cd", (0, 0)),
+        ("abcd", (0, 1), "dö", "acd", (0, 1)),
+        ("abcd", (0, 3), "dö", "abc", (0, 2)),
+        ("abcd", (0, 1), "9dö", "a", (0, 0)),
+        # The line's ends
+        ("  abcd", (0, 4), "d=", "  cd", (0, 2)),
+        ("  abcd", (0, 0), "d=", "abcd", (0, 0)),
+        ("abc\ndef", (0, 1), "d_", "a\ndef", (0, 0)),
+        ("abc\ndef\nghi", (0, 1), "2d_", "a\nghi", (0, 0)),
+        # Character jumps, to and till, both ways
+        ("ab,cd,ef", (0, 0), "df,", "cd,ef", (0, 0)),
+        ("ab,cd,ef", (0, 0), "dt,", ",cd,ef", (0, 0)),
+        ("ab,cd,ef", (0, 7), "dF,", "ab,cdf", (0, 5)),
+        ("ab,cd,ef", (0, 7), "dT,", "ab,cd,f", (0, 6)),
+        ("ab,cd,ef", (0, 0), "2df,", "ef", (0, 0)),
+        ("a,b", (0, 0), "dt,", ",b", (0, 0)),
+        # Lines whole
+        ("a\nb\nc", (0, 0), "dl", "c", (0, 0)),
+        ("a\nb\nc", (2, 0), "dk", "a", (0, 0)),
+        ("a\nb\nc\nd", (0, 0), "2dl", "d", (0, 0)),
+        ("a\nb\nc", (1, 0), "9dl", "a", (0, 0)),
+        ("a\n  b\nc", (0, 0), "dä", "c", (0, 0)),
+        ("a\n  b\nc", (1, 0), "dü", "c", (0, 0)),
+        ("a\nb\nc", (1, 0), "dgg", "c", (0, 0)),
+        ("a\nb\nc", (1, 0), "dG", "a", (0, 0)),
+        ("a\nb\nc\nd", (3, 0), "d2gg", "a", (0, 0)),
+        # Paragraphs
+        ("ab cd\nef\n\ngh", (0, 3), "d}", "ab \n\ngh", (0, 2)),
+        ("ab\n\ncd ef", (2, 3), "d{", "ab\nef", (1, 0)),
+        # The last paragraph has no blank line to stop short of
+        ("ab cd", (0, 3), "d}", "ab ", (0, 2)),
+    ],
+)
+def test_d_takes_any_motion(text, start, keys, after, cursor):
+    engine = deleting_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+def test_half_a_page_is_deleted_in_lines_not_rows():
+    engine = deleting_on("\n".join("abcdefgh"), (1, 0))
+    buffer_of(engine).half_page = 2
+    engine.keys.set("<ctrl+d>", VimMotion.HALF_PAGE_DOWN)
+    engine.keys.set("<ctrl+u>", VimMotion.HALF_PAGE_UP)
+
+    for key in ("d", "ctrl+d"):
+        engine.feed(key)
+
+    assert buffer_of(engine).text == "\n".join("aefgh")
+    assert buffer_of(engine).vertical == []
+
+    buffer_of(engine).move_cursor(3, 0)
+
+    for key in ("d", "ctrl+u"):
+        engine.feed(key)
+
+    assert buffer_of(engine).text == "\n".join("ah")
+
+
+@pytest.mark.parametrize(
+    "keys, after",
+    [
+        ("2d3w", "g h"),
+        ("3d2w", "g h"),
+        ("6dw", "g h"),
+        ("d6w", "g h"),
+        ("2d3e", " h"),
+    ],
+)
+def test_counts_multiply(keys, after):
+    engine = deleting_on("a b c d e f g h")
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+
+
+def test_a_motion_that_finds_nothing_deletes_nothing():
+    engine = deleting_on("abc def", (0, 1))
+
+    feed(engine, "dfz")
+    assert buffer_of(engine).text == "abc def"
+    assert buffer_of(engine).cursor == (0, 1)
+
+    feed(engine, "d2f ")
+    assert buffer_of(engine).text == "abc def"
+
+    assert engine.register is None
+    assert engine.pending == ""
+
+
+def test_a_vertical_motion_off_the_note_deletes_nothing():
+    engine = deleting_on("a\nb")
+
+    feed(engine, "dk")
+    assert buffer_of(engine).text == "a\nb"
+
+    buffer_of(engine).move_cursor(1, 0)
+    feed(engine, "dl")
+    assert buffer_of(engine).text == "a\nb"
+
+    feed(engine, "dä")
+    assert buffer_of(engine).text == "a\nb"
+    assert engine.register is None
+
+
+def test_dw_on_a_line_s_last_word_keeps_the_line_break():
+    engine = deleting_on("foo bar\nbaz", (0, 4))
+
+    feed(engine, "dw")
+
+    assert buffer_of(engine).text == "foo \nbaz"
+    assert buffer_of(engine).cursor == (0, 3)
+
+
+def test_dw_on_the_note_s_last_word_takes_it_all():
+    engine = deleting_on("foo bar", (0, 4))
+
+    feed(engine, "dw")
+
+    assert buffer_of(engine).text == "foo "
+
+
+def test_a_counted_dw_crosses_lines_but_stops_at_the_last_one():
+    engine = deleting_on("a b\nc d\ne f")
+
+    feed(engine, "3dw")
+    assert buffer_of(engine).text == "d\ne f"
+
+    feed(engine, "9dw")
+    assert buffer_of(engine).text == ""
+
+
+def test_dw_on_an_empty_line_takes_the_line():
+    engine = deleting_on("a\n\nb", (1, 0))
+
+    feed(engine, "dw")
+
+    assert buffer_of(engine).text == "a\nb"
+    assert engine.register == Register("", linewise=True)
+
+
+def test_an_exclusive_motion_ending_at_a_line_s_start_stops_on_the_line_before():
+    # Neither the line break nor anything of the next line is in `d}` from here
+    engine = deleting_on("  ab cd\nef\n\ngh", (0, 5))
+
+    feed(engine, "d}")
+
+    assert buffer_of(engine).text == "  ab \n\ngh"
+    assert engine.register == Register("cd\nef", linewise=False)
+
+
+def test_a_paragraph_from_its_start_is_deleted_as_whole_lines():
+    engine = deleting_on("ab\ncd\n\nef")
+
+    feed(engine, "d}")
+
+    assert buffer_of(engine).text == "\nef"
+    assert engine.register == Register("ab\ncd", linewise=True)
+
+
+def test_db_from_a_line_s_start_leaves_the_line_break():
+    engine = deleting_on("foo bar\nbaz", (1, 0))
+
+    feed(engine, "db")
+
+    assert buffer_of(engine).text == "foo \nbaz"
+
+
+def test_a_character_jump_reaches_across_visible_lines():
+    engine = deleting_on("ab\ncd,ef", (0, 1))
+
+    feed(engine, "df,")
+
+    assert buffer_of(engine).text == "aef"
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.register == Register("b\ncd,", linewise=False)
+
+
+def test_d_repeats_a_character_jump_and_takes_its_direction():
+    engine = deleting_on("a,b,c,d", (0, 0))
+
+    feed(engine, "f,")
+    assert buffer_of(engine).cursor == (0, 1)
+
+    feed(engine, "dh")
+    assert buffer_of(engine).text == "ac,d"
+    assert buffer_of(engine).cursor == (0, 1)
+
+    # Backward is exclusive, as `F` is: the cursor's own character stays
+    engine = deleting_on("a,b,c,d", (0, 0))
+    feed(engine, "f,f,")
+    assert buffer_of(engine).cursor == (0, 3)
+
+    feed(engine, "dH")
+    assert buffer_of(engine).text == "a,c,d"
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_dh_before_any_jump_deletes_nothing():
+    engine = deleting_on("a,b")
+
+    feed(engine, "dh")
+
+    assert buffer_of(engine).text == "a,b"
+    assert engine.pending == ""
+
+
+def test_a_deleting_jump_can_be_repeated_as_a_plain_one():
+    engine = deleting_on("a,b,c")
+
+    feed(engine, "df,h")
+
+    assert buffer_of(engine).text == "b,c"
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_nothing_of_a_character_jump_is_left_on_show_after_a_delete():
+    engine = deleting_on("a,b,c")
+
+    feed(engine, "d")
+    engine.feed("f")
+    assert engine.find_view is not None
+
+    engine.feed(",")
+    assert engine.find_view is None
+
+
+@pytest.mark.parametrize(
+    "start, keys, after, cursor",
+    [
+        ((0, 0), "dd", "b\nc\nd", (0, 0)),
+        ((1, 0), "dd", "a\nc\nd", (1, 0)),
+        ((3, 0), "dd", "a\nb\nc", (2, 0)),
+        ((0, 0), "3dd", "d", (0, 0)),
+        ((0, 0), "d3d", "d", (0, 0)),
+        ((1, 0), "2d2d", "a", (0, 0)),
+        ((2, 0), "9dd", "a\nb", (1, 0)),
+    ],
+)
+def test_dd_deletes_whole_lines(start, keys, after, cursor):
+    engine = deleting_on("a\nb\nc\nd", start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+
+
+def test_dd_on_the_only_line_leaves_an_empty_note():
+    engine = deleting_on("abc", (0, 2))
+
+    feed(engine, "dd")
+
+    assert buffer_of(engine).text == ""
+    assert buffer_of(engine).line_count == 1
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_a_deleted_line_leaves_the_cursor_in_its_column_as_lazyvim_does():
+    engine = deleting_on("abcdef\nghijkl\nmn", (0, 3))
+
+    feed(engine, "dd")
+    assert buffer_of(engine).cursor == (0, 3)
+
+    feed(engine, "dd")
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+@pytest.mark.parametrize(
+    "start, keys, after, cursor",
+    [
+        ((0, 2), "D", "ab\nghi\njkl", (0, 1)),
+        ((0, 0), "D", "\nghi\njkl", (0, 0)),
+        ((0, 2), "2D", "ab\njkl", (0, 1)),
+        ((0, 2), "x", "abde\nghi\njkl", (0, 2)),
+        ((0, 4), "x", "abcd\nghi\njkl", (0, 3)),
+        ((0, 1), "2x", "ade\nghi\njkl", (0, 1)),
+        ((0, 3), "9x", "abc\nghi\njkl", (0, 2)),
+    ],
+)
+def test_big_d_and_x(start, keys, after, cursor):
+    engine = deleting_on("abcde\nghi\njkl", start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+
+
+@pytest.mark.parametrize("keys", ["x", "D", "d_"])
+def test_on_an_empty_line_the_small_deletes_join_nothing(keys):
+    engine = deleting_on("a\n\nb", (1, 0))
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == "a\n\nb"
+    assert buffer_of(engine).cursor == (1, 0)
+    assert engine.register is None
+
+
+@pytest.mark.parametrize(
+    "start, keys, register",
+    [
+        ((0, 0), "dw", Register("ab ", linewise=False)),
+        ((0, 3), "d_", Register("cd", linewise=False)),
+        ((0, 3), "D", Register("cd", linewise=False)),
+        ((0, 3), "x", Register("c", linewise=False)),
+        ((0, 3), "db", Register("ab ", linewise=False)),
+        ((0, 0), "dd", Register("ab cd", linewise=True)),
+        ((0, 0), "2dd", Register("ab cd\nef", linewise=True)),
+        ((0, 0), "dl", Register("ab cd\nef", linewise=True)),
+    ],
+)
+def test_a_delete_fills_the_register(start, keys, register):
+    engine = deleting_on("ab cd\nef\ngh", start)
+
+    assert engine.register is None
+    feed(engine, keys)
+
+    assert engine.register == register
+
+
+def test_escape_cancels_a_pending_operator_and_only_that():
+    engine = deleting_on("abc def")
+
+    feed(engine, "2d3")
+    assert engine.pending == "2d3"
+
+    assert engine.feed("escape") is True
+    assert engine.pending == ""
+
+    feed(engine, "w")
+    assert buffer_of(engine).text == "abc def"
+    assert buffer_of(engine).cursor == (0, 4)
+
+    # With nothing pending it's the host's again
+    assert engine.feed("escape") is False
+
+
+def test_escape_cancels_a_character_jump_an_operator_is_waiting_on():
+    engine = deleting_on("abc def")
+
+    feed(engine, "df")
+    assert engine.pending == "df"
+
+    engine.feed("escape")
+    assert engine.pending == ""
+
+    feed(engine, "d")
+    assert engine.pending == "d"
+
+
+@pytest.mark.parametrize("keys", ["dq", "d0", "dgq", "dzq", "di", "dx", "2d3q"])
+def test_an_invalid_key_cancels_an_operator_silently(keys):
+    engine = deleting_on("abc def")
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == "abc def"
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+    assert engine.register is None
+
+
+def test_a_key_without_a_character_cancels_too_and_stays_with_the_engine():
+    engine = deleting_on("abc def")
+
+    feed(engine, "d")
+
+    assert engine.feed("enter") is True
+    assert engine.pending == ""
+    assert buffer_of(engine).text == "abc def"
+
+
+def test_a_command_key_after_an_operator_does_not_run():
+    engine = deleting_on("abc")
+    engine.keys.set("gx", VimCommand.OPEN_LINK)
+    engine.keys.set("zz", VimCommand.CENTER_VIEW)
+
+    feed(engine, "dgx")
+    feed(engine, "dzz")
+    feed(engine, "di")
+
+    assert buffer_of(engine).links_opened == 0
+    assert buffer_of(engine).centred == 0
+    assert engine.mode == MODE_NORMAL
+
+
+def test_the_pending_keys_build_up_as_typed():
+    engine = deleting_on("abc def")
+    seen = []
+
+    for key in "2d3f":
+        engine.feed(key)
+        seen.append(engine.pending)
+
+    assert seen == ["2", "2d", "2d3", "2d3f"]
+
+
+def test_an_operator_with_no_doubled_binding_still_takes_motions():
+    keys = delete_keys()
+    keys.remap({"d": "q"})
+    engine = VimEngine(MemoryBuffer("abc def"), keys)
+
+    feed(engine, "qw")
+
+    assert buffer_of(engine).text == "def"
+
+
+def test_the_doubled_form_is_a_binding_of_its_own():
+    keys = delete_keys()
+    keys.set("dq", VimCommand.DELETE_LINE)
+    engine = VimEngine(MemoryBuffer("abc\ndef"), keys)
+
+    feed(engine, "dq")
+
+    assert buffer_of(engine).text == "def"
+
+
+def test_a_single_line_host_has_no_line_deletes():
+    engine = deleting_on("abc def", multiline=False)
+
+    feed(engine, "dd")
+    assert buffer_of(engine).text == "abc def"
+    assert engine.pending == ""
+
+    feed(engine, "dl")
+    assert buffer_of(engine).text == "abc def"
+    assert engine.pending == ""
+
+    feed(engine, "dw")
+    assert buffer_of(engine).text == "def"

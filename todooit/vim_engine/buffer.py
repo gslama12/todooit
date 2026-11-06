@@ -26,6 +26,15 @@ class Buffer(Protocol):
     def move_cursor(self, row: int, column: int) -> None:
         """Put the cursor at this place, which the engine has checked."""
 
+    def replace(
+        self, start: Tuple[int, int], end: Tuple[int, int], text: str
+    ) -> None:
+        """
+        Put `text` in place of what's from `start` up to `end`, both raw places
+        and in order. Anything that follows from the edit, like a list counted
+        again, is the host's. The engine places the cursor straight after this.
+        """
+
     def move_rows(self, delta: int) -> None:
         """
         Move up (negative) or down by rows as the reader sees them, stopping at

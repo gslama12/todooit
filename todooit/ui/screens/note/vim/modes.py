@@ -11,6 +11,7 @@ from textual.widgets.text_area import Selection
 
 from todooit.vim_engine import MODE_INSERT, MODE_NORMAL, FindView, VimEngine
 
+from ..disp.document import FoldedDocument
 from ..disp.markup import BACKDROP, TARGET
 from ..disp.view import NoteView, Overlay
 from .buffer import NoteBuffer
@@ -67,6 +68,23 @@ class ModalEditor(NoteView):
 
         self.read_only = mode == MODE_NORMAL
         self.host.mode_changed()
+
+    def replace_stored(
+        self, start: Tuple[int, int], end: Tuple[int, int], text: str
+    ) -> None:
+        """Replace a range given in stored columns, on whatever rows it reaches."""
+
+        document = self.document
+        assert isinstance(document, FoldedDocument)
+
+        # What's on show may be about to go, and its places with it
+        self._find_view = None
+        self.show_overlay(None)
+
+        # A column means a drawn one until the row is raw; these are stored ones
+        document.show_raw(range(start[0], end[0] + 1))
+
+        self.replace(text, start, end, maintain_selection_offset=False)
 
     def half_page(self) -> int:
         """
