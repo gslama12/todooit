@@ -1100,7 +1100,7 @@ async def test_gf_with_nothing_attached_says_so():
         assert "Nothing attached" in str(screen.hint.render())
 
 
-@pytest.mark.parametrize("key", ["u", "0", "$"])
+@pytest.mark.parametrize("key", ["0", "$"])
 async def test_the_old_note_keys_do_nothing_now(key):
     opened: list = []
     text = "\n".join(f"https://example.com/{row}" for row in range(60))
@@ -1730,3 +1730,282 @@ async def test_a_change_works_in_the_pinned_note_too():
         await pilot.pause()
 
         assert PinnedNote.get_text() == "X bar"
+
+
+# --- Undo and redo --------------------------------------------------------------
+
+
+async def test_u_and_ctrl_r_step_through_commands_in_the_note():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "one two\nthree")
+        editor = screen.editor
+
+        editor.move_cursor((0, 4))
+        await pilot.press("d", "w")
+        await pilot.press("l", "x")
+        await pilot.pause()
+        assert editor.text == "one \nthre"
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "one \nthree"
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "one two\nthree"
+        assert editor.cursor_location == (0, 4)
+        assert editor.selection == Selection.cursor((0, 4))
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("ctrl+r", "ctrl+r")
+        await pilot.pause()
+        assert editor.text == "one \nthre"
+        assert editor.mode == MODE_NORMAL
+
+
+async def test_a_step_can_start_far_from_where_it_edits():
+    """Deleting back to a place: the cursor returns to where the command began"""
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "one\ntwo\nthree")
+        editor = screen.editor
+
+        editor.move_cursor((2, 2))
+        await pilot.press("d", "g", "g")
+        await pilot.pause()
+        assert editor.text == ""
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "one\ntwo\nthree"
+        assert editor.cursor_location == (2, 2)
+
+
+async def test_undo_clears_a_selection():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "one two")
+        editor = screen.editor
+
+        await pilot.press("x")
+        editor.selection = Selection((0, 0), (0, 3))
+        await pilot.press("u")
+        await pilot.pause()
+
+        assert editor.text == "one two"
+        assert editor.selection.is_empty
+
+
+async def test_a_long_insert_session_is_one_step_whatever_it_does():
+    """Upstream splits on time, size, line breaks and cursor moves. None may here"""
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "start")
+        editor = screen.editor
+        clock = iter(range(0, 100000, 10))
+
+        with patch.object(editor.history, "_get_time", lambda: float(next(clock))):
+            await pilot.press("A")
+            await pilot.press(*["z"] * 120)
+            await pilot.press("enter", "-", "space", "x", "enter")
+            await pilot.press("left", "left", "backspace", "q")
+            editor.post_message(events.Blur())
+            await pilot.pause()
+            await pilot.press("z", "escape")
+            await pilot.pause()
+
+        written = editor.text
+        assert len(written) > 120
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "start"
+        assert editor.cursor_location == (0, 0)
+
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert editor.text == written
+
+
+async def test_the_last_thousand_steps_are_kept():
+    text = "x" * 1005
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        await pilot.press("escape")
+        editor = screen.editor
+        editor.load_text(text)
+        await pilot.pause()
+
+        for _ in range(1001):
+            editor.engine.feed("x")
+
+        assert editor.text == "x" * 4
+
+        for _ in range(1100):
+            editor.engine.feed("u")
+
+        # The first of the 1001 fell off the end
+        assert editor.text == "x" * 1004
+
+
+@pytest.mark.parametrize("insert", [False, True])
+@pytest.mark.parametrize("key", ["ctrl+z", "ctrl+y", "super+z", "super+y"])
+async def test_the_desktop_undo_keys_do_nothing_in_a_note(key, insert):
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+        editor = screen.editor
+        tasks = len(Todo.all())
+
+        await pilot.press("x", "u", "x")
+        if insert:
+            await pilot.press("i", "!")
+        await pilot.pause()
+        text = editor.text
+
+        with patch.object(pilot.app.api, "_step_history") as panes_stepped:
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+
+        panes_stepped.assert_not_called()
+        assert editor.text == text
+        assert pilot.app.screen is screen
+        assert editor.mode == (MODE_INSERT if insert else MODE_NORMAL)
+
+        # The panes behind would have taken back the task it's the note of
+        assert len(Todo.all()) == tasks
+
+
+@pytest.mark.parametrize("key", ["ctrl+z", "ctrl+y", "super+z"])
+async def test_the_desktop_undo_keys_do_nothing_on_the_files_strip(key):
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+        tasks = len(Todo.all())
+        screen.attach([__file__])
+        await pilot.pause()
+        await pilot.press("g", "f")
+        await pilot.pause()
+        assert screen.picking_files
+
+        with patch.object(pilot.app.api, "_step_history") as panes_stepped:
+            await pilot.press(key)
+            await pilot.pause()
+            await pilot.pause()
+
+        panes_stepped.assert_not_called()
+        assert screen.editor.text == "abc"
+        assert pilot.app.screen is screen
+        assert len(Todo.all()) == tasks
+
+
+async def test_insert_has_no_undo_key_of_its_own():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+
+        await pilot.press("i", "u", "ctrl+r")
+        await pilot.pause()
+        assert screen.editor.text == "uabc"
+
+
+async def test_undoing_a_delete_brings_a_list_back_with_its_numbers():
+    text = "1. one\n2. two\n3. three"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        await pilot.press("escape")
+        editor = screen.editor
+        editor.load_text(text)
+        await pilot.pause()
+
+        await pilot.press("d", "d")
+        await pilot.pause()
+        assert editor.text == "1. two\n2. three"
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == text
+
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert editor.text == "1. two\n2. three"
+
+
+async def test_undoing_puts_a_list_back_exactly_as_it_was_counted():
+    """Numbers someone left wrong aren't put right by taking a change back"""
+
+    text = "1. one\n7. two"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        await pilot.press("escape")
+        editor = screen.editor
+        editor.load_text(text)
+        await pilot.pause()
+
+        await pilot.press("A", "!", "escape")
+        await pilot.pause()
+        assert editor.text != text
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == text
+
+
+async def test_a_paste_from_normal_is_one_step_with_its_session():
+    set_clipboard("pasted")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+        editor = screen.editor
+
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+        await pilot.press("!", "escape")
+        await pilot.pause()
+        assert "pasted!" in editor.text
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "abc"
+
+
+async def test_clearing_the_note_can_be_undone():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc\ndef")
+        editor = screen.editor
+
+        await pilot.press("i", "ctrl+d", "y", "escape")
+        await pilot.pause()
+        assert editor.text == ""
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "abc\ndef"
+
+
+async def test_what_undo_leaves_is_what_gets_saved():
+    async with run_pilot() as pilot:
+        await note_holding(pilot, "kept")
+
+        await pilot.press("x", "u")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert Todo.all()[0].note == "kept"
+
+
+async def test_a_reopened_note_has_nothing_to_undo():
+    async with run_pilot() as pilot:
+        await note_holding(pilot, "kept")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        await pilot.press(" ")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert screen.editor.text == "kept"

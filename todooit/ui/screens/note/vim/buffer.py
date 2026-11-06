@@ -143,3 +143,15 @@ class NoteBuffer:
 
     def mode_changed(self, mode: str) -> None:
         self._editor.show_mode(mode)
+
+    def begin_undo_step(self) -> None:
+        self._editor.history.begin_step(self.cursor)
+
+    def end_undo_step(self) -> None:
+        self._editor.history.end_step()
+
+    def undo(self) -> None:
+        self._editor.undo()
+
+    def redo(self) -> None:
+        self._editor.redo()

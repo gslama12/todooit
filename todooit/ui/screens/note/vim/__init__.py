@@ -3,6 +3,7 @@ Changing the note's text from the keyboard:
 
 - `host`      `EditorHost`: all the editor asks of the window it's in
 - `buffer`    `NoteBuffer`: the note as the text `todooit.vim_engine` works on
+- `history`   `NoteHistory`: undo steps exactly as the engine marks them out
 - `modes`     `ModalEditor`: hosting the engine, and showing the mode it is in
 - `editing`   `TextEditing`: enter, nesting, clearing, renumbering
 - `clipboard` `ClipboardEditing`: copy, cut and paste

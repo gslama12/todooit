@@ -2,9 +2,10 @@
 The two keyboard modes and moving between them
 """
 
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
 from textual import on
+from textual.document._edit import Edit
 from textual.geometry import Offset
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
@@ -15,6 +16,7 @@ from ..disp.document import FoldedDocument
 from ..disp.markup import BACKDROP, TARGET
 from ..disp.view import NoteView, Overlay
 from .buffer import NoteBuffer
+from .history import NoteHistory, UndoStep
 from .host import EditorHost
 
 # Rows kept in view above and below the cursor, wherever the note has them
@@ -30,6 +32,8 @@ class ModalEditor(NoteView):
     def __init__(self, text: str) -> None:
         # Always opens in NORMAL. tab_behavior stays "focus" so escape bubbles.
         super().__init__(text, read_only=True)
+
+        self.history: NoteHistory = NoteHistory()
 
         # Built on first use, once there's an app to read the keymap from
         self._engine: Optional[VimEngine] = None
@@ -85,6 +89,28 @@ class ModalEditor(NoteView):
         document.show_raw(range(start[0], end[0] + 1))
 
         self.replace(text, start, end, maintain_selection_offset=False)
+
+    def _undo_batch(self, edits: Sequence[Edit]) -> None:
+        super()._undo_batch(edits)
+        self._go_to_step_start(edits)
+
+    def _redo_batch(self, edits: Sequence[Edit]) -> None:
+        super()._redo_batch(edits)
+        self._go_to_step_start(edits)
+
+    def _go_to_step_start(self, step: Sequence[Edit]) -> None:
+        """An edit only knows where it was made; a step goes back to where it began."""
+
+        assert isinstance(step, UndoStep)
+
+        if step.cursor is None:
+            return
+
+        row = min(step.cursor[0], self.document.line_count - 1)
+
+        # As in `NoteBuffer.move_cursor`: only a raw row takes a stored column
+        self.move_cursor((row, 0))
+        self.move_cursor((row, step.cursor[1]))
 
     def half_page(self) -> int:
         """

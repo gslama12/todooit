@@ -53,6 +53,8 @@ class VimCommand(Enum):
     CHANGE_LINE = "change_line"
     CHANGE_TO_LINE_END = "change_to_line_end"
     REPLACE_CHAR = "replace_char"
+    UNDO = "undo"
+    REDO = "redo"
 
 
 class VimOperator(Enum):

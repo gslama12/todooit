@@ -517,6 +517,8 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("cc", VimCommand.CHANGE_LINE)
     api.vim.keys.set("C", VimCommand.CHANGE_TO_LINE_END)
     api.vim.keys.set("r", VimCommand.REPLACE_CHAR)
+    api.vim.keys.set("u", VimCommand.UNDO)
+    api.vim.keys.set("<ctrl+r>", VimCommand.REDO)
 
 
 @subscribe(Startup)
@@ -591,10 +593,8 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("YY", api.empty_pane, group=EDITING)
 
     # Taking back the last thing that happened, on the keys the rest of the
-    # desktop takes things back with — the same two the note window already
-    # answers to, so that ctrl+z means one thing wherever it is pressed. Not
-    # vim's "u": that is the key which fetches a task back out of the Bin, and
-    # it was here first.
+    # desktop takes things back with. Not vim's "u": that is the key which
+    # fetches a task back out of the Bin, and it was here first.
     #
     # What they walk back is every edit either pane can make, one key at a
     # time, however much of the tree that key moved.

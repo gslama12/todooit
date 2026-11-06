@@ -68,3 +68,15 @@ class Buffer(Protocol):
 
     def mode_changed(self, mode: str) -> None:
         """The engine changed mode. The cursor is checked straight after this."""
+
+    def begin_undo_step(self) -> None:
+        """Every edit from here on, the host's own too, is one undo step."""
+
+    def end_undo_step(self) -> None:
+        """The step is finished. With no edits in it, it never happened."""
+
+    def undo(self) -> None:
+        """Take back the last step, if any, and go to where the cursor was before it."""
+
+    def redo(self) -> None:
+        """Put back the last step undone, if any, the cursor going to the same place."""

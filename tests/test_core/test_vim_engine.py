@@ -8,7 +8,7 @@ any host would drive it.
 import ast
 import re
 from pathlib import Path
-from typing import List, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 import pytest
 
@@ -39,6 +39,10 @@ class MemoryBuffer:
         self.centred = 0
         self.links_opened = 0
         self.files_picked = 0
+        self.undo_steps: List[Tuple[List[str], Tuple[int, int], List[str]]] = []
+        self.redo_steps: List[Tuple[List[str], Tuple[int, int], List[str]]] = []
+        self.step_start: Optional[Tuple[List[str], Tuple[int, int]]] = None
+        self.step_edited = False
 
     @property
     def line_count(self) -> int:
@@ -56,6 +60,7 @@ class MemoryBuffer:
         head = self.lines[start[0]][: start[1]]
         tail = self.lines[end[0]][end[1] :]
         self.lines[start[0] : end[0] + 1] = (head + text + tail).split("\n")
+        self.step_edited = True
 
     def _go_down(self, delta: int) -> None:
         row = max(0, min(self.cursor[0] + delta, self.line_count - 1))
@@ -89,6 +94,31 @@ class MemoryBuffer:
 
     def mode_changed(self, mode: str) -> None:
         self.modes.append(mode)
+
+    def begin_undo_step(self) -> None:
+        self.step_start = (list(self.lines), self.cursor)
+        self.step_edited = False
+
+    def end_undo_step(self) -> None:
+        assert self.step_start is not None
+        lines, cursor = self.step_start
+        self.step_start = None
+
+        if self.step_edited:
+            self.undo_steps.append((lines, cursor, list(self.lines)))
+            self.redo_steps.clear()
+
+    def undo(self) -> None:
+        if self.undo_steps:
+            step = self.undo_steps.pop()
+            self.redo_steps.append(step)
+            self.lines, self.cursor = list(step[0]), step[1]
+
+    def redo(self) -> None:
+        if self.redo_steps:
+            step = self.redo_steps.pop()
+            self.undo_steps.append(step)
+            self.lines, self.cursor = list(step[2]), step[1]
 
     @property
     def text(self) -> str:
@@ -1953,3 +1983,227 @@ def test_the_keys_after_an_insert_are_left_to_the_host():
 
     assert engine.feed("x") is False
     assert buffer_of(engine).text == ""
+
+
+# --- Undo and redo --------------------------------------------------------------
+
+
+def undoing_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    keys = change_keys()
+    keys.set("u", VimCommand.UNDO)
+    keys.set("<ctrl+r>", VimCommand.REDO)
+
+    return VimEngine(MemoryBuffer(text, cursor), keys, **options)
+
+
+def typing(engine: VimEngine, text: str) -> None:
+    """What the host does with the keys the engine leaves to it in INSERT."""
+
+    buffer = buffer_of(engine)
+    row, column = buffer.cursor
+
+    for char in text:
+        assert engine.feed(char) is False
+        buffer.replace((row, column), (row, column), char)
+        column += 1
+        buffer.move_cursor(row, column)
+
+
+def test_u_takes_back_a_command_and_ctrl_r_puts_it_back():
+    engine = undoing_on("one two", (0, 4))
+    buffer = buffer_of(engine)
+
+    feed(engine, "x")
+    assert buffer.text == "one wo"
+
+    feed(engine, "u")
+    assert buffer.text == "one two"
+    assert buffer.cursor == (0, 4)
+    assert engine.mode == MODE_NORMAL
+
+    assert engine.feed("ctrl+r") is True
+    assert buffer.text == "one wo"
+    assert buffer.cursor == (0, 4)
+    assert engine.mode == MODE_NORMAL
+
+
+@pytest.mark.parametrize(
+    "text, keys, after",
+    [
+        ("a b c d e", "3x", " c d e"),
+        ("a b c d e", "dw", "b c d e"),
+        ("a b c d e", "2dw", "c d e"),
+        ("a b c d e", "rZ", "Z b c d e"),
+        ("one\ntwo\nthree", "2dd", "three"),
+        ("a b c d e", "dfc", " d e"),
+    ],
+)
+def test_each_normal_command_is_one_step(text, keys, after):
+    engine = undoing_on(text)
+    buffer = buffer_of(engine)
+
+    feed(engine, keys)
+    assert buffer.text == after
+    assert len(buffer.undo_steps) == 1
+
+    feed(engine, "u")
+    assert buffer.text == text
+    assert buffer.cursor == (0, 0)
+
+    engine.feed("ctrl+r")
+    assert buffer.text == after
+
+
+def test_commands_undo_one_at_a_time_newest_first():
+    engine = undoing_on("abc")
+    buffer = buffer_of(engine)
+
+    feed(engine, "xx")
+    assert buffer.text == "c"
+
+    feed(engine, "u")
+    assert buffer.text == "bc"
+
+    feed(engine, "u")
+    assert buffer.text == "abc"
+
+
+def test_a_whole_insert_session_is_one_step():
+    engine = undoing_on("abc", (0, 1))
+    buffer = buffer_of(engine)
+
+    feed(engine, "i")
+    typing(engine, "hello")
+    typing(engine, " there")
+    engine.feed("escape")
+    assert buffer.text == "ahello therebc"
+
+    feed(engine, "u")
+    assert buffer.text == "abc"
+    assert buffer.cursor == (0, 1)
+
+    engine.feed("ctrl+r")
+    assert buffer.text == "ahello therebc"
+
+
+@pytest.mark.parametrize("keys", ["cw", "cc", "C", "o", "O", "A"])
+def test_a_command_that_enters_insert_is_one_step_with_its_session(keys):
+    text = "one two\nthree"
+    engine = undoing_on(text)
+    buffer = buffer_of(engine)
+
+    feed(engine, keys)
+    assert engine.mode == MODE_INSERT
+    typing(engine, "new")
+    engine.feed("escape")
+    assert buffer.text != text
+    assert len(buffer.undo_steps) == 1
+
+    feed(engine, "u")
+    assert buffer.text == text
+    assert buffer.cursor == (0, 0)
+
+
+def test_a_host_entering_insert_opens_one_step_until_it_leaves():
+    engine = undoing_on("abc")
+    buffer = buffer_of(engine)
+
+    engine.set_mode(MODE_INSERT)
+    typing(engine, "pasted")
+    engine.set_mode(MODE_NORMAL)
+    assert buffer.text == "pastedabc"
+
+    feed(engine, "u")
+    assert buffer.text == "abc"
+
+
+def test_what_changes_nothing_takes_no_step():
+    engine = undoing_on("abc\ndef")
+    buffer = buffer_of(engine)
+
+    feed(engine, "x")
+    feed(engine, "l")
+    feed(engine, "i")
+    engine.feed("escape")
+    feed(engine, "d")
+    engine.feed("escape")
+    assert len(buffer.undo_steps) == 1
+
+    feed(engine, "u")
+    assert buffer.text == "abc\ndef"
+    assert buffer.undo_steps == []
+
+
+def test_a_count_takes_that_many_steps():
+    engine = undoing_on("abcde")
+    buffer = buffer_of(engine)
+
+    feed(engine, "xxx")
+    feed(engine, "2u")
+    assert buffer.text == "bcde"
+
+    engine.feed("2")
+    engine.feed("ctrl+r")
+    assert buffer.text == "de"
+
+
+def test_a_new_change_forgets_what_was_undone():
+    engine = undoing_on("abc")
+    buffer = buffer_of(engine)
+
+    feed(engine, "xu")
+    feed(engine, "ö")
+    feed(engine, "x")
+    assert buffer.text == "ac"
+
+    engine.feed("ctrl+r")
+    assert buffer.text == "ac"
+
+
+def test_with_nothing_to_undo_or_redo_the_keys_still_do_nothing():
+    engine = undoing_on("abc", (0, 1))
+    buffer = buffer_of(engine)
+
+    assert engine.feed("u") is True
+    assert engine.feed("ctrl+r") is True
+    assert buffer.text == "abc"
+    assert buffer.cursor == (0, 1)
+
+
+def test_undo_leaves_the_register_alone():
+    engine = undoing_on("abc")
+
+    feed(engine, "x")
+    feed(engine, "u")
+    assert engine.register == Register("a", linewise=False)
+
+
+def test_the_cursor_after_a_redo_stands_on_a_character():
+    engine = undoing_on("abc", (0, 2))
+    buffer = buffer_of(engine)
+
+    feed(engine, "xu")
+    assert buffer.cursor == (0, 2)
+
+    engine.feed("ctrl+r")
+    assert buffer.text == "ab"
+    assert buffer.cursor == (0, 1)
+
+
+def test_undo_means_nothing_after_an_operator():
+    engine = undoing_on("abc")
+    buffer = buffer_of(engine)
+
+    feed(engine, "x")
+    feed(engine, "du")
+    assert buffer.text == "bc"
+    assert engine.pending == ""
+
+
+def test_undo_works_on_a_single_line_host():
+    engine = undoing_on("abc", multiline=False)
+    buffer = buffer_of(engine)
+
+    feed(engine, "x")
+    feed(engine, "u")
+    assert buffer.text == "abc"

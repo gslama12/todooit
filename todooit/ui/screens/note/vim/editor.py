@@ -37,7 +37,7 @@ class NoteEditor(ClipboardEditing):
         Binding("ctrl+d,super+d", "clear_note", "Clear the note", show=False),
         # TextArea binds this to cursor_line_start, already on `home`.
         Binding("ctrl+a,super+a", "select_all", "Select all", show=False),
-        # TextArea already takes Cmd for cut/copy/undo/redo, but not paste.
+        # TextArea already takes Cmd for cut/copy, but not paste.
         Binding("super+v", "paste", "Paste", show=False),
         # What a Mac's opt/cmd editing chords arrive as through the terminal:
         # opt+delete and shift+opt+arrows.
@@ -47,6 +47,8 @@ class NoteEditor(ClipboardEditing):
         # Overrides TextArea's delete-to-line-start. NORMAL's half page never
         # gets here, since the engine takes the key first.
         Binding("ctrl+u,super+u", "do_nothing", show=False),
+        # Overrides TextArea's undo and redo, which are `u` and `ctrl+r` here.
+        Binding("ctrl+z,super+z,ctrl+y,super+y", "do_nothing", show=False),
         # Top / bottom of the note (cmd+up/down, sent on by the terminal).
         Binding("ctrl+home", "note_start", "Top of the note", show=False),
         Binding("ctrl+end", "note_end", "Bottom of the note", show=False),

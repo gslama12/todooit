@@ -1142,21 +1142,21 @@ async def test_undoing_an_edit_made_on_a_line_the_cursor_has_left():
         editor.load_text(written + "\nbelow")
         await pilot.pause()
 
-        editor.move_cursor((0, len(written)))
-        await pilot.press("!")
+        await pilot.press("escape")
+        await pilot.press("A", "!", "escape")
         await pilot.pause()
 
         editor.move_cursor((1, 0))
         await pilot.pause()
 
-        editor.action_undo()
+        await pilot.press("u")
         await pilot.pause()
 
         assert editor.text == written + "\nbelow"
-        assert editor.cursor_location == (0, len(written))
+        assert editor.cursor_location == (0, 0)
         assert editor.document.get_line(0) == written
 
-        editor.action_redo()
+        await pilot.press("ctrl+r")
         await pilot.pause()
 
         assert editor.text == written + "!\nbelow"
@@ -1237,7 +1237,7 @@ async def test_enter_before_a_link_lands_at_the_line_start_and_undoes_cleanly():
 
         assert editor.cursor_location == (1, 0)
 
-        editor.action_undo()
+        await pilot.press("escape", "u")
         await pilot.pause()
 
         assert editor.text == written

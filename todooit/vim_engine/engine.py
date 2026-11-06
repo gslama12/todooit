@@ -3,7 +3,7 @@ The engine: takes keys one at a time and acts on a buffer
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 from . import motions
 from .buffer import Buffer
@@ -137,6 +137,9 @@ class VimEngine:
         # Where INSERT was last left, for `gi`
         self._last_insert: Optional[Tuple[int, int]] = None
 
+        # Whether the buffer is gathering edits into an undo step
+        self._step_open = False
+
     @property
     def pending(self) -> str:
         """The partial command so far, as typed: `2d3f`."""
@@ -178,6 +181,29 @@ class VimEngine:
     def feed(self, key: str) -> bool:
         """Take one key. True if it was used, False to leave it to the host."""
 
+        # A command is one undo step, unless it ends in INSERT: that step lasts
+        # until INSERT does
+        if self.mode == MODE_NORMAL:
+            self._open_step()
+
+        used = self._take_key(key)
+
+        if self.mode == MODE_NORMAL:
+            self._close_step()
+
+        return used
+
+    def _open_step(self) -> None:
+        if not self._step_open:
+            self._step_open = True
+            self.buffer.begin_undo_step()
+
+    def _close_step(self) -> None:
+        if self._step_open:
+            self._step_open = False
+            self.buffer.end_undo_step()
+
+    def _take_key(self, key: str) -> bool:
         if key == "escape":
             return self._escape()
 
@@ -261,6 +287,9 @@ class VimEngine:
         if self.mode == MODE_INSERT:
             self._last_insert = self.buffer.cursor
 
+        if mode == MODE_INSERT:
+            self._open_step()
+
         self.mode = mode
         self._cancel()
         self._shown_find = None
@@ -268,6 +297,7 @@ class VimEngine:
 
         if mode == MODE_NORMAL:
             self._clamp()
+            self._close_step()
 
     def _extends_count(self, key: str) -> bool:
         """
@@ -354,6 +384,10 @@ class VimEngine:
                 )
             elif action is VimCommand.DELETE_CHAR:
                 self._operate(VimOperator.DELETE, VimMotion.RIGHT, count, counted)
+            elif action is VimCommand.UNDO:
+                self._walk_history(self.buffer.undo, count)
+            elif action is VimCommand.REDO:
+                self._walk_history(self.buffer.redo, count)
 
             return
 
@@ -363,6 +397,12 @@ class VimEngine:
             self._shown_find = None
 
         self._move(action, count, counted)
+        self._clamp()
+
+    def _walk_history(self, step: Callable[[], None], count: int) -> None:
+        for _ in range(count):
+            step()
+
         self._clamp()
 
     def _move(self, motion: VimMotion, count: int, counted: bool) -> None:
