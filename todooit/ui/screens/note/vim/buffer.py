@@ -4,6 +4,8 @@ The note as the text the vim engine works on
 
 from typing import TYPE_CHECKING, Tuple
 
+from todooit.utils.links import folded_link_at
+
 from ..disp.document import HangingDocument
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -116,6 +118,19 @@ class NoteBuffer:
 
     def center_view(self) -> None:
         self._editor.scroll_cursor_visible(center=True)
+
+    def open_link(self) -> None:
+        row, column = self.cursor
+        link = folded_link_at(self.line(row), column, raw=True)
+
+        if link is None:
+            self._editor.host.report("No link under the cursor")
+            return
+
+        self._editor.host.open_link(link.url)
+
+    def pick_files(self) -> None:
+        self._editor.host.pick_files()
 
     def mode_changed(self, mode: str) -> None:
         self._editor.show_mode(mode)

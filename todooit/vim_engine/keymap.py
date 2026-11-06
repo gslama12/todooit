@@ -39,6 +39,8 @@ class VimCommand(Enum):
 
     INSERT = "insert"
     CENTER_VIEW = "center_view"
+    OPEN_LINK = "open_link"
+    PICK_FILES = "pick_files"
 
 
 VimAction = Union[VimMotion, VimCommand]

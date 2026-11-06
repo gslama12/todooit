@@ -34,6 +34,8 @@ class MemoryBuffer:
         self.half_page = 5
         self.vertical: List[Tuple[str, int]] = []
         self.centred = 0
+        self.links_opened = 0
+        self.files_picked = 0
 
     @property
     def line_count(self) -> int:
@@ -64,6 +66,12 @@ class MemoryBuffer:
     def center_view(self) -> None:
         self.centred += 1
 
+    def open_link(self) -> None:
+        self.links_opened += 1
+
+    def pick_files(self) -> None:
+        self.files_picked += 1
+
     def mode_changed(self, mode: str) -> None:
         self.modes.append(mode)
 
@@ -86,6 +94,8 @@ def default_keys() -> VimKeymap:
     keys.set("{", VimMotion.PARAGRAPH_UP)
     keys.set("}", VimMotion.PARAGRAPH_DOWN)
     keys.set("zz", VimCommand.CENTER_VIEW)
+    keys.set("gx", VimCommand.OPEN_LINK)
+    keys.set("gf", VimCommand.PICK_FILES)
     return keys
 
 
@@ -1041,3 +1051,43 @@ def test_a_single_line_host_is_left_those_keys(key):
     engine = engine_on("just the one", (0, 3), multiline=False)
 
     assert engine.feed(key) is False
+
+
+def test_gx_asks_the_host_to_open_the_link_under_the_cursor():
+    engine = engine_on("see https://example.com", (0, 6))
+
+    feed(engine, "gx")
+
+    assert buffer_of(engine).links_opened == 1
+    assert buffer_of(engine).cursor == (0, 6)
+    assert engine.pending == ""
+
+
+def test_gf_asks_the_host_to_hand_over_to_its_files():
+    engine = engine_on("abc", (0, 1))
+
+    feed(engine, "gf")
+
+    assert buffer_of(engine).files_picked == 1
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.pending == ""
+
+
+def test_a_count_does_not_repeat_gx_or_gf():
+    engine = engine_on("abc")
+
+    feed(engine, "3gx3gf")
+
+    assert buffer_of(engine).links_opened == 1
+    assert buffer_of(engine).files_picked == 1
+    assert engine.pending == ""
+
+
+def test_a_single_line_host_has_no_files_to_hand_over_but_can_open_a_link():
+    engine = engine_on("abc", multiline=False)
+
+    feed(engine, "gf")
+    assert buffer_of(engine).files_picked == 0
+
+    feed(engine, "gx")
+    assert buffer_of(engine).links_opened == 1

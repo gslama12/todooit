@@ -161,20 +161,12 @@ class TextEditing(ModalEditor):
     def action_note_end(self) -> None:
         self.move_cursor(self.document.end)
 
-    def action_clear_line(self) -> None:
+    def action_clear_note(self) -> None:
         """
-        Empty the cursor's line, keeping the line itself (INSERT only, like every edit).
+        Ask to clear the whole note (INSERT only, like every edit); the screen handles the confirmation.
         """
 
         if self.read_only:
             return
-
-        row, _ = self.cursor_location
-        self._delete_via_keyboard((row, 0), (row, len(self.document[row])))
-
-    def action_clear_note(self) -> None:
-        """
-        Ask to clear the whole note; the screen handles the confirmation.
-        """
 
         self.host.request_clear()

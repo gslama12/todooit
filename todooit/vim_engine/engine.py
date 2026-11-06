@@ -26,6 +26,7 @@ LINE_ONLY = frozenset(
         VimMotion.PARAGRAPH_UP,
         VimMotion.PARAGRAPH_DOWN,
         VimCommand.CENTER_VIEW,
+        VimCommand.PICK_FILES,
     }
 )
 
@@ -188,12 +189,6 @@ class VimEngine:
         if mode == MODE_NORMAL:
             self._clamp()
 
-    def cancel(self) -> None:
-        """Drop the partial command and any character jump showing."""
-
-        self._cancel()
-        self._shown_find = None
-
     def _extends_count(self, key: str) -> bool:
         """
         Whether this digit belongs to a count. A digit carries on a count, but
@@ -241,9 +236,16 @@ class VimEngine:
             self.set_mode(MODE_INSERT)
             return
 
-        if action is VimCommand.CENTER_VIEW:
+        if isinstance(action, VimCommand):
             self._shown_find = None
-            self.buffer.center_view()
+
+            if action is VimCommand.CENTER_VIEW:
+                self.buffer.center_view()
+            elif action is VimCommand.OPEN_LINK:
+                self.buffer.open_link()
+            elif action is VimCommand.PICK_FILES:
+                self.buffer.pick_files()
+
             return
 
         assert isinstance(action, VimMotion)

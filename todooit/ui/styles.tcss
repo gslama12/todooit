@@ -95,6 +95,7 @@ NoteFrame {
 
 /* No own border: TextArea's default border would double up inside the frame's */
 NoteEditor {
+  scrollbar-size-vertical: 0;
   background: $background2;
   border: none;
   padding: 0;

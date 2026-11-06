@@ -197,7 +197,7 @@ async def test_the_window_takes_most_of_the_screen():
         await pilot.pause()
 
 
-async def test_u_and_d_scroll_half_a_page():
+async def test_ctrl_u_and_ctrl_d_scroll_half_a_page():
     """
     vim's half-page keys, on a note too long to be read in one window
     """
@@ -216,20 +216,20 @@ async def test_u_and_d_scroll_half_a_page():
         half = editor.half_page()
         assert half > 1
 
-        await pilot.press("d")
+        await pilot.press("ctrl+d")
         await pilot.pause()
 
         # The view came with it, and the cursor keeps its 4 rows from the top
         assert editor.cursor_location == (half + 4, 0)
         assert editor.scroll_offset.y == half
 
-        await pilot.press("d")
+        await pilot.press("ctrl+d")
         await pilot.pause()
 
         assert editor.cursor_location == (half * 2 + 4, 0)
         assert editor.scroll_offset.y == half * 2
 
-        await pilot.press("u")
+        await pilot.press("ctrl+u")
         await pilot.pause()
 
         assert editor.cursor_location == (half + 4, 0)
@@ -534,7 +534,7 @@ async def test_the_cursor_never_stands_in_a_mark():
 
         assert EMPH_MARK not in drawn
 
-        await pilot.press("0")
+        await pilot.press("=")
 
         for _ in range(len(drawn)):
             _, column = editor.cursor_location
@@ -1367,7 +1367,7 @@ async def test_copying_a_link_carries_its_address():
         await pilot.pause()
 
 
-async def test_o_opens_a_folded_link_in_full():
+async def test_gx_opens_a_folded_link_in_full():
     async with run_pilot() as pilot:
         opened = []
 
@@ -1385,7 +1385,7 @@ async def test_o_opens_a_folded_link_in_full():
 
             # Anywhere on the name it is drawn under
             editor.move_cursor((0, 6))
-            await pilot.press("o")
+            await pilot.press("g", "x")
             await pilot.pause()
 
             assert opened == [LONG_LINK]
@@ -1897,14 +1897,14 @@ async def test_open_link_inside_the_note():
             await pilot.press("escape")
 
             # The cursor sits at the end, past the link: no link under it
-            await pilot.press("o")
+            await pilot.press("g", "x")
             await pilot.pause()
             assert opened == []
 
             # Walk back onto the link and open it: `see ` is four columns, so
             # the fifth is the first of the folded address
-            await pilot.press("0", "ö", "ö", "ö", "ö")
-            await pilot.press("o")
+            await pilot.press("=", "ö", "ö", "ö", "ö")
+            await pilot.press("g", "x")
             await pilot.pause()
 
             assert opened == ["https://example.com"]

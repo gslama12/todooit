@@ -48,5 +48,11 @@ class Buffer(Protocol):
     def center_view(self) -> None:
         """Bring the cursor to the middle of the view, without moving it."""
 
+    def open_link(self) -> None:
+        """Open the link under the cursor, or say there is none."""
+
+    def pick_files(self) -> None:
+        """Hand the keyboard to the files kept beside the text."""
+
     def mode_changed(self, mode: str) -> None:
         """The engine changed mode. The cursor is checked straight after this."""

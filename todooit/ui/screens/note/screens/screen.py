@@ -2,7 +2,7 @@
 The note window: a todo's note (or the pinned note) with its attachments
 """
 
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 from rich.markup import escape
 from textual import on
@@ -21,7 +21,7 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
-from todooit.vim_engine import VimMotion
+from todooit.vim_engine import VimAction, VimCommand, VimMotion
 
 from ...base import BaseScreen
 from ..disp.theme import THEME_NAME, build_theme
@@ -37,6 +37,29 @@ REPORT_TIMEOUT = 3
 
 # How much of the todo's description the window title carries
 TITLE_MAX = 60
+
+# NORMAL's hint line, from the keys bound to these actions. Those in a group are
+# run together, and groups go either side of a slash: `jö/kl move`.
+NORMAL_HINTS: Sequence[Tuple[Sequence[Sequence[VimAction]], str]] = (
+    (((VimCommand.INSERT,),), "insert"),
+    (((VimMotion.LEFT, VimMotion.RIGHT), (VimMotion.UP, VimMotion.DOWN)), "move"),
+    (((VimMotion.HALF_PAGE_UP,), (VimMotion.HALF_PAGE_DOWN,)), "half page"),
+    (((VimCommand.OPEN_LINK,),), "link"),
+    (((VimCommand.PICK_FILES,),), "files"),
+)
+
+# On the editor's own bindings, so no keymap says what they are
+NORMAL_FIXED_HINTS = ("C-c copy", "esc close")
+
+
+def key_label(key: str) -> str:
+    """A key as the hint line writes it: `<ctrl+u>` as `C-u`."""
+
+    if len(key) > 2 and key.startswith("<") and key.endswith(">"):
+        key = key[1:-1].replace("ctrl+", "C-")
+
+    return escape(key)
+
 
 class NoteFrame(Vertical):
     """
@@ -81,20 +104,11 @@ class NoteScreenBase(BaseScreen):
         ("escape", "close", "Close the note"),
     ]
 
-    # One line of hints per mode; keys that would do nothing here are omitted.
-    # `{move}` is filled in with the keys that move here (see `hint_for`).
-    HINTS = {
-        MODE_NORMAL: (
-            "i insert    {move} move    ud half page    o link    gf files    "
-            "ctrl+c copy    esc close"
-        ),
-        # Markup marks, not keys to press. Kept to 80 columns (usual terminal
-        # width) so a wrap doesn't split a mark from its meaning.
-        MODE_INSERT: (
-            "- bullet  1. list  > quote  # head  --- rule  *emph*  "
-            "tab nest  esc normal"
-        ),
-    }
+    # Markup marks, not keys to press. Kept to 80 columns (usual terminal
+    # width) so a wrap doesn't split a mark from its meaning.
+    INSERT_HINT = (
+        "- bullet  1. list  > quote  # head  --- rule  *emph*  tab nest  esc normal"
+    )
 
     # Hint line for when the strip (not the text) has the keyboard
     FILES_HINT = "{move} pick    enter open    xx detach    esc back to the note"
@@ -220,18 +234,24 @@ class NoteScreenBase(BaseScreen):
             left, right, up, down = self.api.motion_keys()
             return self.FILES_HINT.replace("{move}", f"{left}{right}/{up}{down}")
 
-        key_for = self.api.vim.keys.key_for
-        left, right, up, down = (
-            key_for(motion) or "?"
-            for motion in (
-                VimMotion.LEFT,
-                VimMotion.RIGHT,
-                VimMotion.UP,
-                VimMotion.DOWN,
-            )
-        )
+        return self._normal_hint() if mode == MODE_NORMAL else self.INSERT_HINT
 
-        return self.HINTS[mode].replace("{move}", f"{left}{right}/{up}{down}")
+    def _normal_hint(self) -> str:
+        """NORMAL's hints, leaving out whatever has no key."""
+
+        key_for = self.api.vim.keys.key_for
+        hints = []
+
+        for groups, meaning in NORMAL_HINTS:
+            keys = [[key_for(action) for action in group] for group in groups]
+
+            if all(key for group in keys for key in group):
+                written = "/".join(
+                    "".join(key_label(key) for key in group if key) for group in keys
+                )
+                hints.append(f"{written} {meaning}")
+
+        return "   ".join([*hints, *NORMAL_FIXED_HINTS])
 
     def mode_changed(self) -> None:
         """Redraw the mode chip in the border and the hint line under it."""

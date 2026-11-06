@@ -501,6 +501,8 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("}", VimMotion.PARAGRAPH_DOWN)
     api.vim.keys.set("i", VimCommand.INSERT)
     api.vim.keys.set("zz", VimCommand.CENTER_VIEW)
+    api.vim.keys.set("gx", VimCommand.OPEN_LINK)
+    api.vim.keys.set("gf", VimCommand.PICK_FILES)
 
 
 @subscribe(Startup)
@@ -649,8 +651,7 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("<ctrl+n>", api.copy_note_to_clipboard, group=MOVING)
     api.keys.set("<ctrl+v>", api.paste_as_sibling, group=MOVING)
 
-    # "o" for open, on the row and inside the note alike: the same key opens
-    # the link it is standing on wherever the link is written
+    # "o" for open: the link the row is standing on (inside a note it's `gx`)
     api.keys.set("o", api.open_link, group=VIEW)
     # "/" opens the finder over the app rather than filtering the pane in
     # front: what a search is for here is a task somewhere else in the tree,

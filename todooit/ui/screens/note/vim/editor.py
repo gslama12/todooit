@@ -41,16 +41,20 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         # TextArea already takes Cmd for cut/copy/undo/redo, but not paste.
         Binding("super+v", "paste", "Paste", show=False),
         # What a Mac's opt/cmd editing chords arrive as through the terminal:
-        # opt+delete, shift+opt+arrows, and cmd+backspace (^U).
+        # opt+delete and shift+opt+arrows.
         Binding("alt+d", "delete_word_right", "Delete word right", show=False),
         Binding("alt+shift+left", "cursor_word_left(True)", show=False),
         Binding("alt+shift+right", "cursor_word_right(True)", show=False),
-        # Overrides TextArea's delete-to-line-start: the whole line, as zsh does.
-        Binding("ctrl+u", "clear_line", "Clear the line", show=False),
+        # Overrides TextArea's delete-to-line-start. NORMAL's half page never
+        # gets here, since the engine takes the key first.
+        Binding("ctrl+u,super+u", "do_nothing", show=False),
         # Top / bottom of the note (cmd+up/down, sent on by the terminal).
         Binding("ctrl+home", "note_start", "Top of the note", show=False),
         Binding("ctrl+end", "note_end", "Bottom of the note", show=False),
     ]
+
+    def action_do_nothing(self) -> None:
+        """A key that should mean nothing here, whatever TextArea binds it to."""
 
     async def _on_key(self, event: events.Key) -> None:
         """
@@ -67,15 +71,6 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
-        # `gf` isn't the engine's yet, though the `g` it starts with is
-        if key == "f" and self.engine.pending.endswith("g"):
-            self.engine.cancel()
-            self.show_find_view()
-            self.host.pending_changed()
-            self.host.pick_files()
-            self._key_used(event)
-            return
-
         used = self.engine.feed(key)
         self.show_find_view()
 
@@ -91,9 +86,9 @@ class NoteEditor(NormalKeys, ClipboardEditing):
             # escape bubbles: with no mode left to leave, it should close the window.
             return
 
-        # A Meta chord (`alt+d`) carries its letter, which TextArea would type;
-        # skip that so the key reaches its binding instead.
-        if key != event.character and key.startswith("alt+"):
+        # A Meta or Cmd chord (`alt+d`, `super+d`) can carry its letter, which
+        # TextArea would type; skip that so the key reaches its binding instead.
+        if key != event.character and key.startswith(("alt+", "ctrl+")):
             event.prevent_default()
             return
 
