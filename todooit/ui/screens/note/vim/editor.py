@@ -6,10 +6,9 @@ from textual import events
 from textual.binding import Binding
 
 from .clipboard import ClipboardEditing
-from .normal import NormalKeys
 
 
-class NoteEditor(NormalKeys, ClipboardEditing):
+class NoteEditor(ClipboardEditing):
     """
     Plain text editor for a note written in markdown.
 
@@ -79,11 +78,8 @@ class NoteEditor(NormalKeys, ClipboardEditing):
             self._key_used(event)
             return
 
+        # escape bubbles: with no mode left to leave, it should close the window.
         if self.read_only:
-            if self._handle_normal_key(key):
-                self._key_used(event)
-
-            # escape bubbles: with no mode left to leave, it should close the window.
             return
 
         # A Meta or Cmd chord (`alt+d`, `super+d`) can carry its letter, which

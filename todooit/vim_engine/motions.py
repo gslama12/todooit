@@ -66,12 +66,25 @@ def word_operand_end(buffer: Buffer, row: int, column: int) -> Place:
     if not text:
         return (row + 1, 0) if row < buffer.line_count - 1 else (row, 0)
 
-    if column < len(text) and (kind := _kind(text[column])) != _BLANK:
-        while column < len(text) and _kind(text[column]) == kind:
-            column += 1
+    if column < len(text) and _kind(text[column]) != _BLANK:
+        _, column = word_change_end(buffer, row, column)
 
     while column < len(text) and _kind(text[column]) == _BLANK:
         column += 1
+
+    return row, column
+
+
+def word_change_end(buffer: Buffer, row: int, column: int) -> Place:
+    """Where the last `w` of `c` stops, on a word: the end of it, blanks left out."""
+
+    text = buffer.line(row)
+
+    if column < len(text):
+        kind = _kind(text[column])
+
+        while column < len(text) and _kind(text[column]) == kind:
+            column += 1
 
     return row, column
 
@@ -166,9 +179,13 @@ def previous_paragraph(buffer: Buffer, row: int, column: int) -> Place:
 def first_non_blank(text: str) -> int:
     """A line of nothing but blanks has none: its last character, then."""
 
-    stripped = len(text) - len(text.lstrip())
+    return min(indent_width(text), max(0, len(text) - 1))
 
-    return min(stripped, max(0, len(text) - 1))
+
+def indent_width(text: str) -> int:
+    """How many blanks open the line."""
+
+    return len(text) - len(text.lstrip())
 
 
 def find_targets(

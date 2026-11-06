@@ -500,6 +500,12 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("{", VimMotion.PARAGRAPH_UP)
     api.vim.keys.set("}", VimMotion.PARAGRAPH_DOWN)
     api.vim.keys.set("i", VimCommand.INSERT)
+    api.vim.keys.set("a", VimCommand.INSERT_AFTER)
+    api.vim.keys.set("I", VimCommand.INSERT_FIRST_NON_BLANK)
+    api.vim.keys.set("A", VimCommand.INSERT_LINE_END)
+    api.vim.keys.set("gi", VimCommand.INSERT_AT_LAST)
+    api.vim.keys.set("o", VimCommand.OPEN_BELOW)
+    api.vim.keys.set("O", VimCommand.OPEN_ABOVE)
     api.vim.keys.set("zz", VimCommand.CENTER_VIEW)
     api.vim.keys.set("gx", VimCommand.OPEN_LINK)
     api.vim.keys.set("gf", VimCommand.PICK_FILES)
@@ -507,6 +513,10 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("dd", VimCommand.DELETE_LINE)
     api.vim.keys.set("D", VimCommand.DELETE_TO_LINE_END)
     api.vim.keys.set("x", VimCommand.DELETE_CHAR)
+    api.vim.keys.set("c", VimOperator.CHANGE)
+    api.vim.keys.set("cc", VimCommand.CHANGE_LINE)
+    api.vim.keys.set("C", VimCommand.CHANGE_TO_LINE_END)
+    api.vim.keys.set("r", VimCommand.REPLACE_CHAR)
 
 
 @subscribe(Startup)

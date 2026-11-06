@@ -206,10 +206,10 @@ async def test_the_hint_shows_the_notes_own_keys():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc")
 
-        pilot.app.api.vim.keys.remap({"j": "a"})
+        pilot.app.api.vim.keys.remap({"j": "+"})
         screen.mode_changed()
 
-        assert "aö/kl move" in str(screen.hint.render())
+        assert "+ö/kl move" in str(screen.hint.render())
 
 
 async def test_the_strip_still_follows_the_panes_keys(tmp_path):
@@ -1100,7 +1100,7 @@ async def test_gf_with_nothing_attached_says_so():
         assert "Nothing attached" in str(screen.hint.render())
 
 
-@pytest.mark.parametrize("key", ["u", "o", "0", "$"])
+@pytest.mark.parametrize("key", ["u", "0", "$"])
 async def test_the_old_note_keys_do_nothing_now(key):
     opened: list = []
     text = "\n".join(f"https://example.com/{row}" for row in range(60))
@@ -1276,12 +1276,12 @@ async def test_the_normal_hint_is_built_from_the_configured_keys():
             assert shown in hint
 
         pilot.app.api.vim.keys.remap(
-            {"i": "a", "<ctrl+u>": "<ctrl+b>", "<ctrl+d>": "<ctrl+f>", "gx": "gl"}
+            {"i": "+", "<ctrl+u>": "<ctrl+b>", "<ctrl+d>": "<ctrl+f>", "gx": "gl"}
         )
         screen.mode_changed()
 
         hint = str(screen.hint.render())
-        for shown in ("a insert", "C-b/C-f half page", "gl link"):
+        for shown in ("+ insert", "C-b/C-f half page", "gl link"):
             assert shown in hint
 
 
@@ -1554,3 +1554,179 @@ async def test_the_attachment_strip_keeps_its_own_x():
 
         assert screen.editor.text == "abc"
         assert not screen.files.paths
+
+
+# --- Into INSERT, and the change operator --------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, at, keys, typed, after",
+    [
+        ("abc", (0, 1), ("i",), "X", "aXbc"),
+        ("abc", (0, 1), ("a",), "X", "abXc"),
+        ("abc", (0, 2), ("a",), "X", "abcX"),
+        ("  abc", (0, 4), ("I",), "X", "  Xabc"),
+        ("  abc", (0, 0), ("A",), "X", "  abcX"),
+        ("foo\nbar", (0, 1), ("o",), "X", "foo\nX\nbar"),
+        ("foo\nbar", (1, 1), ("O",), "X", "foo\nX\nbar"),
+        ("- foo", (0, 0), ("o",), "X", "- foo\n- X"),
+        ("- foo", (0, 0), ("O",), "X", "- X\n- foo"),
+        ("> - foo", (0, 0), ("o",), "X", "> - foo\n> - X"),
+        # A numbered list is counted again, with the cursor still on the new item
+        ("3. foo", (0, 0), ("o",), "X", "3. foo\n4. X"),
+        ("1. a\n2. b", (0, 0), ("o",), "X", "1. a\n2. X\n3. b"),
+        ("1. a\n2. b", (1, 0), ("O",), "X", "1. a\n2. X\n3. b"),
+        ("1. a\n2. b", (0, 0), ("O",), "X", "1. X\n2. a\n3. b"),
+        ("9. a", (0, 0), ("o",), "X", "9. a\n10. X"),
+        # `c`, with the rest of the line kept
+        ("foo bar", (0, 0), ("c", "w"), "X", "X bar"),
+        ("foo bar", (0, 1), ("c", "w"), "X", "fX bar"),
+        ("foo bar", (0, 4), ("c", "w"), "X", "foo X"),
+        ("foo, bar", (0, 0), ("c", "t", ","), "X", "X, bar"),
+        ("foo bar", (0, 4), ("C",), "X", "foo X"),
+        ("- foo", (0, 3), ("c", "c"), "X", "- X"),
+        ("  - foo", (0, 5), ("c", "c"), "X", "  - X"),
+        ("1. a\n2. foo", (1, 4), ("c", "c"), "X", "1. a\n2. X"),
+        ("> foo", (0, 3), ("c", "c"), "X", "> X"),
+        ("- a\n- b\n- c", (0, 0), ("2", "c", "c"), "X", "- X\n- c"),
+        ("1. a\n2. b\n3. c", (0, 0), ("2", "c", "c"), "X", "1. X\n2. c"),
+        ("1. a\n2. b", (0, 0), ("c", "l"), "X", "1. X"),
+        # At a line's end, where NORMAL couldn't have put the cursor
+        ("abc", (0, 2), ("c", "ö"), "X", "abX"),
+    ],
+)
+async def test_entering_insert_and_typing(text, at, keys, typed, after):
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, at)
+
+        await pilot.press(*keys)
+        assert screen.editor.mode == MODE_INSERT
+
+        await pilot.press(*typed)
+        assert screen.editor.text == after
+
+        await pilot.press("escape")
+        assert screen.editor.mode == MODE_NORMAL
+        assert screen.editor.text == after
+
+
+async def test_the_cursor_of_a_change_on_a_folded_link_is_a_stored_one():
+    text = "first\n- see [name](https://example.com/long) now"
+
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text)
+
+        await pilot.press("l", "c", "c")
+        assert screen.editor.text == "first\n- "
+        assert screen.editor.cursor_location == (1, 2)
+
+        await pilot.press("X")
+        assert screen.editor.text == "first\n- X"
+
+
+async def test_opening_a_line_by_a_folded_link_leaves_the_link_whole():
+    text = "[name](https://example.com/long)\nbelow"
+
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, (1, 0))
+
+        await pilot.press("O", "X")
+
+        assert screen.editor.text == "[name](https://example.com/long)\nX\nbelow"
+
+
+async def test_o_opens_no_links_any_more():
+    opened: list = []
+
+    async with run_pilot() as pilot:
+        with links_opened_into(opened):
+            screen = await note_of(pilot, "https://example.com/a")
+
+            await pilot.press("o")
+
+            assert opened == []
+            assert screen.editor.mode == MODE_INSERT
+            assert screen.editor.text == "https://example.com/a\n"
+
+
+async def test_r_replaces_a_character_and_stays_in_normal():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "abc", (0, 1))
+
+        await pilot.press("r", "x")
+        assert screen.editor.text == "axc"
+        assert screen.editor.cursor_location == (0, 1)
+        assert screen.editor.mode == MODE_NORMAL
+
+        await pilot.press("r", "space")
+        assert screen.editor.text == "a c"
+
+        await pilot.press("r", "ö")
+        assert screen.editor.text == "aöc"
+
+
+async def test_r_on_a_number_counts_the_list_again():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "1. a\n2. b", (1, 0))
+
+        await pilot.press("r", "7")
+
+        assert screen.editor.text == "1. a\n2. b"
+
+
+async def test_gi_goes_back_to_where_insert_was_left_until_the_window_closes():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo\nbar\nbaz", (1, 1))
+
+        await pilot.press("i", "X", "escape")
+        assert screen.editor.text == "foo\nbXar\nbaz"
+
+        await pilot.press("g", "g")
+        assert screen.editor.cursor_location[0] == 0
+
+        await pilot.press("g", "i")
+        assert screen.editor.mode == MODE_INSERT
+        assert screen.editor.cursor_location == (1, 2)
+
+        await pilot.press("Y")
+        assert screen.editor.text == "foo\nbXYar\nbaz"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+        await pilot.press(" ")
+        await pilot.pause()
+
+        again = pilot.app.screen
+        assert isinstance(again, NoteScreen)
+        again.editor.move_cursor((2, 0))
+
+        await pilot.press("g", "i")
+        assert again.editor.cursor_location == (2, 0)
+
+
+async def test_pending_change_shows_beside_the_chip_and_escape_cancels_it():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar")
+
+        await pilot.press("2", "c")
+        assert screen.editor.engine.pending == "2c"
+
+        await pilot.press("escape")
+        assert screen.editor.engine.pending == ""
+        assert screen.editor.mode == MODE_NORMAL
+        assert pilot.app.screen is screen
+
+
+async def test_a_change_works_in_the_pinned_note_too():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        PinnedNote.set_text("foo bar")
+
+        app.push_screen(PinnedNoteScreen())
+        await pilot.pause()
+
+        await pilot.press("c", "w", "X", "escape", "escape")
+        await pilot.pause()
+
+        assert PinnedNote.get_text() == "X bar"

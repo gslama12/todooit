@@ -38,18 +38,28 @@ class VimCommand(Enum):
     """Commands that do anything else."""
 
     INSERT = "insert"
+    INSERT_AFTER = "insert_after"
+    INSERT_FIRST_NON_BLANK = "insert_first_non_blank"
+    INSERT_LINE_END = "insert_line_end"
+    INSERT_AT_LAST = "insert_at_last"
+    OPEN_BELOW = "open_below"
+    OPEN_ABOVE = "open_above"
     CENTER_VIEW = "center_view"
     OPEN_LINK = "open_link"
     PICK_FILES = "pick_files"
     DELETE_LINE = "delete_line"
     DELETE_TO_LINE_END = "delete_to_line_end"
     DELETE_CHAR = "delete_char"
+    CHANGE_LINE = "change_line"
+    CHANGE_TO_LINE_END = "change_to_line_end"
+    REPLACE_CHAR = "replace_char"
 
 
 class VimOperator(Enum):
     """Commands that act on the text a motion goes over."""
 
     DELETE = "delete"
+    CHANGE = "change"
 
 
 VimAction = Union[VimMotion, VimCommand, VimOperator]

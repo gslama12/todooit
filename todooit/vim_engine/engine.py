@@ -28,6 +28,8 @@ LINE_ONLY = frozenset(
         VimCommand.CENTER_VIEW,
         VimCommand.PICK_FILES,
         VimCommand.DELETE_LINE,
+        VimCommand.OPEN_BELOW,
+        VimCommand.OPEN_ABOVE,
     }
 )
 
@@ -129,6 +131,12 @@ class VimEngine:
 
         self._shown_find: Optional[_ShownFind] = None
 
+        # Whether `r` is waiting for its character
+        self._replacing = False
+
+        # Where INSERT was last left, for `gi`
+        self._last_insert: Optional[Tuple[int, int]] = None
+
     @property
     def pending(self) -> str:
         """The partial command so far, as typed: `2d3f`."""
@@ -180,6 +188,10 @@ class VimEngine:
             self._finish_find(key)
             return True
 
+        if self._replacing:
+            self._finish_replace(key)
+            return True
+
         if self._extends_count(key):
             self._count += key
             return True
@@ -224,6 +236,11 @@ class VimEngine:
             self._shown_find = None
             return True
 
+        if action is VimCommand.REPLACE_CHAR:
+            self._replacing = True
+            self._shown_find = None
+            return True
+
         operator = self._operator
         counted = bool(self._count or self._operator_count)
         count = self._take_count()
@@ -240,6 +257,9 @@ class VimEngine:
 
         if mode == self.mode:
             return
+
+        if self.mode == MODE_INSERT:
+            self._last_insert = self.buffer.cursor
 
         self.mode = mode
         self._cancel()
@@ -277,6 +297,7 @@ class VimEngine:
         self._operator = None
         self._operator_count = self._operator_keys = ""
         self._finding = None
+        self._replacing = False
 
     def _escape(self) -> bool:
         if self.pending:
@@ -294,21 +315,38 @@ class VimEngine:
         return False
 
     def _run(self, action: VimAction, count: int, counted: bool) -> None:
-        if action is VimCommand.INSERT:
-            self.set_mode(MODE_INSERT)
-            return
-
         if isinstance(action, VimCommand):
             self._shown_find = None
+            row, column = self.buffer.cursor
+            line = self.buffer.line(row)
 
-            if action is VimCommand.CENTER_VIEW:
+            if action is VimCommand.INSERT:
+                self.set_mode(MODE_INSERT)
+            elif action is VimCommand.INSERT_AFTER:
+                self._insert_at(row, min(column + 1, len(line)))
+            elif action is VimCommand.INSERT_FIRST_NON_BLANK:
+                self._insert_at(row, motions.indent_width(line))
+            elif action is VimCommand.INSERT_LINE_END:
+                self._insert_at(row, len(line))
+            elif action is VimCommand.INSERT_AT_LAST:
+                self._insert_at_last()
+            elif action is VimCommand.OPEN_BELOW:
+                self._open_below(row)
+            elif action is VimCommand.OPEN_ABOVE:
+                self._open_above(row)
+            elif action is VimCommand.CHANGE_LINE:
+                self._change_lines(row, row + count - 1)
+            elif action is VimCommand.CHANGE_TO_LINE_END:
+                self._operate(
+                    VimOperator.CHANGE, VimMotion.LAST_CHARACTER, count, counted
+                )
+            elif action is VimCommand.CENTER_VIEW:
                 self.buffer.center_view()
             elif action is VimCommand.OPEN_LINK:
                 self.buffer.open_link()
             elif action is VimCommand.PICK_FILES:
                 self.buffer.pick_files()
             elif action is VimCommand.DELETE_LINE:
-                row = self.buffer.cursor[0]
                 self._delete_lines(row, row + count - 1)
             elif action is VimCommand.DELETE_TO_LINE_END:
                 self._operate(
@@ -408,7 +446,7 @@ class VimEngine:
         found = self._find(motion, key, self._take_count())
 
         if operator is not None:
-            self._operate_on_find(origin, found, motion in FORWARD_FINDS)
+            self._operate_on_find(operator, origin, found, motion in FORWARD_FINDS)
 
     def _repeat_find(self, count: int, *, reverse: bool) -> bool:
         if self._last_find is None:
@@ -476,7 +514,7 @@ class VimEngine:
         origin = row, column = buffer.cursor
 
         if motion in LINEWISE:
-            self._operate_on_lines(motion, count, counted)
+            self._operate_on_lines(operator, motion, count, counted)
         elif motion in (VimMotion.REPEAT_FIND, VimMotion.REVERSE_FIND):
             reverse = motion is VimMotion.REVERSE_FIND
             found = self._repeat_find(count, reverse=reverse)
@@ -484,16 +522,27 @@ class VimEngine:
             # Takes the character it lands on only going forward
             last = self._last_find
             forward = last is not None and last[0] in FORWARD_FINDS
-            self._operate_on_find(origin, found, forward != reverse)
+            self._operate_on_find(operator, origin, found, forward != reverse)
         elif motion is VimMotion.RIGHT:
             # The one place the cursor can't go, so not by moving it there
-            self._delete_text(
-                origin, (row, min(column + count, len(buffer.line(row)))), False
+            self._operate_on_text(
+                operator,
+                origin,
+                (row, min(column + count, len(buffer.line(row)))),
+                False,
             )
         elif motion is VimMotion.WORD_FORWARD:
             self._walk(motions.next_word_start, count - 1)
-            end = motions.word_operand_end(buffer, *buffer.cursor)
-            self._delete_text(origin, end, False)
+            # `cw` leaves the blanks after a word, unless it started on blanks
+            stops_at_word = (
+                operator is VimOperator.CHANGE
+                and not buffer.line(row)[column : column + 1].isspace()
+            )
+            last_word_end = (
+                motions.word_change_end if stops_at_word else motions.word_operand_end
+            )
+            end = last_word_end(buffer, *buffer.cursor)
+            self._operate_on_text(operator, origin, end, False)
         else:
             self._move(motion, count, counted)
             target = buffer.cursor
@@ -502,19 +551,35 @@ class VimEngine:
             inclusive = motion in INCLUSIVE or (
                 motion is VimMotion.PARAGRAPH_DOWN and bool(buffer.line(target[0]))
             )
-            self._delete_text(origin, target, inclusive)
+
+            # Going nowhere is a motion that failed, so nothing to act on. Only
+            # `=` can't fail by standing where it goes.
+            if (
+                target == origin
+                and not inclusive
+                and motion is not VimMotion.FIRST_NON_BLANK
+            ):
+                return
+
+            self._operate_on_text(operator, origin, target, inclusive)
 
     def _operate_on_find(
-        self, origin: Tuple[int, int], found: bool, inclusive: bool
+        self,
+        operator: VimOperator,
+        origin: Tuple[int, int],
+        found: bool,
+        inclusive: bool,
     ) -> None:
         """The operator's turn after a jump, which took the cursor there already."""
 
         self._shown_find = None
 
         if found:
-            self._delete_text(origin, self.buffer.cursor, inclusive)
+            self._operate_on_text(operator, origin, self.buffer.cursor, inclusive)
 
-    def _operate_on_lines(self, motion: VimMotion, count: int, counted: bool) -> None:
+    def _operate_on_lines(
+        self, operator: VimOperator, motion: VimMotion, count: int, counted: bool
+    ) -> None:
         """A motion that takes whole lines, worked out by line, never by screen row."""
 
         buffer = self.buffer
@@ -539,12 +604,19 @@ class VimEngine:
             if target == row:
                 return
 
-        self._delete_lines(min(row, target), max(row, target))
+        self._take_lines(operator, min(row, target), max(row, target))
 
-    def _delete_text(
-        self, origin: Tuple[int, int], target: Tuple[int, int], inclusive: bool
+    def _operate_on_text(
+        self,
+        operator: VimOperator,
+        origin: Tuple[int, int],
+        target: Tuple[int, int],
+        inclusive: bool,
     ) -> None:
-        """Delete between two places in either order, then stand where it was."""
+        """
+        Take what's between two places in either order, then stand where it was:
+        in INSERT, if it's a change, even with nothing there to take.
+        """
 
         start, end = sorted((origin, target))
         buffer = self.buffer
@@ -555,19 +627,34 @@ class VimEngine:
             # Stopping short of a line's start: the line break stays out of it,
             # and from a line's start that makes it whole lines
             if not buffer.line(start[0])[: start[1]].strip():
-                self._delete_lines(start[0], end[0] - 1, column=origin[1])
+                self._take_lines(operator, start[0], end[0] - 1, column=origin[1])
                 return
 
             end = end[0] - 1, len(buffer.line(end[0] - 1))
 
-        if start == end:
-            buffer.move_cursor(*origin)
+        if start != end:
+            self.register = Register(self._text_between(start, end), linewise=False)
+            buffer.replace(start, end, "")
+
+        if operator is VimOperator.CHANGE:
+            self._insert_at(*start)
             return
 
-        self.register = Register(self._text_between(start, end), linewise=False)
-        buffer.replace(start, end, "")
         buffer.move_cursor(*start)
         self._clamp()
+
+    def _take_lines(
+        self,
+        operator: VimOperator,
+        top: int,
+        bottom: int,
+        *,
+        column: Optional[int] = None,
+    ) -> None:
+        if operator is VimOperator.CHANGE:
+            self._change_lines(top, bottom)
+        else:
+            self._delete_lines(top, bottom, column=column)
 
     def _delete_lines(
         self, top: int, bottom: int, *, column: Optional[int] = None
@@ -596,6 +683,69 @@ class VimEngine:
 
         row = min(top, buffer.line_count - 1)
         buffer.move_cursor(row, min(column, self._last_column(row)))
+
+    def _change_lines(self, top: int, bottom: int) -> None:
+        """Empty these lines into one, keeping the first's indent and marker."""
+
+        buffer = self.buffer
+        bottom = min(bottom, buffer.line_count - 1)
+        end = bottom, len(buffer.line(bottom))
+        first = buffer.line(top)
+        prefix = len(buffer.list_prefix(top))
+        keep = first[: prefix + motions.indent_width(first[prefix:])]
+
+        self.register = Register(self._text_between((top, 0), end), linewise=True)
+        buffer.replace((top, 0), end, keep)
+        self._insert_at_line_end(top)
+
+    def _finish_replace(self, key: str) -> None:
+        """The key after `r`. Only a character means anything there."""
+
+        if len(key) != 1:
+            self._cancel()
+            return
+
+        count = self._take_count()
+        buffer = self.buffer
+        row, column = buffer.cursor
+
+        # As in vim: it takes all of them or none
+        if column + count > len(buffer.line(row)):
+            return
+
+        buffer.replace((row, column), (row, column + count), key * count)
+        buffer.move_cursor(row, column + count - 1)
+
+    def _open_below(self, row: int) -> None:
+        buffer = self.buffer
+        end = row, len(buffer.line(row))
+
+        buffer.replace(end, end, "\n" + buffer.list_prefix(row))
+        self._insert_at_line_end(row + 1)
+
+    def _open_above(self, row: int) -> None:
+        buffer = self.buffer
+
+        buffer.replace((row, 0), (row, 0), buffer.list_prefix(row) + "\n")
+        self._insert_at_line_end(row)
+
+    def _insert_at_last(self) -> None:
+        """Where INSERT was last left, as near as the text allows now."""
+
+        row, column = self._last_insert or self.buffer.cursor
+        row = min(row, self.buffer.line_count - 1)
+
+        self._insert_at(row, min(column, len(self.buffer.line(row))))
+
+    def _insert_at_line_end(self, row: int) -> None:
+        # Read only now: the host may have counted a list again, changing its width
+        self._insert_at(row, len(self.buffer.line(row)))
+
+    def _insert_at(self, row: int, column: int) -> None:
+        """INSERT first, as only INSERT can stand after a line's last character."""
+
+        self.set_mode(MODE_INSERT)
+        self.buffer.move_cursor(row, column)
 
     def _text_between(self, start: Tuple[int, int], end: Tuple[int, int]) -> str:
         if start[0] == end[0]:

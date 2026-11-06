@@ -155,8 +155,8 @@ async def test_normal_mode_letters_do_not_write():
 
 async def test_normal_mode_answers_to_no_other_letter():
     """
-    `i` is the only way into INSERT, and no letter outside the motions moves
-    the cursor: vim's `a`/`I`/`A` and its `w`/`b` are not keys here
+    A letter with no command on it does nothing at all, in the text or to the
+    cursor
     """
 
     async with run_pilot() as pilot:
@@ -168,7 +168,7 @@ async def test_normal_mode_answers_to_no_other_letter():
 
         assert screen.editor.mode == MODE_NORMAL
 
-        for key in ("a", "I", "A", "q", "Q"):
+        for key in ("q", "Q"):
             screen.editor.move_cursor((0, 0))
             await pilot.press(key)
             await pilot.pause()
@@ -684,12 +684,12 @@ async def test_an_enumeration_is_carried_on_inside_a_quote():
         await pilot.pause()
 
 
-async def test_shift_o_opens_the_next_numbered_item():
+async def test_o_opens_the_next_numbered_item():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
         await pilot.press(*list("3. third"))
-        await pilot.press("escape", "O")
+        await pilot.press("escape", "o")
         await pilot.press(*list("fourth"))
         assert screen.editor.text == "3. third\n4. fourth"
 

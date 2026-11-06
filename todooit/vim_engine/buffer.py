@@ -63,5 +63,8 @@ class Buffer(Protocol):
     def pick_files(self) -> None:
         """Hand the keyboard to the files kept beside the text."""
 
+    def list_prefix(self, row: int) -> str:
+        """What opens `row` and carries on to a new line: quote, indent, marker."""
+
     def mode_changed(self, mode: str) -> None:
         """The engine changed mode. The cursor is checked straight after this."""

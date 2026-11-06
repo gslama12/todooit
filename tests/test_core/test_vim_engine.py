@@ -6,6 +6,7 @@ any host would drive it.
 """
 
 import ast
+import re
 from pathlib import Path
 from typing import List, Set, Tuple
 
@@ -80,6 +81,11 @@ class MemoryBuffer:
 
     def pick_files(self) -> None:
         self.files_picked += 1
+
+    def list_prefix(self, row: int) -> str:
+        found = re.match(r"(> )?\s*([-*] |\d+\. )?", self.lines[row])
+        assert found is not None
+        return found.group() if found.group(1) or found.group(2) else ""
 
     def mode_changed(self, mode: str) -> None:
         self.modes.append(mode)
@@ -1578,3 +1584,372 @@ def test_a_single_line_host_has_no_line_deletes():
 
     feed(engine, "dw")
     assert buffer_of(engine).text == "def"
+
+
+# --- Into INSERT, and the change operator --------------------------------------
+
+
+def change_keys() -> VimKeymap:
+    keys = delete_keys()
+    keys.set("a", VimCommand.INSERT_AFTER)
+    keys.set("I", VimCommand.INSERT_FIRST_NON_BLANK)
+    keys.set("A", VimCommand.INSERT_LINE_END)
+    keys.set("o", VimCommand.OPEN_BELOW)
+    keys.set("O", VimCommand.OPEN_ABOVE)
+    keys.set("gi", VimCommand.INSERT_AT_LAST)
+    keys.set("c", VimOperator.CHANGE)
+    keys.set("cc", VimCommand.CHANGE_LINE)
+    keys.set("C", VimCommand.CHANGE_TO_LINE_END)
+    keys.set("r", VimCommand.REPLACE_CHAR)
+    return keys
+
+
+def changing_on(
+    text: str, cursor: Tuple[int, int] = (0, 0), **options
+) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), change_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, cursor",
+    [
+        ("foo", (0, 1), "i", (0, 1)),
+        ("foo", (0, 1), "a", (0, 2)),
+        # After the last character is where only INSERT can stand
+        ("foo", (0, 2), "a", (0, 3)),
+        ("", (0, 0), "a", (0, 0)),
+        ("  foo", (0, 4), "I", (0, 2)),
+        ("  foo", (0, 0), "A", (0, 5)),
+        ("- foo", (0, 3), "I", (0, 0)),
+        ("", (0, 0), "A", (0, 0)),
+        ("", (0, 0), "I", (0, 0)),
+        # INSERT can stand after the blanks, as NORMAL can't
+        ("   ", (0, 0), "I", (0, 3)),
+    ],
+)
+def test_the_ways_into_insert_put_the_cursor_where_they_say(
+    text, start, keys, cursor
+):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).cursor == cursor
+    assert buffer_of(engine).text == text
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        ("foo\nbar", (0, 1), "o", "foo\n\nbar", (1, 0)),
+        ("foo\nbar", (1, 1), "O", "foo\n\nbar", (1, 0)),
+        ("foo", (0, 0), "o", "foo\n", (1, 0)),
+        ("foo", (0, 0), "O", "\nfoo", (0, 0)),
+        # The list goes on, above as well as below
+        ("- foo", (0, 3), "o", "- foo\n- ", (1, 2)),
+        ("- foo", (0, 3), "O", "- \n- foo", (0, 2)),
+        ("  * foo", (0, 3), "o", "  * foo\n  * ", (1, 4)),
+        ("> - foo", (0, 3), "O", "> - \n> - foo", (0, 4)),
+        ("> foo", (0, 3), "o", "> foo\n> ", (1, 2)),
+        ("1. foo", (0, 3), "o", "1. foo\n1. ", (1, 3)),
+        # A bare indent is no list, and `enter` doesn't carry it either
+        ("  foo", (0, 3), "o", "  foo\n", (1, 0)),
+    ],
+)
+def test_opening_a_line_carries_the_list_prefix(text, start, keys, after, cursor):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        # Words: `cw` stops at the end of the word, where `dw` goes on to the next
+        ("foo bar", (0, 0), "cw", " bar", (0, 0), "foo"),
+        ("foo bar", (0, 1), "cw", "f bar", (0, 1), "oo"),
+        ("foo bar", (0, 2), "cw", "fo bar", (0, 2), "o"),
+        ("foo, bar", (0, 0), "cw", ", bar", (0, 0), "foo"),
+        ("foo", (0, 0), "cw", "", (0, 0), "foo"),
+        # On blanks it takes those, as `dw` does
+        ("foo   bar", (0, 3), "cw", "foobar", (0, 3), "   "),
+        # Counts stop at the end of the last word too
+        ("a b c d", (0, 0), "c2w", " c d", (0, 0), "a b"),
+        ("a b c d", (0, 0), "2cw", " c d", (0, 0), "a b"),
+        # Starting on blanks, a count goes as far as it does for `d`
+        ("a  b c", (0, 1), "2cw", "ac", (0, 1), "  b "),
+        ("a b c d e", (0, 0), "2c2w", " e", (0, 0), "a b c d"),
+        # The other motions go as far as they do for `d`
+        ("foo bar", (0, 0), "ce", " bar", (0, 0), "foo"),
+        ("foo bar", (0, 4), "cb", "bar", (0, 0), "foo "),
+        ("foo, bar", (0, 0), "ct,", ", bar", (0, 0), "foo"),
+        ("foo, bar", (0, 0), "cf,", " bar", (0, 0), "foo,"),
+        ("foo bar", (0, 5), "cFo", "foar", (0, 2), "o b"),
+        ("  foo", (0, 3), "c=", "  oo", (0, 2), "f"),
+        ("foo bar", (0, 4), "c_", "foo ", (0, 4), "bar"),
+        ("abc", (0, 1), "cö", "ac", (0, 1), "b"),
+        ("abc", (0, 2), "cö", "ab", (0, 2), "c"),
+        ("abc", (0, 2), "cj", "ac", (0, 1), "b"),
+        # `C` is `c` to the end of the line
+        ("foo bar", (0, 4), "C", "foo ", (0, 4), "bar"),
+        ("foo\nbar", (0, 1), "C", "f\nbar", (0, 1), "oo"),
+        ("", (0, 0), "C", "", (0, 0), None),
+    ],
+)
+def test_change_takes_the_text_and_goes_into_insert_at_its_place(
+    text, start, keys, after, cursor, register
+):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.pending == ""
+
+    if register is not None:
+        assert engine.register == Register(register, linewise=False)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        # Indent and marker stay, the cursor goes after them
+        ("- foo", (0, 3), "cc", "- ", (0, 2), "- foo"),
+        ("  - foo", (0, 5), "cc", "  - ", (0, 4), "  - foo"),
+        ("1. foo", (0, 4), "cc", "1. ", (0, 3), "1. foo"),
+        ("> - foo", (0, 0), "cc", "> - ", (0, 4), "> - foo"),
+        ("> foo", (0, 3), "cc", "> ", (0, 2), "> foo"),
+        # The indent behind a quote or a marker is kept with it
+        (">   foo", (0, 5), "cc", ">   ", (0, 4), ">   foo"),
+        ("   ", (0, 1), "cc", "   ", (0, 3), "   "),
+        # A bare indent counts, and nothing at all is fine
+        ("    foo", (0, 5), "cc", "    ", (0, 4), "    foo"),
+        ("foo", (0, 2), "cc", "", (0, 0), "foo"),
+        ("", (0, 0), "cc", "", (0, 0), ""),
+        ("- ", (0, 1), "cc", "- ", (0, 2), "- "),
+        # Other lines are left alone
+        ("a\n- foo\nb", (1, 3), "cc", "a\n- \nb", (1, 2), "- foo"),
+        # A count, and motions over whole lines, leave one line in their place
+        ("- a\n- b\n- c", (0, 0), "2cc", "- \n- c", (0, 2), "- a\n- b"),
+        ("- a\n- b", (0, 0), "5cc", "- ", (0, 2), "- a\n- b"),
+        ("- a\n- b\n- c", (0, 0), "cl", "- \n- c", (0, 2), "- a\n- b"),
+        ("- a\n- b\n- c", (2, 0), "ck", "- a\n- ", (1, 2), "- b\n- c"),
+        ("  a\nb\nc", (0, 0), "cG", "  ", (0, 2), "  a\nb\nc"),
+        ("a\nb", (1, 0), "cgg", "", (0, 0), "a\nb"),
+    ],
+)
+def test_changing_whole_lines_keeps_the_first_ones_indent_and_marker(
+    text, start, keys, after, cursor, register
+):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register == Register(register, linewise=True)
+
+
+def test_change_from_a_lines_start_to_a_blank_line_is_whole_lines():
+    engine = changing_on("- a\n- b\n\nc")
+
+    feed(engine, "c}")
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == "- \n\nc"
+    assert buffer_of(engine).cursor == (0, 2)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys",
+    [
+        # Nothing to find
+        ("foo", (0, 0), "cfz"),
+        ("foo", (0, 0), "ctz"),
+        # No line to go to
+        ("foo", (0, 0), "cl"),
+        ("foo", (0, 0), "ck"),
+        # Nowhere to go back to
+        ("foo", (0, 0), "cb"),
+        ("foo", (0, 0), "cj"),
+        ("foo", (0, 0), "c{"),
+    ],
+)
+def test_a_change_whose_motion_fails_stays_in_normal(text, start, keys):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == start
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys",
+    [
+        # These can't fail, so standing there already is only nothing to take
+        ("  foo", (0, 2), "c="),
+        ("", (0, 0), "c_"),
+        ("", (0, 0), "cw"),
+    ],
+)
+def test_a_change_with_nothing_to_take_still_goes_into_insert(text, start, keys):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == start
+
+
+def test_escape_cancels_a_pending_change():
+    engine = changing_on("foo bar")
+
+    feed(engine, "2c")
+    assert engine.pending == "2c"
+
+    assert engine.feed("escape") is True
+
+    assert engine.pending == ""
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).text == "foo bar"
+
+
+def test_a_change_leaves_what_it_took_in_the_register_and_escape_comes_back():
+    engine = changing_on("foo bar")
+
+    feed(engine, "cw")
+    engine.feed("escape")
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.register == Register("foo", linewise=False)
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        ("abc", (0, 1), "rx", "axc", (0, 1)),
+        ("abc", (0, 2), "rx", "abx", (0, 2)),
+        # A count replaces that many, and leaves the cursor on the last of them
+        ("abcd", (0, 0), "3rx", "xxxd", (0, 2)),
+        # Or none, if there aren't that many
+        ("abc", (0, 1), "3rx", "abc", (0, 1)),
+        # Nothing to replace
+        ("", (0, 0), "rx", "", (0, 0)),
+        # Bound to something else or not, the next key is what's typed
+        ("abc", (0, 0), "rd", "dbc", (0, 0)),
+        ("abc", (0, 0), "r ", " bc", (0, 0)),
+        ("abc", (0, 0), "r5", "5bc", (0, 0)),
+    ],
+)
+def test_r_replaces_characters_and_stays_in_normal(text, start, keys, after, cursor):
+    engine = changing_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.pending == ""
+    assert engine.register is None
+
+
+def test_r_shows_as_pending_and_escape_or_a_named_key_cancels_it():
+    engine = changing_on("abc")
+
+    feed(engine, "2r")
+    assert engine.pending == "2r"
+
+    assert engine.feed("escape") is True
+    assert engine.pending == ""
+    assert engine.mode == MODE_NORMAL
+
+    feed(engine, "r")
+    assert engine.feed("enter") is True
+    assert engine.pending == ""
+    assert buffer_of(engine).text == "abc"
+
+
+def test_gi_returns_to_where_insert_was_left():
+    engine = changing_on("foo\nbar", (0, 3))
+
+    feed(engine, "i")
+    engine.feed("escape")
+    assert buffer_of(engine).cursor == (0, 2)
+
+    buffer_of(engine).move_cursor(1, 1)
+    feed(engine, "gi")
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).cursor == (0, 3)
+
+
+def test_gi_with_no_insert_yet_inserts_at_the_cursor():
+    engine = changing_on("foo\nbar", (1, 1))
+
+    feed(engine, "gi")
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).cursor == (1, 1)
+
+
+def test_gi_lands_on_the_text_there_is_now():
+    engine = changing_on("foo\nbar", (1, 3))
+
+    feed(engine, "i")
+    engine.feed("escape")
+    feed(engine, "dd")
+    feed(engine, "gi")
+    assert buffer_of(engine).cursor == (0, 3)
+
+    engine.feed("escape")
+    buffer_of(engine).lines[0] = "x"
+    feed(engine, "gi")
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_gi_is_kept_per_engine_so_a_new_window_starts_over():
+    first = changing_on("foo", (0, 2))
+    feed(first, "i")
+    first.feed("escape")
+
+    second = changing_on("foo", (0, 0))
+    feed(second, "gi")
+
+    assert buffer_of(second).cursor == (0, 0)
+
+
+def test_a_host_with_one_line_has_no_lines_to_open():
+    engine = changing_on("abc", multiline=False)
+
+    feed(engine, "o")
+    assert engine.mode == MODE_NORMAL
+
+    feed(engine, "O")
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).text == "abc"
+
+    feed(engine, "cc")
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == ""
+
+
+def test_the_keys_after_an_insert_are_left_to_the_host():
+    engine = changing_on("abc")
+
+    feed(engine, "cw")
+
+    assert engine.feed("x") is False
+    assert buffer_of(engine).text == ""

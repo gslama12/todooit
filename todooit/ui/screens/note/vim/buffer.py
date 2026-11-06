@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Tuple
 from todooit.utils.links import folded_link_at
 
 from ..disp.document import HangingDocument
+from ..disp.markup import line_prefix
 
 if TYPE_CHECKING:  # pragma: no cover
     from .modes import ModalEditor
@@ -136,6 +137,9 @@ class NoteBuffer:
 
     def pick_files(self) -> None:
         self._editor.host.pick_files()
+
+    def list_prefix(self, row: int) -> str:
+        return line_prefix(self.line(row))
 
     def mode_changed(self, mode: str) -> None:
         self._editor.show_mode(mode)
