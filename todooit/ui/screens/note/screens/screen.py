@@ -86,7 +86,7 @@ class NoteScreenBase(BaseScreen):
     HINTS = {
         MODE_NORMAL: (
             "i insert    {move} move    ud half page    o link    gf files    "
-            "ctrl+c copy    ctrl+d clear    esc close"
+            "ctrl+c copy    esc close"
         ),
         # Markup marks, not keys to press. Kept to 80 columns (usual terminal
         # width) so a wrap doesn't split a mark from its meaning.

@@ -109,6 +109,38 @@ def next_word_end(buffer: Buffer, row: int, column: int) -> Place:
     return row, column
 
 
+def next_paragraph(buffer: Buffer, row: int, column: int) -> Place:
+    """`}`: the next empty line after some text, or else the note's last character."""
+
+    last = buffer.line_count - 1
+
+    while row < last and not buffer.line(row):
+        row += 1
+
+    while row < last:
+        row += 1
+
+        if not buffer.line(row):
+            return row, 0
+
+    return last, max(0, len(buffer.line(last)) - 1)
+
+
+def previous_paragraph(buffer: Buffer, row: int, column: int) -> Place:
+    """`{`: the last empty line before some text, or else the note's first character."""
+
+    while row > 0 and not buffer.line(row):
+        row -= 1
+
+    while row > 0:
+        row -= 1
+
+        if not buffer.line(row):
+            return row, 0
+
+    return 0, 0
+
+
 def first_non_blank(text: str) -> int:
     """A line of nothing but blanks has none: its last character, then."""
 

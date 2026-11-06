@@ -2,9 +2,10 @@
 The two keyboard modes and moving between them
 """
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from textual import on
+from textual.geometry import Offset
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 
@@ -14,6 +15,9 @@ from ..disp.markup import BACKDROP, TARGET
 from ..disp.view import NoteView, Overlay
 from .buffer import NoteBuffer
 from .host import EditorHost
+
+# Rows kept in view above and below the cursor, wherever the note has them
+SCROLLOFF = 4
 
 
 class ModalEditor(NoteView):
@@ -63,6 +67,63 @@ class ModalEditor(NoteView):
 
         self.read_only = mode == MODE_NORMAL
         self.host.mode_changed()
+
+    def half_page(self) -> int:
+        """
+        Half the window height, never less than a line, so scroll distance matches the terminal size.
+        """
+
+        return max(1, self.content_size.height // 2)
+
+    @property
+    def cursor_y(self) -> int:
+        """How far down the drawn note the cursor's row is."""
+
+        return self.wrapped_document.location_to_offset(self.cursor_location).y
+
+    def rows_with_context(self, top: int) -> Tuple[int, int]:
+        """
+        The first and last rows down the drawn note the cursor may stand on, with
+        the view's top at `top`. A window too short for the context leaves the
+        middle, and the note's own ends need none.
+        """
+
+        height = self.content_size.height
+        margin = min(SCROLLOFF, (height - 1) // 2)
+
+        return (
+            top + margin if top > 0 else 0,
+            top + height - 1 - (margin if top < self.max_scroll_y else 0),
+        )
+
+    def scroll_cursor_visible(
+        self, center: bool = False, animate: bool = False
+    ) -> Offset:
+        """
+        Everything that moves the cursor ends up here. Upstream only brings it on
+        screen, and later, so a key's effect can't be built on; this scrolls now.
+        """
+
+        height = self.content_size.height
+
+        if not self._has_cursor or height < 1:
+            return Offset(0, 0)
+
+        self._recompute_cursor_offset()
+
+        y = self.cursor_y
+        before = top = self.scroll_offset.y
+
+        if center:
+            top = y - (height - 1) // 2
+        else:
+            first, last = self.rows_with_context(top)
+            top += min(0, y - first) + max(0, y - last)
+
+        top = max(0, min(top, self.max_scroll_y))
+        self.scroll_to(y=top, animate=False, immediate=True)
+
+        return Offset(0, top - before)
 
     def show_find_view(self) -> None:
         """Dim the text a character jump looks across, and light up where it can go."""

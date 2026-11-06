@@ -64,5 +64,58 @@ class NoteBuffer:
                     return
                 editor.action_cursor_down()
 
+    def move_lines(self, delta: int) -> None:
+        editor = self._editor
+        row, column = self.cursor
+        target = max(0, min(row + delta, self.line_count - 1))
+
+        if target == row:
+            return
+
+        # The column it's been keeping, across any lines too short for it. Left
+        # unrecorded, so a run of these keeps it too.
+        wanted = max(column, editor.navigator.last_x_offset)
+
+        # As in `move_cursor`: only a raw row takes a stored column
+        editor.move_cursor((target, 0), record_width=False)
+        editor.move_cursor((target, wanted), record_width=False)
+
+    @property
+    def half_page(self) -> int:
+        return self._editor.half_page()
+
+    def scroll_rows(self, delta: int) -> None:
+        editor = self._editor
+        target = editor.scroll_offset.y + delta
+
+        self.move_rows(delta)
+
+        # The view goes where it's told, so here it's the cursor that gives way.
+        # Lines unfold and fold again under it, so the rows it crosses aren't the
+        # rows it gains: it walks until it's there, one way only.
+        way = 0
+
+        while True:
+            top = max(0, min(target, editor.max_scroll_y))
+            first, last = editor.rows_with_context(top)
+            y = editor.cursor_y
+            gap = max(first - y, 0) + min(last - y, 0)
+            place = self.cursor
+
+            if not gap or gap * way < 0:
+                break
+
+            way = gap
+            self.move_rows(gap)
+
+            if self.cursor == place:
+                break
+
+        # Last, since moving the cursor brings the view along behind it
+        editor.scroll_to(y=top, animate=False, immediate=True)
+
+    def center_view(self) -> None:
+        self._editor.scroll_cursor_visible(center=True)
+
     def mode_changed(self, mode: str) -> None:
         self._editor.show_mode(mode)

@@ -67,13 +67,12 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
-        # `gf` can't be the engine's yet: `g` isn't, while `gg` is still here
-        if self._pending_g and key in ("f", "escape"):
-            self._pending_g = False
-
-            if key == "f":
-                self.host.pick_files()
-
+        # `gf` isn't the engine's yet, though the `g` it starts with is
+        if key == "f" and self.engine.pending.endswith("g"):
+            self.engine.cancel()
+            self.show_find_view()
+            self.host.pending_changed()
+            self.host.pick_files()
             self._key_used(event)
             return
 
@@ -81,7 +80,6 @@ class NoteEditor(NormalKeys, ClipboardEditing):
         self.show_find_view()
 
         if used:
-            self._pending_g = False
             self.host.pending_changed()
             self._key_used(event)
             return

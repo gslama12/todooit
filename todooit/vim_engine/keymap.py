@@ -26,12 +26,19 @@ class VimMotion(Enum):
     TILL_BACKWARD = "till_backward"
     REPEAT_FIND = "repeat_find"
     REVERSE_FIND = "reverse_find"
+    HALF_PAGE_UP = "half_page_up"
+    HALF_PAGE_DOWN = "half_page_down"
+    TOP = "top"
+    BOTTOM = "bottom"
+    PARAGRAPH_UP = "paragraph_up"
+    PARAGRAPH_DOWN = "paragraph_down"
 
 
 class VimCommand(Enum):
     """Commands that do anything else."""
 
     INSERT = "insert"
+    CENTER_VIEW = "center_view"
 
 
 VimAction = Union[VimMotion, VimCommand]

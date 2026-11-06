@@ -219,21 +219,20 @@ async def test_u_and_d_scroll_half_a_page():
         await pilot.press("d")
         await pilot.pause()
 
-        # The view came with it, so the cursor is back on the row of the
-        # window it started on and the text under it is what changed
-        assert editor.cursor_location == (half, 0)
+        # The view came with it, and the cursor keeps its 4 rows from the top
+        assert editor.cursor_location == (half + 4, 0)
         assert editor.scroll_offset.y == half
 
         await pilot.press("d")
         await pilot.pause()
 
-        assert editor.cursor_location == (half * 2, 0)
+        assert editor.cursor_location == (half * 2 + 4, 0)
         assert editor.scroll_offset.y == half * 2
 
         await pilot.press("u")
         await pilot.pause()
 
-        assert editor.cursor_location == (half, 0)
+        assert editor.cursor_location == (half + 4, 0)
         assert editor.scroll_offset.y == half
 
         await pilot.press("escape")
@@ -262,7 +261,7 @@ async def test_clear_note_asks_first():
         await pilot.press(*list("precious words"))
         await pilot.press("escape")
 
-        await pilot.press("ctrl+d")
+        await pilot.press("i", "ctrl+d")
         await pilot.pause()
         assert screen.awaiting_answer
 
@@ -452,7 +451,7 @@ async def test_cmd_keys_in_the_note():
         await pilot.pause()
         assert editor.text == "pasted"
 
-        await pilot.press("escape")
+        # Pasting left it in INSERT, the mode where this clears
         await pilot.press("super+d")
         await pilot.press("y")
         await pilot.pause()
@@ -1051,11 +1050,12 @@ async def test_a_line_above_the_view_changing_height_does_not_move_the_view():
         await pilot.pause()
 
         top_line = wrapped.row_at(editor.scroll_offset.y)
-        clicked = wrapped.row_at(editor.scroll_offset.y + 3)
+        # Well inside the view: a click nearer its edge scrolls, to keep context
+        clicked = wrapped.row_at(editor.scroll_offset.y + 6)
         assert clicked is not None
 
         # The raw line above the view folds up when the click takes the cursor away
-        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 3))
+        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 6))
         await pilot.pause()
 
         assert editor.cursor_location[0] == clicked[0]

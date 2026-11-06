@@ -14,7 +14,19 @@ MODE_INSERT = "INSERT"
 
 # Commands that mean nothing on a host holding a single line of text
 LINE_ONLY = frozenset(
-    {VimMotion.UP, VimMotion.DOWN, VimMotion.LINE_ABOVE, VimMotion.LINE_BELOW}
+    {
+        VimMotion.UP,
+        VimMotion.DOWN,
+        VimMotion.LINE_ABOVE,
+        VimMotion.LINE_BELOW,
+        VimMotion.HALF_PAGE_UP,
+        VimMotion.HALF_PAGE_DOWN,
+        VimMotion.TOP,
+        VimMotion.BOTTOM,
+        VimMotion.PARAGRAPH_UP,
+        VimMotion.PARAGRAPH_DOWN,
+        VimCommand.CENTER_VIEW,
+    }
 )
 
 DIGITS = frozenset("0123456789")
@@ -158,8 +170,8 @@ class VimEngine:
             self._shown_find = None
             return True
 
-        count = self._take_count()
-        self._run(action, count)
+        counted = bool(self._count)
+        self._run(action, self._take_count(), counted)
         return True
 
     def set_mode(self, mode: str) -> None:
@@ -175,6 +187,12 @@ class VimEngine:
 
         if mode == MODE_NORMAL:
             self._clamp()
+
+    def cancel(self) -> None:
+        """Drop the partial command and any character jump showing."""
+
+        self._cancel()
+        self._shown_find = None
 
     def _extends_count(self, key: str) -> bool:
         """
@@ -218,9 +236,14 @@ class VimEngine:
 
         return False
 
-    def _run(self, action: VimAction, count: int) -> None:
+    def _run(self, action: VimAction, count: int, counted: bool) -> None:
         if action is VimCommand.INSERT:
             self.set_mode(MODE_INSERT)
+            return
+
+        if action is VimCommand.CENTER_VIEW:
+            self._shown_find = None
+            self.buffer.center_view()
             return
 
         assert isinstance(action, VimMotion)
@@ -228,10 +251,10 @@ class VimEngine:
         if action not in (VimMotion.REPEAT_FIND, VimMotion.REVERSE_FIND):
             self._shown_find = None
 
-        self._move(action, count)
+        self._move(action, count, counted)
         self._clamp()
 
-    def _move(self, motion: VimMotion, count: int) -> None:
+    def _move(self, motion: VimMotion, count: int, counted: bool) -> None:
         buffer = self.buffer
         row, column = buffer.cursor
         last_row = buffer.line_count - 1
@@ -241,9 +264,21 @@ class VimEngine:
         elif motion is VimMotion.RIGHT:
             buffer.move_cursor(row, min(column + count, self._last_column(row)))
         elif motion is VimMotion.UP:
-            buffer.move_rows(-count)
+            (buffer.move_lines if counted else buffer.move_rows)(-count)
         elif motion is VimMotion.DOWN:
-            buffer.move_rows(count)
+            (buffer.move_lines if counted else buffer.move_rows)(count)
+        elif motion is VimMotion.HALF_PAGE_UP:
+            buffer.scroll_rows(-count * buffer.half_page)
+        elif motion is VimMotion.HALF_PAGE_DOWN:
+            buffer.scroll_rows(count * buffer.half_page)
+        elif motion is VimMotion.TOP:
+            buffer.move_lines(min(count - 1 if counted else 0, last_row) - row)
+        elif motion is VimMotion.BOTTOM:
+            buffer.move_lines(min(count - 1 if counted else last_row, last_row) - row)
+        elif motion is VimMotion.PARAGRAPH_UP:
+            self._walk(motions.previous_paragraph, count)
+        elif motion is VimMotion.PARAGRAPH_DOWN:
+            self._walk(motions.next_paragraph, count)
         elif motion is VimMotion.WORD_FORWARD:
             self._walk(motions.next_word_start, count)
         elif motion is VimMotion.WORD_BACKWARD:

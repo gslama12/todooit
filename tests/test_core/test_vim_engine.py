@@ -31,6 +31,9 @@ class MemoryBuffer:
         self.cursor = cursor
         self.modes: List[str] = []
         self.visible_rows = range(len(self.lines))
+        self.half_page = 5
+        self.vertical: List[Tuple[str, int]] = []
+        self.centred = 0
 
     @property
     def line_count(self) -> int:
@@ -42,9 +45,24 @@ class MemoryBuffer:
     def move_cursor(self, row: int, column: int) -> None:
         self.cursor = (row, column)
 
-    def move_rows(self, delta: int) -> None:
+    def _go_down(self, delta: int) -> None:
         row = max(0, min(self.cursor[0] + delta, self.line_count - 1))
         self.cursor = (row, min(self.cursor[1], len(self.lines[row])))
+
+    def move_rows(self, delta: int) -> None:
+        self.vertical.append(("rows", delta))
+        self._go_down(delta)
+
+    def move_lines(self, delta: int) -> None:
+        self.vertical.append(("lines", delta))
+        self._go_down(delta)
+
+    def scroll_rows(self, delta: int) -> None:
+        self.vertical.append(("page", delta))
+        self._go_down(delta)
+
+    def center_view(self) -> None:
+        self.centred += 1
 
     def mode_changed(self, mode: str) -> None:
         self.modes.append(mode)
@@ -61,6 +79,13 @@ def default_keys() -> VimKeymap:
     keys.set("k", VimMotion.UP)
     keys.set("l", VimMotion.DOWN)
     keys.set("i", VimCommand.INSERT)
+    keys.set("<ctrl+u>", VimMotion.HALF_PAGE_UP)
+    keys.set("<ctrl+d>", VimMotion.HALF_PAGE_DOWN)
+    keys.set("gg", VimMotion.TOP)
+    keys.set("G", VimMotion.BOTTOM)
+    keys.set("{", VimMotion.PARAGRAPH_UP)
+    keys.set("}", VimMotion.PARAGRAPH_DOWN)
+    keys.set("zz", VimCommand.CENTER_VIEW)
     return keys
 
 
@@ -186,7 +211,7 @@ def test_escape_is_left_to_the_host_in_plain_normal():
 def test_a_key_with_no_binding_is_left_to_the_host():
     engine = engine_on("abc", (0, 1))
 
-    assert engine.feed("z") is False
+    assert engine.feed("Q") is False
     assert buffer_of(engine).cursor == (0, 1)
 
 
@@ -629,7 +654,7 @@ def test_a_count_shows_along_with_a_longer_binding():
     assert buffer_of(engine).cursor == (0, 3)
 
 
-@pytest.mark.parametrize("keys", ["2z", "2q", "22z"])
+@pytest.mark.parametrize("keys", ["2Q", "2q", "22Q"])
 def test_a_key_that_fits_nothing_cancels_a_count_silently(keys):
     engine = VimEngine(MemoryBuffer("abc def", (0, 1)), motion_keys())
 
@@ -641,7 +666,7 @@ def test_a_key_that_fits_nothing_cancels_a_count_silently(keys):
 
 
 def test_a_cancelled_count_does_not_carry_over():
-    assert run_keys("a b c d e", (0, 0), "3zw") == (0, 2)
+    assert run_keys("a b c d e", (0, 0), "3Qw") == (0, 2)
 
 
 def test_a_named_key_after_f_cancels_it_silently():
@@ -810,7 +835,7 @@ def test_a_host_on_one_line_only_looks_along_it():
     assert buffer_of(engine).cursor == (0, 1)
 
 
-@pytest.mark.parametrize("key", ["j", "w", "ä", "z", "i"])
+@pytest.mark.parametrize("key", ["j", "w", "ä", "Q", "i"])
 def test_any_other_key_ends_the_showing(key):
     assert after("fb" + key).find_view is None
 
@@ -852,3 +877,167 @@ def test_ending_the_showing_keeps_the_jump_for_repeating():
     # From `c`, on to the next `b`, showing from there
     assert buffer_of(engine).cursor == (0, 6)
     assert engine.find_view == FindView((0, 4), True, ((0, 6),))
+
+
+TWENTY_LINES = "\n".join(f"line {n}" for n in range(20))
+
+
+def test_half_page_keys_go_half_a_page_down_and_up():
+    engine = engine_on(TWENTY_LINES, (7, 2))
+
+    engine.feed("ctrl+d")
+    assert buffer_of(engine).cursor == (12, 2)
+
+    engine.feed("ctrl+u")
+    engine.feed("ctrl+u")
+    assert buffer_of(engine).cursor == (2, 2)
+
+
+def test_a_count_on_a_half_page_key_multiplies_it():
+    engine = engine_on(TWENTY_LINES)
+
+    engine.feed("2")
+    engine.feed("ctrl+d")
+
+    assert buffer_of(engine).cursor == (10, 0)
+    assert engine.pending == ""
+
+
+def test_half_page_keys_stay_with_the_host_in_insert():
+    engine = engine_on(TWENTY_LINES)
+    feed(engine, "i")
+
+    assert engine.feed("ctrl+d") is False
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "start, keys, end",
+    [
+        ((3, 2), "gg", (0, 2)),
+        ((3, 2), "G", (19, 2)),
+        ((0, 0), "5G", (4, 0)),
+        ((0, 0), "5gg", (4, 0)),
+        ((0, 0), "12G", (11, 0)),
+        ((5, 1), "99G", (19, 1)),
+        ((5, 1), "99gg", (19, 1)),
+    ],
+)
+def test_gg_and_g_go_to_the_ends_or_the_counted_line(start, keys, end):
+    engine = engine_on(TWENTY_LINES, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).cursor == end
+    assert engine.pending == ""
+
+
+def test_a_lone_g_waits_and_shows_and_a_wrong_key_cancels_it():
+    engine = engine_on(TWENTY_LINES, (3, 0))
+
+    engine.feed("g")
+    assert engine.pending == "g"
+    assert buffer_of(engine).cursor == (3, 0)
+
+    engine.feed("q")
+    assert engine.pending == ""
+    assert buffer_of(engine).cursor == (3, 0)
+
+
+PARAGRAPHS = "one\ntwo\n\n\nthree\nfour\n\nfive!"
+
+
+@pytest.mark.parametrize(
+    "start, keys, end",
+    [
+        # The blank line under the paragraph
+        ((0, 2), "}", (2, 0)),
+        # From a blank line, past any more of them and the paragraph after
+        ((2, 0), "}", (6, 0)),
+        # No more blank lines: the last character of the note
+        ((6, 0), "}", (7, 4)),
+        ((7, 4), "}", (7, 4)),
+        ((0, 0), "2}", (6, 0)),
+        ((0, 0), "9}", (7, 4)),
+        # The blank line above the paragraph
+        ((5, 2), "{", (3, 0)),
+        ((3, 0), "{", (0, 0)),
+        ((1, 2), "{", (0, 0)),
+        ((0, 0), "{", (0, 0)),
+        ((7, 2), "2{", (3, 0)),
+    ],
+)
+def test_braces_move_by_paragraph(start, keys, end):
+    engine = engine_on(PARAGRAPHS, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).cursor == end
+
+
+def test_a_line_of_spaces_does_not_end_a_paragraph():
+    engine = engine_on("one\n   \ntwo\n\nthree")
+
+    feed(engine, "}")
+
+    assert buffer_of(engine).cursor == (3, 0)
+
+
+def test_braces_on_a_note_with_no_blank_lines_go_to_its_ends():
+    engine = engine_on("abc\ndef", (0, 1))
+
+    feed(engine, "}")
+    assert buffer_of(engine).cursor == (1, 2)
+
+    feed(engine, "{")
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_zz_centres_the_view_and_leaves_the_cursor():
+    engine = engine_on(TWENTY_LINES, (7, 2))
+
+    engine.feed("z")
+    assert engine.pending == "z"
+    assert buffer_of(engine).centred == 0
+
+    engine.feed("z")
+    assert engine.pending == ""
+    assert buffer_of(engine).centred == 1
+    assert buffer_of(engine).cursor == (7, 2)
+
+
+def test_k_and_l_go_by_screen_row_without_a_count_and_real_line_with_one():
+    engine = engine_on(TWENTY_LINES, (9, 0))
+
+    feed(engine, "l")
+    feed(engine, "k")
+    feed(engine, "3l")
+    feed(engine, "2k")
+
+    assert buffer_of(engine).vertical == [
+        ("rows", 1),
+        ("rows", -1),
+        ("lines", 3),
+        ("lines", -2),
+    ]
+
+
+@pytest.mark.parametrize(
+    "keys", [["ctrl+u"], ["ctrl+d"], ["g", "g"], ["G"], ["{"], ["}"], ["z", "z"]]
+)
+def test_page_motions_do_nothing_on_a_single_line_host(keys):
+    engine = engine_on("just the one", (0, 3), multiline=False)
+
+    for key in keys:
+        engine.feed(key)
+
+    assert buffer_of(engine).cursor == (0, 3)
+    assert buffer_of(engine).centred == 0
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize("key", ["ctrl+d", "G", "}"])
+def test_a_single_line_host_is_left_those_keys(key):
+    engine = engine_on("just the one", (0, 3), multiline=False)
+
+    assert engine.feed(key) is False

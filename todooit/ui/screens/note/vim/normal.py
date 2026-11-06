@@ -24,35 +24,18 @@ class NormalKeys(TextEditing):
     def __init__(self, text: str) -> None:
         super().__init__(text)
 
-        # Set by the first `g` of a `gg` chord.
-        self._pending_g = False
-
     def _handle_normal_key(self, key: str) -> bool:
         """
         Handle a NORMAL-mode key; True if handled (others fall through, keeping shift-motions/clipboard bindings shared with INSERT).
         """
 
-        # Only the key right after a `g` can complete a `gg`.
-        pending_g, self._pending_g = self._pending_g, False
-
-        if key == "g":
-            if pending_g:
-                self.move_cursor((0, 0))
-            else:
-                self._pending_g = True
-
-            return True
-
         if motion := NORMAL_MOTIONS.get(key):
             getattr(self, f"action_{motion}")()
             return True
 
-        if key == "G":
-            self.move_cursor(self.document.end)
-            return True
-
         if key in (HALF_PAGE_UP, HALF_PAGE_DOWN):
-            self.scroll_half_page(key == HALF_PAGE_UP)
+            half = self.half_page()
+            self.engine.buffer.scroll_rows(-half if key == HALF_PAGE_UP else half)
             return True
 
         if key == "o":
@@ -64,27 +47,6 @@ class NormalKeys(TextEditing):
             return True
 
         return False
-
-    def half_page(self) -> int:
-        """
-        Half the window height, never less than a line, so scroll distance matches the terminal size.
-        """
-
-        return max(1, self.content_size.height // 2)
-
-    def scroll_half_page(self, up: bool) -> None:
-        """
-        Move cursor and view half a window (vim's ctrl+u/ctrl+d). Cursor steps via cursor_up/down, since a wrapped line spans several rows but is one row in the document; scroll_to clamps at the note's ends.
-        """
-
-        half = self.half_page()
-        step = self.action_cursor_up if up else self.action_cursor_down
-        target = self.scroll_offset.y + (-half if up else half)
-
-        for _ in range(half):
-            step()
-
-        self.scroll_to(y=target, animate=False)
 
     def _open_link_under_cursor(self) -> None:
         """

@@ -296,7 +296,7 @@ async def test_escape_goes_to_normal_from_insert_then_closes_from_normal():
         assert Todo.all()[0].note == "kept"
 
 
-async def test_a_motion_between_two_gs_does_not_make_a_gg():
+async def test_a_key_between_two_gs_cancels_the_gg_without_moving():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc\ndef")
         editor = screen.editor
@@ -304,7 +304,8 @@ async def test_a_motion_between_two_gs_does_not_make_a_gg():
 
         await pilot.press("g", "j", "g")
 
-        assert editor.cursor_location == (1, 0)
+        assert editor.cursor_location == (1, 1)
+        assert editor.engine.pending == "g"
 
 
 async def test_word_motions_and_counts_move_the_cursor():
@@ -374,7 +375,7 @@ async def test_an_invalid_key_clears_the_partial_command_from_the_chip():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc")
 
-        await pilot.press("2", "z")
+        await pilot.press("2", "Q")
 
         assert screen.frame.border_subtitle == " NORMAL "
         assert screen.editor.cursor_location == (0, 0)
@@ -700,3 +701,337 @@ async def test_moving_the_cursor_without_a_key_clears_the_showing():
         await pilot.pause()
 
         assert cell(editor, 1, 0).color != dim
+
+
+# How much of the text is kept in view above and below the cursor
+CONTEXT = 4
+
+
+async def long_note(pilot, lines: int = 200, line: str = "line {n}") -> NoteScreen:
+    """A note too long for the window, in NORMAL, cursor on the very first character."""
+
+    screen = await open_note(pilot)
+    screen.editor.load_text("\n".join(line.format(n=n) for n in range(lines)))
+    await pilot.press("escape")
+    await pilot.pause()
+    assert screen.editor.cursor_location == (0, 0)
+    return screen
+
+
+def rows_above_cursor(editor) -> int:
+    return editor.cursor_y - editor.scroll_offset.y
+
+
+def rows_below_cursor(editor) -> int:
+    return editor.content_size.height - 1 - rows_above_cursor(editor)
+
+
+async def test_half_page_keys_carry_the_cursor_and_the_view_together():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+        half = editor.content_size.height // 2
+        assert half > CONTEXT
+
+        # The view goes half a page; the cursor can't stay on the top row of it
+        await pilot.press("ctrl+d")
+        assert editor.scroll_offset.y == half
+        assert editor.cursor_location == (half + CONTEXT, 0)
+
+        await pilot.press("ctrl+d")
+        assert editor.scroll_offset.y == half * 2
+        assert editor.cursor_location == (half * 2 + CONTEXT, 0)
+
+        await pilot.press("ctrl+u")
+        assert editor.scroll_offset.y == half
+        assert editor.cursor_location == (half + CONTEXT, 0)
+
+        await pilot.press("ctrl+u")
+        assert editor.scroll_offset.y == 0
+        assert editor.cursor_location == (CONTEXT, 0)
+
+        assert editor.mode == MODE_NORMAL
+        assert not screen.awaiting_answer
+
+
+async def test_cmd_stands_for_ctrl_on_the_half_page_keys():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+        half = editor.content_size.height // 2
+
+        await pilot.press("super+d")
+        assert editor.scroll_offset.y == half
+
+        await pilot.press("super+u")
+        assert editor.scroll_offset.y == 0
+        assert not screen.awaiting_answer
+
+
+async def test_half_page_keys_keep_the_column():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("ö", "ö", "ctrl+d")
+        assert editor.cursor_location[1] == 2
+
+
+async def test_half_page_keys_stop_at_the_ends_of_the_note():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=60)
+        editor = screen.editor
+
+        await pilot.press(*["ctrl+d"] * 10)
+        assert editor.cursor_location[0] == 59
+        assert editor.scroll_offset.y == editor.max_scroll_y
+
+        await pilot.press(*["ctrl+u"] * 10)
+        assert editor.cursor_location[0] == 0
+        assert editor.scroll_offset.y == 0
+
+
+async def test_in_insert_the_page_keys_still_clear():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=3)
+        editor = screen.editor
+
+        await pilot.press("i", "ctrl+d")
+        assert screen.awaiting_answer
+
+        await pilot.press("n", "ctrl+u")
+        assert editor.text == "\nline 1\nline 2"
+
+
+async def test_gg_and_g_bring_the_ends_of_the_note_into_view():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("ö", "G")
+        assert editor.cursor_location == (199, 1)
+        assert editor.scroll_offset.y == editor.max_scroll_y
+
+        await pilot.press("g", "g")
+        assert editor.cursor_location == (0, 1)
+        assert editor.scroll_offset.y == 0
+
+
+async def test_a_count_on_g_goes_to_that_line_with_context_around_it():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("1", "0", "0", "G")
+        assert editor.cursor_location[0] == 99
+        assert rows_below_cursor(editor) == CONTEXT
+
+
+async def test_braces_move_by_paragraph_and_bring_it_into_view():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+        filler = "\n".join("text" for _ in range(60))
+        editor.load_text(f"{filler}\n\n{filler}")
+        await pilot.press("escape")
+        await pilot.pause()
+
+        await pilot.press("}")
+        assert editor.cursor_location == (60, 0)
+        assert rows_below_cursor(editor) == CONTEXT
+
+        await pilot.press("}")
+        assert editor.cursor_location == (120, 3)
+
+        await pilot.press("{")
+        assert editor.cursor_location == (60, 0)
+        assert rows_above_cursor(editor) == CONTEXT
+
+        await pilot.press("{")
+        assert editor.cursor_location == (0, 0)
+
+
+async def test_zz_puts_the_cursor_in_the_middle_of_the_view():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("1", "0", "0", "G")
+        await pilot.press("z", "z")
+
+        assert editor.cursor_location[0] == 99
+        assert rows_above_cursor(editor) == (editor.content_size.height - 1) // 2
+
+
+async def test_zz_near_the_top_of_the_note_does_what_it_can():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("l", "z", "z")
+
+        assert editor.cursor_location == (1, 0)
+        assert editor.scroll_offset.y == 0
+
+
+async def test_context_is_kept_below_the_cursor_going_down():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=60)
+        editor = screen.editor
+        last_y = editor.virtual_size.height - 1
+
+        for _ in range(59):
+            await pilot.press("l")
+            y = editor.cursor_location[0]
+            assert rows_below_cursor(editor) >= min(CONTEXT, last_y - y)
+            assert rows_above_cursor(editor) >= min(CONTEXT, y)
+
+        assert rows_below_cursor(editor) == 0
+
+
+async def test_context_is_kept_above_the_cursor_going_up():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=60)
+        editor = screen.editor
+
+        await pilot.press("G")
+
+        for _ in range(59):
+            await pilot.press("k")
+            y = editor.cursor_location[0]
+            assert rows_above_cursor(editor) >= min(CONTEXT, y)
+            assert rows_below_cursor(editor) >= min(CONTEXT, 59 - y)
+
+        assert editor.scroll_offset.y == 0
+
+
+async def test_context_counts_rows_as_drawn_across_wrapped_lines():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=40, line="word " * 60)
+        editor = screen.editor
+        assert editor.virtual_size.height > 40
+
+        for _ in range(60):
+            await pilot.press("l")
+            assert rows_below_cursor(editor) >= CONTEXT or (
+                editor.scroll_offset.y == editor.max_scroll_y
+            )
+            assert rows_above_cursor(editor) >= CONTEXT or editor.scroll_offset.y == 0
+
+        assert editor.scroll_offset.y > 0
+
+
+async def test_context_is_kept_in_insert_too():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+
+        await pilot.press("1", "0", "0", "G", "i", "down", "down")
+
+        assert editor.cursor_location[0] == 101
+        assert rows_below_cursor(editor) == CONTEXT
+
+
+async def test_a_window_too_short_for_the_context_keeps_the_cursor_in_the_middle():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+        await pilot.resize_terminal(80, 10)
+        await pilot.pause()
+
+        height = editor.content_size.height
+        assert 1 < height <= 2 * CONTEXT
+
+        await pilot.press("1", "0", "0", "G")
+        assert rows_below_cursor(editor) == (height - 1) // 2
+
+        await pilot.press("k")
+        assert rows_above_cursor(editor) == (height - 1) // 2
+
+
+async def test_down_without_a_count_goes_by_screen_row_and_with_one_by_line():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot, lines=3, line="word " * 60)
+        editor = screen.editor
+        wrapped = editor.wrapped_document
+        assert len(wrapped.get_offsets(0)) >= 1
+
+        # Still on the first line, one row down
+        await pilot.press("l")
+        assert editor.cursor_location[0] == 0
+        assert editor.cursor_location[1] > 0
+
+        await pilot.press("k")
+        assert editor.cursor_location == (0, 0)
+
+        await pilot.press("1", "l")
+        assert editor.cursor_location == (1, 0)
+
+        await pilot.press("1", "k")
+        assert editor.cursor_location == (0, 0)
+
+
+async def test_a_counted_move_keeps_its_column_across_a_short_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abcdefgh\nab\nabcdefgh")
+        editor = screen.editor
+        await pilot.press("6", "ö")
+        assert editor.cursor_location == (0, 6)
+
+        await pilot.press("1", "l")
+        assert editor.cursor_location == (1, 1)
+
+        await pilot.press("1", "l")
+        assert editor.cursor_location == (2, 6)
+
+
+async def test_a_counted_move_lands_on_the_stored_column_of_a_folded_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "# abcdefgh\n\n# abcdefgh")
+        editor = screen.editor
+        await pilot.press("5", "ö")
+        assert editor.cursor_location == (0, 5)
+
+        await pilot.press("2", "l")
+        assert editor.cursor_location == (2, 5)
+
+
+async def test_half_page_keys_keep_the_cursor_in_view_across_lines_that_unfold():
+    link = "[a link](https://example.com/" + "x" * 400 + ")"
+    lines = [link if n % 3 == 0 else f"line {n}" for n in range(200)]
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+        editor.load_text("\n".join(lines))
+        await pilot.press("escape")
+        await pilot.pause()
+
+        for key, presses in (("ctrl+d", 5), ("ctrl+u", 5)):
+            for _ in range(presses):
+                await pilot.press(key)
+                assert rows_above_cursor(editor) >= min(CONTEXT, editor.scroll_offset.y)
+                assert rows_below_cursor(editor) >= 0
+
+
+async def test_gf_ends_a_character_jump_that_is_showing():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abcabc")
+        editor = screen.editor
+
+        await pilot.press("f", "b")
+        assert editor.engine.find_view is not None
+
+        await pilot.press("g", "f")
+        assert editor.engine.find_view is None
+        assert editor.overlay is None
+
+
+async def test_gf_with_a_count_is_still_gf():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abcabc")
+
+        await pilot.press("2", "g", "f")
+
+        assert screen.editor.engine.pending == ""
+        assert screen.editor.cursor_location == (0, 0)

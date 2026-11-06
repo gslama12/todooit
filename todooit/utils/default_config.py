@@ -493,7 +493,14 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("T", VimMotion.TILL_BACKWARD)
     api.vim.keys.set("h", VimMotion.REPEAT_FIND)
     api.vim.keys.set("H", VimMotion.REVERSE_FIND)
+    api.vim.keys.set("<ctrl+u>", VimMotion.HALF_PAGE_UP)
+    api.vim.keys.set("<ctrl+d>", VimMotion.HALF_PAGE_DOWN)
+    api.vim.keys.set("gg", VimMotion.TOP)
+    api.vim.keys.set("G", VimMotion.BOTTOM)
+    api.vim.keys.set("{", VimMotion.PARAGRAPH_UP)
+    api.vim.keys.set("}", VimMotion.PARAGRAPH_DOWN)
     api.vim.keys.set("i", VimCommand.INSERT)
+    api.vim.keys.set("zz", VimCommand.CENTER_VIEW)
 
 
 @subscribe(Startup)

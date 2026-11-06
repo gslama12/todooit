@@ -32,5 +32,21 @@ class Buffer(Protocol):
         the ends of the text. Wrapping and the column to keep are the host's.
         """
 
+    def move_lines(self, delta: int) -> None:
+        """
+        Move up (negative) or down by lines of the text, however they wrap,
+        stopping at the ends of the text. The column to keep is the host's.
+        """
+
+    @property
+    def half_page(self) -> int:
+        """How many rows half a page is, as the reader sees them."""
+
+    def scroll_rows(self, delta: int) -> None:
+        """Move the cursor and the view together, up (negative) or down by rows."""
+
+    def center_view(self) -> None:
+        """Bring the cursor to the middle of the view, without moving it."""
+
     def mode_changed(self, mode: str) -> None:
         """The engine changed mode. The cursor is checked straight after this."""
