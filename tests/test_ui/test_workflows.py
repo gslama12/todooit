@@ -225,7 +225,7 @@ async def test_bin_round_trip_with_a_dropped_project():
         # The Bin reads newest first; walk to "worth keeping"
         keeper = next(t for t in BIN.todos if t.description == "worth keeping")
         bin_tree.highlight_id(keeper.uuid)
-        await pilot.press("u")
+        await pilot.press("R")
         await pilot.pause()
 
         revived = next(iter(Project.all()), None)

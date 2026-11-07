@@ -205,7 +205,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _binned_message(self, subject: str) -> str:
         """The cursor doesn't follow into the Bin, so tell the user the two keys to get there and restore."""
 
-        return f"Binned {subject} — [b]gb[/b] then [b]u[/b] puts it back"
+        return f"Binned {subject} — [b]gb[/b] then [b]R[/b] puts it back"
 
     def _already_binned(self) -> None:
         self.post_message(

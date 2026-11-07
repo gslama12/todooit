@@ -582,11 +582,11 @@ def key_setup(api: TodooitAPI, _):
     # anyway
     api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
     # Throwing something away costs nothing and asks nothing: it goes to the
-    # Bin, where "u" fetches it back. Getting rid of it for real is the other
+    # Bin, where "R" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
     api.keys.set("xx", api.remove_node, group=EDITING)
     api.keys.set("yy", api.delete_node, group=EDITING)
-    api.keys.set("u", api.restore_node, group=EDITING)
+    api.keys.set("R", api.restore_node, group=EDITING)
     # The shifted twin of the chord that deletes one task for good, and the
     # same thing over a whole pane: in the Bin it empties the Bin, in
     # Completed it clears out everything finished, and anywhere else it does
@@ -596,14 +596,13 @@ def key_setup(api: TodooitAPI, _):
     # twice over, the way "yy" does
     api.keys.set("YY", api.empty_pane, group=EDITING)
 
-    # Taking back the last thing that happened, on the keys the rest of the
-    # desktop takes things back with. Not vim's "u": that is the key which
-    # fetches a task back out of the Bin, and it was here first.
+    # Taking back the last thing that happened, on the same keys as inside a
+    # note, so that undo means one thing everywhere.
     #
     # What they walk back is every edit either pane can make, one key at a
     # time, however much of the tree that key moved.
-    api.keys.set("<ctrl+z>", api.undo, group=EDITING)
-    api.keys.set("<ctrl+y>", api.redo, group=EDITING)
+    api.keys.set("u", api.undo, group=EDITING)
+    api.keys.set("<ctrl+r>", api.redo, group=EDITING)
 
     # A scale is one thing to learn, not four, so the whole run of digits is
     # listed as the single row it reads as. The keys are still set one at a

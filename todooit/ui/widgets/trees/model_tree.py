@@ -947,7 +947,7 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
         """
         Deletes the highlighted item outright, with everything under it — the one
         path that permanently leaves the database, so it's the one that asks first.
-        Ctrl+z still reaches it until the app is quit.
+        `u` still reaches it until the app is quit.
         """
 
         self._remove_node()

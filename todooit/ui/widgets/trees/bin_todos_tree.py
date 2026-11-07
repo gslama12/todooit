@@ -16,7 +16,7 @@ class BinTodosTree(FixedTodosTree):
 
         self._not_here(
             "Tasks can't be gone to",
-            "[b]u[/b] restores one and goes with it",
+            "[b]R[/b] restores one and goes with it",
         )
 
     def toggle_complete(self):

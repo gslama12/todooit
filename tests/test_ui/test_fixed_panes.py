@@ -1029,7 +1029,7 @@ async def test_restore_outside_the_bin_warns():
         await new_project(pilot, "project")
         await new_todo(pilot, "still here")
 
-        await pilot.press("u")
+        await pilot.press("R")
         await pilot.pause()
 
         message = notification_message(app)
@@ -1055,7 +1055,7 @@ async def test_restore_from_the_bin():
         assert len(tree_options(bin_tree)) == 1
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         assert tree_options(bin_tree) == []
@@ -1109,7 +1109,7 @@ async def test_restoring_a_step_from_the_bin_brings_the_task_with_it():
         assert bin_tree.current_model.description == "the step"
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         assert tree_options(bin_tree) == []
@@ -1157,7 +1157,7 @@ async def test_restoring_a_finished_task_from_the_bin_goes_to_the_log():
         await settle(pilot)
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         todo = Todo.all()[0]

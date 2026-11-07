@@ -36,7 +36,7 @@ class Todooit(App):
         self.api = TodooitAPI(self)
 
         # Start history after sweeping blank rows, so a row left by a mid-edit
-        # quit isn't the first thing ctrl+z offers back.
+        # quit isn't the first thing `u` offers back.
         self.api.history.start()
         self.api.config_manager.scan()
         self.post_message(Startup())

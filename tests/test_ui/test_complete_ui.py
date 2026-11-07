@@ -307,7 +307,7 @@ async def test_one_undo_takes_back_an_indent_and_its_overrides():
     async with run_pilot() as pilot:
         review, stretch = await indent_stretch_under_weekly_review(pilot)
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
         await pilot.pause()
 

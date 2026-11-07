@@ -192,7 +192,7 @@ async def test_the_log_and_the_bin_turn_goto_item_away():
 
         refusals = (
             (("g", "c"), "Completed", "c"),
-            (("g", "b"), "Bin", "u"),
+            (("g", "b"), "Bin", "R"),
         )
 
         for keys, title, instead in refusals:

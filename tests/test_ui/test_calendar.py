@@ -453,7 +453,7 @@ async def test_a_picked_day_is_taken_back_like_a_typed_one():
         assert picked is not None
         assert picked.date() == date(2027, 9, 6)
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
         await pilot.pause()
 
@@ -461,7 +461,7 @@ async def test_a_picked_day_is_taken_back_like_a_typed_one():
         assert back is not None
         assert back.date() == date(2027, 9, 5)
 
-        await pilot.press("ctrl+y")
+        await pilot.press("ctrl+r")
         await pilot.pause()
         await pilot.pause()
 

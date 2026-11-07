@@ -314,7 +314,7 @@ async def test_binning_says_where_it_went_and_how_to_get_back():
         await pilot.pause()
 
         assert notification_message(app) == (
-            "Binned [b]off the list[/b] — [b]gb[/b] then [b]u[/b] puts it back"
+            "Binned [b]off the list[/b] — [b]gb[/b] then [b]R[/b] puts it back"
         )
         assert Todo.all()[0].is_binned
 

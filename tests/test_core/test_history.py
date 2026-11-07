@@ -333,7 +333,7 @@ def test_a_note_edit_is_not_a_change_to_take_back(create_project):
     """
     The cost of keeping notes out of the snapshot, written down on purpose
 
-    Typing into a note records nothing, so `ctrl+z` in the panes steps over
+    Typing into a note records nothing, so `u` in the panes steps over
     it to whatever was changed before. The note window has its own undo on
     the same key, which is where the typing happens.
     """

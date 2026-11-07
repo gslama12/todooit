@@ -151,7 +151,7 @@ async def test_undo_flashes_the_rows_it_put_back():
         await press_writing(pilot, parent.drop)
         assert descriptions(home) == []
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
 
         assert descriptions(home)[0] == "Weekly review"
