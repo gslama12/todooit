@@ -54,6 +54,8 @@ class VimCommand(Enum):
     DELETE_CHAR = "delete_char"
     CHANGE_LINE = "change_line"
     CHANGE_TO_LINE_END = "change_to_line_end"
+    INDENT_LINE = "indent_line"
+    UNINDENT_LINE = "unindent_line"
     REPLACE_CHAR = "replace_char"
     YANK_LINE = "yank_line"
     PASTE_AFTER = "paste_after"
@@ -70,9 +72,18 @@ class VimOperator(Enum):
     DELETE = "delete"
     CHANGE = "change"
     YANK = "yank"
+    INDENT = "indent"
+    UNINDENT = "unindent"
 
 
-VimAction = Union[VimMotion, VimCommand, VimOperator]
+class VimTextObject(Enum):
+    """What an operator can take instead of a motion; nothing without one."""
+
+    INNER_PARAGRAPH = "inner_paragraph"
+    AROUND_PARAGRAPH = "around_paragraph"
+
+
+VimAction = Union[VimMotion, VimCommand, VimOperator, VimTextObject]
 
 
 class VimKeymap:
@@ -83,6 +94,8 @@ class VimKeymap:
 
     An operator's key wins over a longer binding starting with it: `d` is the
     operator, and `dd` is what its keys and the next key are looked up as first.
+    A text object's keys only mean something behind an operator, so `ip` leaves
+    `i` to do what it does alone.
     """
 
     def __init__(self) -> None:
@@ -122,11 +135,14 @@ class VimKeymap:
 
         return self._bindings.get(keys)
 
-    def continues(self, keys: str) -> bool:
+    def continues(self, keys: str, *, behind_operator: bool = False) -> bool:
         """Whether a longer binding starts with these keys."""
 
         return any(
-            bound != keys and bound.startswith(keys) for bound in self._bindings
+            bound != keys
+            and bound.startswith(keys)
+            and (behind_operator or not isinstance(action, VimTextObject))
+            for bound, action in self._bindings.items()
         )
 
     def key_for(self, action: VimAction) -> Optional[str]:

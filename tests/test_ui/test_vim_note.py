@@ -22,9 +22,15 @@ from tests.test_ui.ui_base import (
 from todooit.api import PinnedNote, Todo
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
 from todooit.ui.screens.note.disp.document import FoldedDocument
-from todooit.ui.screens.note.disp.markup import BACKDROP, SEARCH_MATCH, TARGET
+from todooit.ui.screens.note.disp.markup import (
+    BACKDROP,
+    INDENT,
+    SEARCH_MATCH,
+    TARGET,
+)
 from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
 from todooit.vim_engine import VimCommand, VimMotion
+from todooit.vim_engine.engine import NESTING_LEVEL
 
 
 async def note_holding(pilot, text: str) -> NoteScreen:
@@ -2554,3 +2560,91 @@ async def test_a_yank_in_one_note_pastes_in_another():
         await pilot.pause()
 
         assert screen.editor.text == "pinned\ncarried over"
+
+
+async def nesting_note(pilot, text: str, cursor=(0, 0)):
+    """The editor of a note holding `text`, in NORMAL, with the cursor at `cursor`."""
+
+    screen = await open_note(pilot)
+    await pilot.press("escape")
+    editor = screen.editor
+    editor.load_text(text)
+    editor.move_cursor(cursor)
+    await pilot.pause()
+    return editor
+
+
+@pytest.mark.parametrize(
+    "text, row, keys, after",
+    [
+        # The nested item starts a list of its own; the rest close the gap
+        ("1. a\n2. b\n3. c", 1, (">", ">"), "1. a\n  1. b\n2. c"),
+        ("1. a\n  1. b\n2. c", 1, ("<", "<"), "1. a\n2. b\n3. c"),
+        # A count nests the lines as one list
+        ("1. a\n2. b\n3. c", 1, ("2", ">", ">"), "1. a\n  1. b\n  2. c"),
+        # And so do a motion and a text object
+        ("1. a\n2. b\n3. c", 0, (">", "l"), "  1. a\n  2. b\n1. c"),
+        ("1. a\n2. b\n\nx", 1, (">", "i", "p"), "  1. a\n  2. b\n\nx"),
+        # Quoted, the list nests after the bar and is counted all the same
+        ("> 1. a\n> 2. b\n> 3. c", 1, (">", ">"), "> 1. a\n>   1. b\n> 2. c"),
+    ],
+)
+async def test_nesting_counts_numbered_lists_again(text, row, keys, after):
+    async with run_pilot() as pilot:
+        editor = await nesting_note(pilot, text, (row, 0))
+
+        await pilot.press(*keys)
+        await pilot.pause()
+
+        assert editor.text == after
+        assert editor.mode == MODE_NORMAL
+        assert editor.engine.pending == ""
+
+
+async def test_nesting_stands_on_the_first_non_blank_in_a_raw_row():
+    async with run_pilot() as pilot:
+        editor = await nesting_note(pilot, "- [a](http://x.y)\n- b", (1, 2))
+
+        await pilot.press("k", "2", ">", ">")
+        await pilot.pause()
+
+        # The address is still there, however the link is drawn
+        assert editor.text == "  - [a](http://x.y)\n  - b"
+        assert editor.cursor_location == (0, 2)
+
+
+async def test_undoing_a_nesting_takes_back_the_lines_and_their_numbers():
+    text = "1. a\n2. b\n3. c"
+
+    async with run_pilot() as pilot:
+        editor = await nesting_note(pilot, text)
+
+        await pilot.press("2", ">", ">")
+        await pilot.pause()
+        assert editor.text == "  1. a\n  2. b\n1. c"
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == text
+
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+        assert editor.text == "  1. a\n  2. b\n1. c"
+
+
+async def test_the_nesting_operator_shows_as_pending():
+    async with run_pilot() as pilot:
+        editor = await nesting_note(pilot, "a")
+
+        await pilot.press("2", "<")
+        await pilot.pause()
+        assert editor.engine.pending == "2<"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert editor.engine.pending == ""
+        assert editor.text == "a"
+
+
+def test_the_engine_and_the_note_agree_on_a_level_of_nesting():
+    assert NESTING_LEVEL == INDENT

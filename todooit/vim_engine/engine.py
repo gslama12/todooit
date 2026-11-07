@@ -3,11 +3,18 @@ The engine: takes keys one at a time and acts on a buffer
 """
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
 from . import motions
 from .buffer import Buffer
-from .keymap import VimAction, VimCommand, VimKeymap, VimMotion, VimOperator
+from .keymap import (
+    VimAction,
+    VimCommand,
+    VimKeymap,
+    VimMotion,
+    VimOperator,
+    VimTextObject,
+)
 from .register import Register, RegisterMemory
 from .search import MatchSpan, Search, SearchMemory
 
@@ -33,6 +40,12 @@ LINE_ONLY = frozenset(
         VimCommand.YANK_LINE,
         VimCommand.OPEN_BELOW,
         VimCommand.OPEN_ABOVE,
+        VimCommand.INDENT_LINE,
+        VimCommand.UNINDENT_LINE,
+        VimOperator.INDENT,
+        VimOperator.UNINDENT,
+        VimTextObject.INNER_PARAGRAPH,
+        VimTextObject.AROUND_PARAGRAPH,
     }
 )
 
@@ -63,6 +76,15 @@ LINEWISE = frozenset(
     }
 )
 INCLUSIVE = frozenset({VimMotion.WORD_END, VimMotion.LAST_CHARACTER})
+
+# One level of nesting, and which way each key takes a line
+NESTING_LEVEL = "  "
+NESTING: Dict[VimAction, int] = {
+    VimOperator.INDENT: 1,
+    VimOperator.UNINDENT: -1,
+    VimCommand.INDENT_LINE: 1,
+    VimCommand.UNINDENT_LINE: -1,
+}
 
 
 @dataclass(frozen=True)
@@ -282,13 +304,15 @@ class VimEngine:
             action = self.keys.action_for(whole)
 
             if action is None:
-                if self.keys.continues(self._keys) or self.keys.continues(whole):
+                if self.keys.continues(
+                    self._keys, behind_operator=True
+                ) or self.keys.continues(whole):
                     return True
 
                 action = self.keys.action_for(self._keys)
 
-                # Only a motion can follow an operator
-                if not isinstance(action, VimMotion):
+                # Only a motion or a text object can follow an operator
+                if not isinstance(action, (VimMotion, VimTextObject)):
                     action = None
 
         if action is None or (action in LINE_ONLY and not self.multiline):
@@ -320,6 +344,8 @@ class VimEngine:
 
         if operator is not None and isinstance(action, VimMotion):
             self._operate(operator, action, count, counted)
+        elif operator is not None and isinstance(action, VimTextObject):
+            self._operate_on_paragraph(operator, action, count)
         else:
             self._run(action, count, counted)
 
@@ -426,6 +452,8 @@ class VimEngine:
                 self._operate(
                     VimOperator.CHANGE, VimMotion.LAST_CHARACTER, count, counted
                 )
+            elif action in NESTING:
+                self._nest_lines(row, row + count - 1, NESTING[action])
             elif action is VimCommand.CENTER_VIEW:
                 self.buffer.center_view()
             elif action is VimCommand.OPEN_LINK:
@@ -762,6 +790,20 @@ class VimEngine:
 
             self._operate_on_text(operator, origin, target, inclusive)
 
+    def _operate_on_paragraph(
+        self, operator: VimOperator, text_object: VimTextObject, count: int
+    ) -> None:
+        self._shown_find = None
+
+        row = self.buffer.cursor[0]
+
+        if text_object is VimTextObject.AROUND_PARAGRAPH:
+            top, bottom = motions.around_paragraph_lines(self.buffer, row, count)
+        else:
+            top, bottom = motions.paragraph_lines(self.buffer, row, count)
+
+        self._take_lines(operator, top, bottom)
+
     def _operate_on_find(
         self,
         operator: VimOperator,
@@ -814,7 +856,8 @@ class VimEngine:
     ) -> None:
         """
         Take what's between two places in either order, then stand where it was:
-        in INSERT, if it's a change, even with nothing there to take.
+        in INSERT, if it's a change, even with nothing there to take. Nesting
+        takes no text, only the lines it touches.
         """
 
         start, end = sorted((origin, target))
@@ -830,6 +873,10 @@ class VimEngine:
                 return
 
             end = end[0] - 1, len(buffer.line(end[0] - 1))
+
+        if operator in NESTING:
+            self._nest_lines(start[0], end[0], NESTING[operator])
+            return
 
         if start != end:
             text = self._text_between(start, end)
@@ -859,6 +906,8 @@ class VimEngine:
             self._yank_lines(top, bottom, column=column)
         elif operator is VimOperator.CHANGE:
             self._change_lines(top, bottom)
+        elif operator in NESTING:
+            self._nest_lines(top, bottom, NESTING[operator])
         else:
             self._delete_lines(top, bottom, column=column)
 
@@ -1003,6 +1052,35 @@ class VimEngine:
             return row, column
 
         return row, min(column + 1, len(self.buffer.line(row)))
+
+    def _nest_lines(self, top: int, bottom: int, levels: int) -> None:
+        """Move these lines in or out, and stand on the first one's first non-blank."""
+
+        buffer = self.buffer
+
+        for row in range(top, min(bottom, buffer.line_count - 1) + 1):
+            self._nest_line(row, levels)
+
+        self._to_first_non_blank(top)
+
+    def _nest_line(self, row: int, levels: int) -> None:
+        """Rewrite the line's indent to a whole level; an empty line has none to move."""
+
+        buffer = self.buffer
+        start = buffer.nesting_start(row)
+        body = buffer.line(row)[start:]
+
+        if not body:
+            return
+
+        width = motions.indent_width(body)
+        indent = body[:width]
+        size = len(NESTING_LEVEL)
+        depth = max(0, len(indent.expandtabs(size)) // size + levels)
+        nested = NESTING_LEVEL * depth
+
+        if nested != indent:
+            buffer.replace((row, start), (row, start + width), nested)
 
     def _finish_replace(self, key: str) -> None:
         """The key after `r`. Only a character means anything there."""

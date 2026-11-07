@@ -206,6 +206,49 @@ def previous_paragraph(buffer: Buffer, row: int, column: int) -> Place:
     return 0, 0
 
 
+def _blank(buffer: Buffer, row: int) -> bool:
+    """Unlike `{` and `}`, a paragraph object takes a line of blanks as blank too."""
+
+    return not buffer.line(row).strip()
+
+
+def paragraph_lines(buffer: Buffer, row: int, runs: int) -> Tuple[int, int]:
+    """
+    The rows of `runs` runs of text or blank lines in a row, starting with the one
+    around `row`, for as many as there are.
+    """
+
+    last = buffer.line_count - 1
+    top = bottom = row
+
+    while top > 0 and _blank(buffer, top - 1) == _blank(buffer, row):
+        top -= 1
+
+    for run in range(runs):
+        if run and bottom < last:
+            bottom += 1
+
+        while bottom < last and _blank(buffer, bottom + 1) == _blank(buffer, bottom):
+            bottom += 1
+
+    return top, bottom
+
+
+def around_paragraph_lines(buffer: Buffer, row: int, count: int) -> Tuple[int, int]:
+    """
+    `count` paragraphs with the blanks after each, or if the note ends first, with
+    the blanks before the first instead.
+    """
+
+    top, bottom = paragraph_lines(buffer, row, count * 2)
+
+    if not _blank(buffer, top) and not _blank(buffer, bottom):
+        while top > 0 and _blank(buffer, top - 1):
+            top -= 1
+
+    return top, bottom
+
+
 def first_non_blank(text: str) -> int:
     """A line of nothing but blanks has none: its last character, then."""
 

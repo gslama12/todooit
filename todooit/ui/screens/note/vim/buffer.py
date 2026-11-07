@@ -10,7 +10,7 @@ from todooit.utils import copy_text, paste_text
 from todooit.utils.links import folded_link_at
 
 from ..disp.document import HangingDocument
-from ..disp.markup import line_prefix
+from ..disp.markup import line_prefix, split_quote
 
 if TYPE_CHECKING:  # pragma: no cover
     from .modes import ModalEditor
@@ -143,6 +143,9 @@ class NoteBuffer:
 
     def list_prefix(self, row: int) -> str:
         return line_prefix(self.line(row))
+
+    def nesting_start(self, row: int) -> int:
+        return len(split_quote(self.line(row))[0])
 
     def mode_changed(self, mode: str) -> None:
         self._editor.show_mode(mode)

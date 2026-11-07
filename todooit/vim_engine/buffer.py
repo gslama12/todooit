@@ -66,6 +66,9 @@ class Buffer(Protocol):
     def list_prefix(self, row: int) -> str:
         """What opens `row` and carries on to a new line: quote, indent, marker."""
 
+    def nesting_start(self, row: int) -> int:
+        """The column `row`'s indent starts at: past its quote bar, if it has one."""
+
     def mode_changed(self, mode: str) -> None:
         """The engine changed mode. The cursor is checked straight after this."""
 

@@ -26,6 +26,7 @@ from todooit.vim_engine import (
     VimKeymap,
     VimMotion,
     VimOperator,
+    VimTextObject,
 )
 
 
@@ -99,6 +100,10 @@ class MemoryBuffer:
         found = re.match(r"(> )?\s*([-*] |\d+\. )?", self.lines[row])
         assert found is not None
         return found.group() if found.group(1) or found.group(2) else ""
+
+    def nesting_start(self, row: int) -> int:
+        found = re.match(r"[ \t]*> ", self.lines[row])
+        return found.end() if found else 0
 
     def mode_changed(self, mode: str) -> None:
         self.modes.append(mode)
@@ -3090,4 +3095,284 @@ def test_yy_is_left_to_a_single_line_host():
     assert engine.feed("y")
     assert engine.feed("y") is True
     assert engine.register is None
+    assert engine.pending == ""
+
+
+def nesting_keys() -> VimKeymap:
+    keys = change_keys()
+    keys.set(">", VimOperator.INDENT)
+    keys.set("<", VimOperator.UNINDENT)
+    keys.set(">>", VimCommand.INDENT_LINE)
+    keys.set("<<", VimCommand.UNINDENT_LINE)
+    return keys
+
+
+def nesting_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), nesting_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        # One level, and the cursor on the line's first non-blank, as in vim
+        ("foo", (0, 2), ">>", "  foo", (0, 2)),
+        ("  foo", (0, 4), "<<", "foo", (0, 0)),
+        ("  foo", (0, 0), ">>", "    foo", (0, 4)),
+        ("- foo", (0, 3), ">>", "  - foo", (0, 2)),
+        ("  - foo", (0, 5), "<<", "- foo", (0, 0)),
+        # Nothing left to take out
+        ("foo", (0, 2), "<<", "foo", (0, 0)),
+        # An indent off the levels lands on one, as `tab` lands it
+        ("   foo", (0, 0), ">>", "    foo", (0, 4)),
+        ("   foo", (0, 0), "<<", "foo", (0, 0)),
+        ("\tfoo", (0, 0), ">>", "    foo", (0, 4)),
+        # A quoted line nests after its bar
+        ("> foo", (0, 3), ">>", ">   foo", (0, 0)),
+        (">   foo", (0, 5), "<<", "> foo", (0, 0)),
+        ("> foo", (0, 3), "<<", "> foo", (0, 0)),
+        (">   - foo", (0, 0), "<<", "> - foo", (0, 0)),
+        # There's nothing to nest on an empty line, as in vim
+        ("", (0, 0), ">>", "", (0, 0)),
+        ("> ", (0, 0), ">>", "> ", (0, 0)),
+    ],
+)
+def test_doubling_the_operator_nests_the_line(text, start, keys, after, cursor):
+    engine = nesting_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "start, keys, after, cursor",
+    [
+        ((0, 1), "2>>", "  a\n  b\nc", (0, 2)),
+        ((1, 0), "5>>", "a\n  b\n  c", (1, 2)),
+        ((0, 0), "3>>", "  a\n  b\n  c", (0, 2)),
+    ],
+)
+def test_a_count_nests_that_many_lines_one_level(start, keys, after, cursor):
+    engine = nesting_on("a\nb\nc", start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+
+
+def test_a_count_unnests_too_and_passes_over_empty_lines():
+    engine = nesting_on("  a\n\n  b")
+
+    feed(engine, "3<<")
+
+    assert buffer_of(engine).text == "a\n\nb"
+
+
+def test_nesting_leaves_the_register_alone():
+    engine = nesting_on("foo bar\nbaz")
+    feed(engine, "dw")
+    register = engine.register
+
+    feed(engine, ">>")
+    feed(engine, "<<")
+
+    assert engine.register == register
+
+
+def test_nesting_lines_is_one_undo_step():
+    engine = nesting_on("a\nb\nc", (0, 0))
+
+    feed(engine, "3>>")
+    assert len(buffer_of(engine).undo_steps) == 1
+
+    buffer_of(engine).undo()
+    assert buffer_of(engine).text == "a\nb\nc"
+
+
+def test_a_single_line_host_has_no_nesting():
+    engine = nesting_on("abc", multiline=False)
+
+    feed(engine, ">>")
+    feed(engine, "<<")
+
+    assert buffer_of(engine).text == "abc"
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        # Whole lines, whichever way the motion goes
+        ("a\nb\nc", (0, 0), ">l", "  a\n  b\nc", (0, 2)),
+        ("a\nb\nc", (2, 0), ">k", "a\n  b\n  c", (1, 2)),
+        ("a\nb\nc", (0, 0), ">G", "  a\n  b\n  c", (0, 2)),
+        ("a\nb\nc", (1, 0), ">gg", "  a\n  b\nc", (0, 2)),
+        ("  a\n  b\nc", (0, 0), "<l", "a\nb\nc", (0, 0)),
+        # A character motion takes the lines it touches, however little of them
+        ("foo bar", (0, 4), ">w", "  foo bar", (0, 2)),
+        ("foo bar", (0, 4), ">e", "  foo bar", (0, 2)),
+        ("foo bar", (0, 6), ">ö", "  foo bar", (0, 2)),
+        ("foo bar", (0, 4), ">_", "  foo bar", (0, 2)),
+        ("foo bar", (0, 4), ">fr", "  foo bar", (0, 2)),
+        ("  foo", (0, 3), "<=", "foo", (0, 0)),
+        ("foo\nbar", (0, 2), ">e", "  foo\n  bar", (0, 2)),
+        # `w` stops at the end of the line's last word, as `dw` does
+        ("foo\nbar", (0, 2), ">w", "  foo\nbar", (0, 2)),
+        # Stopping short of a line's start leaves that line out
+        ("a\nb\n\nc", (0, 0), ">}", "  a\n  b\n\nc", (0, 2)),
+        # Counts multiply
+        ("a\nb\nc\nd", (0, 0), "2>l", "  a\n  b\n  c\nd", (0, 2)),
+        # Blank lines in the way stay empty
+        ("a\n\nb", (0, 0), ">G", "  a\n\n  b", (0, 2)),
+        # A quote nests after its bar on every line
+        ("> a\n> b", (0, 0), ">l", ">   a\n>   b", (0, 0)),
+    ],
+)
+def test_the_nesting_operators_take_a_motion(text, start, keys, after, cursor):
+    keys_bound = nesting_keys()
+    keys_bound.set("G", VimMotion.BOTTOM)
+    keys_bound.set("gg", VimMotion.TOP)
+    keys_bound.set("}", VimMotion.PARAGRAPH_DOWN)
+    engine = VimEngine(MemoryBuffer(text, start), keys_bound)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register is None
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys",
+    [
+        # A motion that fails has nothing to act on
+        ("a\nb", (0, 0), ">k"),
+        ("a\nb", (1, 0), ">l"),
+        ("foo", (0, 0), ">j"),
+        ("foo", (0, 0), ">fz"),
+        # A key that's no motion cancels it
+        ("foo", (0, 0), ">q"),
+    ],
+)
+def test_a_nesting_operator_without_a_motion_does_nothing(text, start, keys):
+    engine = nesting_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == start
+    assert engine.pending == ""
+
+
+def test_the_nesting_operators_can_move_to_other_keys():
+    keys = nesting_keys()
+    keys.remap({">": "+"})
+    engine = VimEngine(MemoryBuffer("a\nb"), keys)
+
+    feed(engine, "+l")
+
+    assert buffer_of(engine).text == "  a\n  b"
+
+
+def paragraph_keys() -> VimKeymap:
+    keys = nesting_keys()
+    keys.set("ip", VimTextObject.INNER_PARAGRAPH)
+    keys.set("ap", VimTextObject.AROUND_PARAGRAPH)
+    return keys
+
+
+def paragraphs_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), paragraph_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor",
+    [
+        # The paragraph around the cursor, from anywhere in it
+        ("a\nb\n\nc", (0, 0), ">ip", "  a\n  b\n\nc", (0, 2)),
+        ("a\nb\n\nc", (1, 0), ">ip", "  a\n  b\n\nc", (0, 2)),
+        ("a\n\nb\nc", (3, 0), ">ip", "a\n\n  b\n  c", (2, 2)),
+        ("  a\n  b\n\nc", (1, 0), "<ip", "a\nb\n\nc", (0, 0)),
+        # `ap` takes the blanks after it, or if there are none, those before it
+        ("a\n\nb", (0, 0), ">ap", "  a\n\nb", (0, 2)),
+        ("a\n\nb", (2, 0), ">ap", "a\n\n  b", (1, 0)),
+        # From a blank line, `ap` takes the paragraph after it
+        ("a\n\nb\nc\n\nd", (1, 0), ">ap", "a\n\n  b\n  c\n\nd", (1, 0)),
+        # A count takes the runs in turn: blanks count as one on their own
+        ("a\n\nb\n\nc", (0, 0), ">3ip", "  a\n\n  b\n\nc", (0, 2)),
+        ("a\n\nb\n\nc", (0, 0), ">2ap", "  a\n\n  b\n\nc", (0, 2)),
+        ("a\n\nb", (0, 0), "9>ip", "  a\n\n  b", (0, 2)),
+        # A line of nothing but blanks separates too
+        ("a\n  \nb", (0, 0), ">ip", "  a\n  \nb", (0, 2)),
+    ],
+)
+def test_the_nesting_operators_take_a_paragraph(text, start, keys, after, cursor):
+    engine = paragraphs_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register is None
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "keys, after, register",
+    [
+        ("dip", "\nc", "a\nb"),
+        ("dap", "c", "a\nb\n"),
+    ],
+)
+def test_deleting_a_paragraph_takes_whole_lines(keys, after, register):
+    engine = paragraphs_on("a\nb\n\nc")
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert engine.register == Register(register, linewise=True)
+
+
+def test_changing_a_paragraph_leaves_one_line_to_type_on():
+    engine = paragraphs_on("a\nb\n\nc")
+
+    feed(engine, "cip")
+
+    assert buffer_of(engine).text == "\n\nc"
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.mode == MODE_INSERT
+
+
+def test_a_text_object_binding_waits_only_behind_an_operator():
+    engine = paragraphs_on("abc")
+
+    engine.feed("i")
+    assert engine.mode == MODE_INSERT
+    assert engine.pending == ""
+
+
+def test_a_text_object_alone_or_half_typed_does_nothing():
+    engine = paragraphs_on("a\nb")
+
+    feed(engine, ">i")
+    assert engine.pending == ">i"
+
+    feed(engine, "q")
+    assert engine.pending == ""
+    assert buffer_of(engine).text == "a\nb"
+
+
+def test_a_single_line_host_has_no_paragraphs():
+    engine = paragraphs_on("abc", multiline=False)
+
+    feed(engine, "dip")
+
+    assert buffer_of(engine).text == "abc"
     assert engine.pending == ""

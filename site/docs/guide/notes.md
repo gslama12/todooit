@@ -49,6 +49,10 @@ is drawn the moment it is finished.
 keyboard-driven piece of markup, because nesting is the one thing that cannot
 be read off the characters on the line.
 
+In NORMAL, `>>` and `<<` do the same, and `3>>` takes three lines. `>` and `<`
+also take a motion or a paragraph, whole lines at a time: `>l`, `<G`, `>ip`, `>ap`.
+A quoted line nests after its `> `, and numbered lists are counted again.
+
 `enter` at the end of an item opens the next one: a bullet carries its glyph
 on, a numbered item the next number (`1.` → `2.`).
 

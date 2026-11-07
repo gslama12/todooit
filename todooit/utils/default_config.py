@@ -18,7 +18,7 @@ from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import ProjectWidget, TodoWidget
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
-from todooit.vim_engine import VimCommand, VimMotion, VimOperator
+from todooit.vim_engine import VimCommand, VimMotion, VimOperator, VimTextObject
 
 # Todo formatters
 
@@ -518,6 +518,12 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("c", VimOperator.CHANGE)
     api.vim.keys.set("cc", VimCommand.CHANGE_LINE)
     api.vim.keys.set("C", VimCommand.CHANGE_TO_LINE_END)
+    api.vim.keys.set(">", VimOperator.INDENT)
+    api.vim.keys.set(">>", VimCommand.INDENT_LINE)
+    api.vim.keys.set("<", VimOperator.UNINDENT)
+    api.vim.keys.set("<<", VimCommand.UNINDENT_LINE)
+    api.vim.keys.set("ip", VimTextObject.INNER_PARAGRAPH)
+    api.vim.keys.set("ap", VimTextObject.AROUND_PARAGRAPH)
     api.vim.keys.set("r", VimCommand.REPLACE_CHAR)
     api.vim.keys.set("y", VimOperator.YANK)
     api.vim.keys.set("yy", VimCommand.YANK_LINE)
