@@ -19,6 +19,12 @@ class Buffer(Protocol):
     def line(self, row: int) -> str:
         """The raw text of `row`."""
 
+    def drawn_line(self, row: int) -> str:
+        """`row` as the reader sees it right now, which is all `vim_flash` looks at."""
+
+    def stored_column(self, row: int, column: int) -> int:
+        """The raw column of the character drawn at `column` of `row`."""
+
     @property
     def cursor(self) -> Tuple[int, int]:
         """Where the cursor is."""

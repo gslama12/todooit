@@ -14,6 +14,8 @@ from .markup import (
     EMPH,
     HEADER_SPANS,
     LINK,
+    MARKED,
+    MARKED_FIRST,
     MARKER,
     QUOTE,
     QUOTE_BAR,
@@ -82,5 +84,7 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             BACKDROP: Style(color=blend(theme.foreground1, theme.background2, 0.6)),
             TARGET: Style(color=theme.background1, bgcolor=theme.red, bold=True),
             SEARCH_MATCH: Style(color=theme.background1, bgcolor=theme.yellow),
+            MARKED: Style(color=theme.background1, bgcolor=theme.blue),
+            MARKED_FIRST: Style(color=theme.background1, bgcolor=theme.cyan),
         },
     )

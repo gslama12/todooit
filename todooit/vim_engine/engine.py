@@ -17,9 +17,11 @@ from .keymap import (
 )
 from .register import Register, RegisterMemory
 from .search import MatchSpan, Search, SearchMemory
+from .vim_flash import VIM_FLASH_ALPHABET, VimFlashMode, VimFlashView
 
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
+MODE_FLASH = "FLASH"
 
 # Commands that mean nothing on a host holding a single line of text
 LINE_ONLY = frozenset(
@@ -133,6 +135,8 @@ class VimEngine:
     `search_memory` holds the last search, for a host that wants it to outlive
     this engine by handing the same one to the next. `register_memory` is the
     same for the register.
+
+    `vim_flash_alphabet` is the letters `vim_flash` labels matches with.
     """
 
     def __init__(
@@ -143,6 +147,7 @@ class VimEngine:
         multiline: bool = True,
         search_memory: Optional[SearchMemory] = None,
         register_memory: Optional[RegisterMemory] = None,
+        vim_flash_alphabet: str = VIM_FLASH_ALPHABET,
     ) -> None:
         self.buffer = buffer
         self.keys = keys
@@ -186,6 +191,11 @@ class VimEngine:
 
         # The search whose matches are on show
         self.lit_search: Optional[Search] = None
+
+        self._vim_flash_alphabet = vim_flash_alphabet
+        self._vim_flash: Optional[VimFlashMode] = None
+        # The operator waiting on the `vim_flash` target, if one is
+        self._vim_flash_operator: Optional[VimOperator] = None
 
     @property
     def register(self) -> Optional[Register]:
@@ -243,17 +253,33 @@ class VimEngine:
             ),
         )
 
+    @property
+    def vim_flash_view(self) -> Optional[VimFlashView]:
+        """What to show of a `vim_flash`, if one is open."""
+
+        flash = self._vim_flash
+
+        if flash is None:
+            return None
+
+        # The cursor went elsewhere without a key, as a click does
+        if self.buffer.cursor != flash.origin:
+            self.set_mode(MODE_NORMAL)
+            return None
+
+        return flash.view
+
     def feed(self, key: str) -> bool:
         """Take one key. True if it was used, False to leave it to the host."""
 
         # A command is one undo step, unless it ends in INSERT: that step lasts
         # until INSERT does
-        if self.mode == MODE_NORMAL:
+        if self.mode != MODE_INSERT:
             self._open_step()
 
         used = self._take_key(key)
 
-        if self.mode == MODE_NORMAL:
+        if self.mode != MODE_INSERT:
             self._close_step()
 
         return used
@@ -274,6 +300,10 @@ class VimEngine:
 
         if self._search_prompt is not None:
             self._feed_search_prompt(self._search_prompt, key)
+            return True
+
+        if self._vim_flash is not None:
+            self._feed_vim_flash(self._vim_flash, key)
             return True
 
         if self.mode != MODE_NORMAL:
@@ -336,6 +366,10 @@ class VimEngine:
         if action is VimCommand.REPLACE_CHAR:
             self._replacing = True
             self._shown_find = None
+            return True
+
+        if action is VimMotion.VIM_FLASH:
+            self._open_vim_flash()
             return True
 
         operator = self._operator
@@ -402,6 +436,8 @@ class VimEngine:
         self._finding = None
         self._replacing = False
         self._search_prompt = None
+        self._vim_flash = None
+        self._vim_flash_operator = None
 
     def _escape(self) -> bool:
         if self._search_prompt is not None:
@@ -729,6 +765,52 @@ class VimEngine:
         if wrapped:
             end = "top" if forward else "bottom"
             self.buffer.report(f"Search wrapped to the {end}")
+
+    def _open_vim_flash(self) -> None:
+        # Kept past the mode change, which cancels what's pending
+        operator = self._operator
+        self.set_mode(MODE_FLASH)
+        self._vim_flash = VimFlashMode(self.buffer, self._vim_flash_alphabet)
+        self._vim_flash_operator = operator
+        self.buffer.prompt_changed()
+
+    def _feed_vim_flash(self, flash: VimFlashMode, key: str) -> None:
+        """A key during `vim_flash`. Only characters mean anything but these."""
+
+        if key == "enter":
+            self._end_vim_flash(flash.view.first)
+        elif key == "backspace":
+            flash.narrow(flash.text[:-1])
+            self.buffer.prompt_changed()
+        elif len(key) == 1:
+            place = flash.labelled(key)
+
+            if place is not None:
+                self._end_vim_flash(place)
+                return
+
+            flash.narrow(flash.text + key)
+
+            # As in flash.nvim: nothing left to go to is the end of it
+            if flash.view.matches:
+                self.buffer.prompt_changed()
+            else:
+                self._end_vim_flash(None)
+
+    def _end_vim_flash(self, place: Optional[Tuple[int, int]]) -> None:
+        operator = self._vim_flash_operator
+        origin = self.buffer.cursor
+        self.set_mode(MODE_NORMAL)
+
+        if place is None:
+            return
+
+        # As in flash.nvim: the target's own character is taken too, either way
+        if operator is not None:
+            self._operate_on_text(operator, origin, place, True)
+        else:
+            self.buffer.move_cursor(*place)
+            self._clamp()
 
     def _operate(
         self, operator: VimOperator, motion: VimMotion, count: int, counted: bool

@@ -501,6 +501,7 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("}", VimMotion.PARAGRAPH_DOWN)
     api.vim.keys.set("n", VimMotion.SEARCH_NEXT)
     api.vim.keys.set("N", VimMotion.SEARCH_PREVIOUS)
+    api.vim.keys.set("s", VimMotion.VIM_FLASH)
     api.vim.keys.set("i", VimCommand.INSERT)
     api.vim.keys.set("a", VimCommand.INSERT_AFTER)
     api.vim.keys.set("I", VimCommand.INSERT_FIRST_NON_BLANK)

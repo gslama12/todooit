@@ -34,6 +34,7 @@ class VimMotion(Enum):
     PARAGRAPH_DOWN = "paragraph_down"
     SEARCH_NEXT = "search_next"
     SEARCH_PREVIOUS = "search_previous"
+    VIM_FLASH = "vim_flash"
 
 
 class VimCommand(Enum):

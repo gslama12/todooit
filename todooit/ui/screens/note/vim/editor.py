@@ -75,6 +75,7 @@ class NoteEditor(ClipboardEditing):
         used = self.engine.feed(key)
         self.show_find_view()
         self.show_search()
+        self.show_vim_flash()
 
         if used:
             self.host.pending_changed()

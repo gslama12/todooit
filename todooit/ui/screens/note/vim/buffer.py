@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Tuple
 from textual.content import Content
 
 from todooit.utils import copy_text, paste_text
-from todooit.utils.links import folded_link_at
+from todooit.utils.links import folded_link_at, raw_column
 
-from ..disp.document import HangingDocument
-from ..disp.markup import line_prefix, split_quote
+from ..disp.document import FoldedDocument, HangingDocument
+from ..disp.markup import RULE_SPAN, line_prefix, split_quote
 
 if TYPE_CHECKING:  # pragma: no cover
     from .modes import ModalEditor
@@ -41,6 +41,26 @@ class NoteBuffer:
 
     def line(self, row: int) -> str:
         return self._editor._stored_line(row)
+
+    def drawn_line(self, row: int) -> str:
+        document = self._folded
+
+        # Drawn as a line right across the window, so no text at all
+        return "" if document.block_at(row) == RULE_SPAN else document[row]
+
+    def stored_column(self, row: int, column: int) -> int:
+        document = self._folded
+
+        if row in document.raw_rows:
+            return column
+
+        return raw_column(document.stored_line(row), column)
+
+    @property
+    def _folded(self) -> FoldedDocument:
+        document = self._editor.document
+        assert isinstance(document, FoldedDocument)
+        return document
 
     @property
     def cursor(self) -> Tuple[int, int]:

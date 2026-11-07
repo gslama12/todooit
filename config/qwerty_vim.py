@@ -50,4 +50,5 @@ def vim_keys(api: TodooitAPI, _):
 
     # Flash mode's labels start on the home row too, and QWERTY's ends in `;`
     api.vars.flash_alphabet = "asdfghjkl;qwertyuiopzxcvbnm"
+    api.vars.vim_flash_alphabet = "asdfghjkl;qwertyuiopzxcvbnm"
 

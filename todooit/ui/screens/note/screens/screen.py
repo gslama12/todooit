@@ -265,26 +265,32 @@ class NoteScreenBase(BaseScreen):
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
             self.hint.update(
-                self._search_prompt_line() or self.hint_for(mode, self.picking_files)
+                self._prompt_line() or self.hint_for(mode, self.picking_files)
             )
 
     def prompt_changed(self) -> None:
-        """Redraw the hint line, where a search prompt stands in for the hints."""
+        """Redraw the hint line, where a search or vim_flash prompt stands in for the hints."""
 
         if self._report_timer is not None:
             self._report_timer.stop()
 
         self.mode_changed()
 
-    def _search_prompt_line(self) -> Optional[Content]:
-        """The search being typed, as typed, with a cursor at its end."""
+    def _prompt_line(self) -> Optional[Content]:
+        """The search or vim_flash being typed, as typed, with a cursor at its end."""
 
-        text = self.editor.search_prompt
+        engine = self.editor.engine
+        flash = engine.vim_flash_view
+        action: VimAction = VimCommand.SEARCH
 
-        if text is None:
+        if flash is not None:
+            text, action = flash.text, VimMotion.VIM_FLASH
+        elif engine.search_prompt is not None:
+            text = engine.search_prompt
+        else:
             return None
 
-        key = self.api.vim.keys.key_for(VimCommand.SEARCH)
+        key = self.api.vim.keys.key_for(action)
 
         return Content.from_markup(key_label(key or "")) + Content(f"{text}█")
 

@@ -23,6 +23,8 @@ from .document import (
 )
 from .markup import (
     BACKDROP,
+    MARKED,
+    MARKED_FIRST,
     QUOTE_BAR,
     QUOTE_GLYPH,
     RULE,
@@ -35,6 +37,10 @@ from .markup import (
 # (row, start column, end column, style name), in stored columns
 OverlaySpan = Tuple[int, int, int, str]
 
+# (row, column, text, style name), a drawn column: put over the cells from there,
+# past the line's end if need be
+OverlayLabel = Tuple[int, int, str, str]
+
 
 @dataclass(frozen=True)
 class Overlay:
@@ -46,6 +52,12 @@ class Overlay:
     # Later ones go over earlier ones, and text folded off the page isn't drawn
     # at all.
     spans: Sequence[OverlaySpan]
+
+    labels: Sequence[OverlayLabel] = ()
+
+
+# What still shows on a row put aside
+KEPT_WHEN_DIMMED = (TARGET, MARKED, MARKED_FIRST)
 
 
 class NoteView(TextArea):
@@ -174,12 +186,36 @@ class NoteView(TextArea):
 
         found = wrapped.row_at(y + self.scroll_offset.y)
 
-        if found and self.overlay and found[0] in self.overlay.dimmed_rows:
-            return self._dim(strip)
-
         span = heading_span(document.stored_line(found[0])) if found else None
 
-        return self._wash(strip, span) if span else strip
+        if found and self.overlay and found[0] in self.overlay.dimmed_rows:
+            strip = self._dim(strip)
+        elif span:
+            strip = self._wash(strip, span)
+
+        return self._draw_labels(strip, y)
+
+    def _draw_labels(self, strip: Strip, y: int) -> Strip:
+        """Put the overlay's labels over whatever is on this row of the window."""
+
+        if not self.overlay:
+            return strip
+
+        for row, column, text, name in self.overlay.labels:
+            spot = self.wrapped_document.location_to_offset((row, column))
+            x = spot.x + self.gutter_width
+
+            if spot.y == y + self.scroll_offset.y and x < strip.cell_length:
+                label = Segment(text, self._theme.syntax_styles[name])
+                strip = Strip.join(
+                    [
+                        strip.crop(0, x),
+                        Strip([label]),
+                        strip.crop(x + label.cell_length, strip.cell_length),
+                    ]
+                )
+
+        return strip
 
     def _dim(self, strip: Strip) -> Strip:
         """
@@ -191,7 +227,7 @@ class NoteView(TextArea):
         cursor = self._theme.cursor_style
         kept = {
             cursor.bgcolor if cursor else None,
-            self._theme.syntax_styles[TARGET].bgcolor,
+            *(self._theme.syntax_styles[name].bgcolor for name in KEPT_WHEN_DIMMED),
         }
         plain = Style(
             color=self._theme.syntax_styles[BACKDROP].color,

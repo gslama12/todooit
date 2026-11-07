@@ -8,14 +8,16 @@ any host would drive it.
 import ast
 import re
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import pytest
 
 import todooit.vim_engine
 from todooit.vim_engine import (
+    MODE_FLASH,
     MODE_INSERT,
     MODE_NORMAL,
+    VIM_FLASH_ALPHABET,
     FindView,
     Register,
     RegisterMemory,
@@ -23,6 +25,7 @@ from todooit.vim_engine import (
     SearchMemory,
     VimCommand,
     VimEngine,
+    VimFlashView,
     VimKeymap,
     VimMotion,
     VimOperator,
@@ -52,6 +55,9 @@ class MemoryBuffer:
         self.clipboard = ""
         self.clipboard_reads = 0
         self.clipboard_pastes: List[str] = []
+        # Rows drawn differently: the text, and the stored column behind each of
+        # its columns and its end
+        self.drawn: Dict[int, Tuple[str, List[int]]] = {}
 
     @property
     def line_count(self) -> int:
@@ -59,6 +65,12 @@ class MemoryBuffer:
 
     def line(self, row: int) -> str:
         return self.lines[row]
+
+    def drawn_line(self, row: int) -> str:
+        return self.drawn[row][0] if row in self.drawn else self.lines[row]
+
+    def stored_column(self, row: int, column: int) -> int:
+        return self.drawn[row][1][column] if row in self.drawn else column
 
     def move_cursor(self, row: int, column: int) -> None:
         self.cursor = (row, column)
@@ -2772,6 +2784,310 @@ def test_yanking_is_no_undo_step():
     feed(engine, "yy")
     feed(engine, "yw")
 
+
+# ------------------------------------------------------------------
+# ------------------------- vim_flash ------------------------------
+# ------------------------------------------------------------------
+
+
+def flash_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    engine = engine_on(text, cursor, **options)
+    engine.keys.set("s", VimMotion.VIM_FLASH)
+    engine.keys.set("d", VimOperator.DELETE)
+    return engine
+
+
+def flash_view(engine: VimEngine) -> VimFlashView:
+    view = engine.vim_flash_view
+    assert view is not None
+    return view
+
+
+def labels_of(engine: VimEngine) -> Dict[Tuple[int, int], Optional[str]]:
+    return {(m.row, m.start): m.label for m in flash_view(engine).matches}
+
+
+def test_s_opens_vim_flash_with_nothing_found_yet():
+    engine = flash_on("foo bar")
+    feed(engine, "s")
+
+    assert engine.mode == MODE_FLASH
+    assert labels_of(engine) == {}
+    assert buffer_of(engine).modes == [MODE_FLASH]
+
+
+def test_each_character_typed_narrows_the_matches():
+    engine = flash_on("cat car dog")
+
+    feed(engine, "sc")
+    assert list(labels_of(engine)) == [(0, 0), (0, 4)]
+
+    feed(engine, "at")
+    assert list(labels_of(engine)) == [(0, 0)]
+    assert flash_view(engine).text == "cat"
+
+
+def test_vim_flash_never_moves_the_cursor_or_edits_while_typing():
+    engine = flash_on("cat car", (0, 2))
+    feed(engine, "sca")
+
+    assert buffer_of(engine).cursor == (0, 2)
+    assert buffer_of(engine).text == "cat car"
+    assert engine.register is None
+
+
+def test_matching_is_exact_not_fuzzy():
+    engine = flash_on("c-a-t cat")
+    feed(engine, "sca")
+
+    assert list(labels_of(engine)) == [(0, 6)]
+
+
+def test_lowercase_ignores_case_and_a_capital_makes_it_count():
+    engine = flash_on("Foo foo")
+
+    feed(engine, "sf")
+    assert list(labels_of(engine)) == [(0, 0), (0, 4)]
+
+    engine = flash_on("Foo foo")
+    feed(engine, "sF")
+    assert list(labels_of(engine)) == [(0, 0)]
+
+
+def test_matches_can_overlap():
+    engine = flash_on("aaa", vim_flash_alphabet="xy")
+    feed(engine, "saa")
+
+    assert list(labels_of(engine)) == [(0, 0), (0, 1)]
+
+
+def test_the_closest_match_gets_the_first_label_in_either_direction():
+    # After `x` come a, b and c, which leaves s, d, f for the labels
+    engine = flash_on("xa xb xc", (0, 3))
+    feed(engine, "sx")
+
+    assert labels_of(engine) == {(0, 3): "s", (0, 0): "d", (0, 6): "f"}
+
+
+def test_a_nearer_row_beats_a_nearer_column():
+    engine = flash_on("xx\n\n\nyy xx\nxx", (3, 0), vim_flash_alphabet="abc")
+    feed(engine, "sx")
+
+    # Two rows of distance come after one, whatever the columns
+    labels = labels_of(engine)
+    assert labels[(3, 3)] == "a"
+    assert labels[(3, 4)] == "b"
+    assert labels[(4, 0)] == "c"
+    assert labels[(4, 1)] == "A"
+
+    # Above the cursor, the end of a row is what's nearer
+    assert labels[(0, 1)] == "B"
+    assert labels[(0, 0)] == "C"
+
+
+def test_uppercase_labels_come_after_the_lowercase_ones():
+    engine = flash_on("x1 x2 x3 x4", vim_flash_alphabet="ab")
+    feed(engine, "sx")
+
+    assert list(labels_of(engine).values()) == ["a", "b", "A", "B"]
+
+
+def test_matches_beyond_the_labels_go_without():
+    engine = flash_on("x1 x2 x3 x4 x5 x6", vim_flash_alphabet="ab")
+    feed(engine, "sx")
+
+    assert list(labels_of(engine).values()) == ["a", "b", "A", "B", None, None]
+
+
+def test_a_label_never_continues_the_search_text():
+    # `a` and `D` follow a match, so neither case of either can be a label
+    engine = flash_on("xa xD xc", vim_flash_alphabet="abcd")
+    feed(engine, "sx")
+
+    assert labels_of(engine) == {(0, 0): "b", (0, 3): "B", (0, 6): None}
+
+
+def test_a_character_that_continues_the_text_is_never_taken_for_a_label():
+    engine = flash_on("xa xb", vim_flash_alphabet="abcd")
+    feed(engine, "sxa")
+
+    assert engine.mode == MODE_FLASH
+    assert list(labels_of(engine)) == [(0, 0)]
+
+
+def test_a_match_keeps_its_lowercase_label_as_the_text_narrows():
+    engine = flash_on("abx aby", (0, 4), vim_flash_alphabet="pq")
+    feed(engine, "sa")
+    before = labels_of(engine)
+    feed(engine, "b")
+
+    assert before == {(0, 4): "p", (0, 0): "q"}
+    assert labels_of(engine) == before
+
+
+def test_pressing_a_label_jumps_there_and_ends_it():
+    engine = flash_on("xa xb xc", (0, 3))
+    feed(engine, "sxf")
+
+    assert buffer_of(engine).cursor == (0, 6)
+    assert engine.mode == MODE_NORMAL
+    assert engine.vim_flash_view is None
+
+
+def test_enter_jumps_to_the_next_match_after_the_cursor():
+    engine = flash_on("xa xb xc", (0, 3))
+    feed(engine, "sx")
+    engine.feed("enter")
+
+    assert buffer_of(engine).cursor == (0, 6)
+    assert engine.mode == MODE_NORMAL
+
+
+def test_enter_past_the_last_match_goes_round_to_the_first():
+    engine = flash_on("xa xb xc", (0, 6))
+    feed(engine, "sx")
+    engine.feed("enter")
+
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_enter_goes_backwards_when_the_way_round_is_off_screen():
+    engine = flash_on("xa\n\nxb\nyy\nzz", (3, 0))
+    buffer_of(engine).visible_rows = range(1, 5)
+    feed(engine, "sx")
+    engine.feed("enter")
+
+    # Forwards it would wrap to row 0, which isn't on screen
+    assert buffer_of(engine).cursor == (2, 0)
+
+
+def test_enter_with_nothing_typed_just_ends_it():
+    engine = flash_on("xa", (0, 1))
+    feed(engine, "s")
+    engine.feed("enter")
+
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.mode == MODE_NORMAL
+
+
+def test_a_single_match_doesnt_jump_by_itself():
+    engine = flash_on("xa yb", (0, 1))
+    feed(engine, "sy")
+
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.mode == MODE_FLASH
+    assert labels_of(engine) == {(0, 3): "a"}
+
+
+def test_escape_cancels_and_is_not_left_for_the_host_to_close_with():
+    engine = flash_on("xa xb", (0, 1))
+    feed(engine, "sx")
+
+    assert engine.feed("escape") is True
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.mode == MODE_NORMAL
+    assert engine.vim_flash_view is None
+
+    assert engine.feed("escape") is False
+
+
+def test_escape_leaves_the_lit_search_for_the_next_escape():
+    engine = flash_on("foo xa")
+    feed(engine, "*")
+    lit = engine.lit_search
+    feed(engine, "sx")
+
+    assert engine.feed("escape") is True
+    assert engine.lit_search == lit
+    assert engine.feed("escape") is True
+    assert engine.lit_search is None
+
+
+def test_typing_what_isnt_there_ends_it_where_it_was():
+    engine = flash_on("xa xb", (0, 1))
+    feed(engine, "sxq")
+
+    assert buffer_of(engine).cursor == (0, 1)
+    assert engine.mode == MODE_NORMAL
+
+
+def test_backspace_takes_a_character_back_and_stays_when_empty():
+    engine = flash_on("xa xb")
+    feed(engine, "sxa")
+
+    engine.feed("backspace")
+    assert list(labels_of(engine)) == [(0, 0), (0, 3)]
+
+    engine.feed("backspace")
+    engine.feed("backspace")
+    assert engine.mode == MODE_FLASH
+    assert labels_of(engine) == {}
+
+
+def test_a_key_with_a_name_means_nothing_in_vim_flash():
+    engine = flash_on("xa xb")
+    feed(engine, "sx")
+
+    assert engine.feed("left") is True
+    assert engine.mode == MODE_FLASH
+    assert flash_view(engine).text == "x"
+
+
+def test_only_the_rows_on_screen_are_searched():
+    engine = flash_on("xa\nxb\nxc")
+    buffer_of(engine).visible_rows = range(1, 2)
+    feed(engine, "sx")
+
+    assert list(labels_of(engine)) == [(1, 0)]
+
+
+def test_a_link_matches_by_the_name_drawn_and_lands_on_that_name():
+    text = "go [home](http://site) now"
+    engine = flash_on(f"top\n{text}")
+    buffer = buffer_of(engine)
+
+    # Drawn as `go home now`: its columns, and the stored one behind each
+    buffer.drawn[1] = (
+        "go home now",
+        [0, 1, 2, 4, 5, 6, 7, 22, 23, 24, 25, 26],
+    )
+
+    feed(engine, "sh")
+    assert list(labels_of(engine)) == [(1, 4)]
+
+    # The address has an `h` in it too, but that isn't drawn
+    view = flash_view(engine)
+    assert view.matches[0].end == 5
+    assert view.matches[0].label == "a"
+
+    feed(engine, "a")
+    assert buffer.cursor == (1, 4)
+
+
+def test_a_match_can_end_at_the_end_of_a_drawn_line_and_cross_hidden_markup():
+    engine = flash_on("*bo*ld")
+    buffer_of(engine).drawn[0] = ("bold", [1, 2, 4, 5, 6])
+
+    feed(engine, "sbol")
+
+    match = flash_view(engine).matches[0]
+    assert (match.start, match.end) == (1, 5)
+
+
+def test_a_click_elsewhere_ends_it():
+    engine = flash_on("xa xb")
+    feed(engine, "sx")
+
+    buffer_of(engine).cursor = (0, 1)
+
+    assert engine.vim_flash_view is None
+    assert engine.mode == MODE_NORMAL
+
+
+def test_vim_flash_makes_no_undo_step():
+    engine = flash_on("xa xb")
+    feed(engine, "sxs")
+
     assert buffer_of(engine).undo_steps == []
 
 
@@ -3143,6 +3459,78 @@ def test_doubling_the_operator_nests_the_line(text, start, keys, after, cursor):
 
     assert buffer_of(engine).text == after
     assert buffer_of(engine).cursor == cursor
+
+
+# As in flash.nvim, the jump after an operator takes the target's character too
+def test_ds_deletes_forward_up_to_and_with_the_target():
+    engine = flash_on("xa xb xc")
+    feed(engine, "dsxb")
+    assert engine.mode == MODE_FLASH
+
+    feed(engine, labels_of(engine)[(0, 3)] or "")
+
+    assert buffer_of(engine).text == "b xc"
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.register == Register("xa x", linewise=False)
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+def test_ds_deletes_backward_with_the_cursors_own_character():
+    engine = flash_on("xa xb xc", (0, 6))
+    feed(engine, "dsxa")
+    feed(engine, labels_of(engine)[(0, 0)] or "")
+
+    assert buffer_of(engine).text == "c"
+    assert engine.register == Register("xa xb x", linewise=False)
+
+
+def test_ds_across_lines_takes_characters_not_lines():
+    engine = flash_on("ab\ncd\nef", (0, 1))
+    feed(engine, "dse")
+    feed(engine, labels_of(engine)[(2, 0)] or "")
+
+    assert buffer_of(engine).text == "af"
+    assert engine.register == Register("b\ncd\ne", linewise=False)
+
+
+def test_ds_with_enter_takes_up_to_the_next_match():
+    engine = flash_on("xa xb xc", (0, 1))
+    feed(engine, "dsx")
+    engine.feed("enter")
+
+    assert buffer_of(engine).text == "xb xc"
+
+
+def test_cs_changes_up_to_the_target_and_inserts_there():
+    engine = flash_on("xa xb xc")
+    engine.keys.set("c", VimOperator.CHANGE)
+    feed(engine, "csxb")
+    feed(engine, labels_of(engine)[(0, 3)] or "")
+
+    assert buffer_of(engine).text == "b xc"
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.mode == MODE_INSERT
+
+
+def test_escape_in_vim_flash_cancels_the_operator_too():
+    engine = flash_on("xa xb")
+    feed(engine, "dsx")
+    engine.feed("escape")
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+    assert buffer_of(engine).text == "xa xb"
+
+    feed(engine, "x")
+    assert buffer_of(engine).text == "xa xb"
+
+
+def test_nothing_left_to_go_to_leaves_the_operator_with_nothing_to_take():
+    engine = flash_on("xa xb", (0, 1))
+    feed(engine, "dsxq")
+
+    assert buffer_of(engine).text == "xa xb"
     assert engine.mode == MODE_NORMAL
     assert engine.pending == ""
 
@@ -3376,3 +3764,19 @@ def test_a_single_line_host_has_no_paragraphs():
 
     assert buffer_of(engine).text == "abc"
     assert engine.pending == ""
+
+
+def test_the_default_alphabet_is_the_vim_flash_one():
+    assert VIM_FLASH_ALPHABET == "asdfghjklöqwertzuiopyxcvbnm"
+
+
+def test_ys_yanks_up_to_the_target_and_stays_put():
+    engine = flash_on("xa xb xc", (0, 6))
+    engine.keys.set("y", VimOperator.YANK)
+    feed(engine, "ysxa")
+    feed(engine, labels_of(engine)[(0, 0)] or "")
+
+    assert buffer_of(engine).text == "xa xb xc"
+    assert engine.register == Register("xa xb x", linewise=False)
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.mode == MODE_NORMAL

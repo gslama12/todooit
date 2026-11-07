@@ -10,10 +10,18 @@ from textual.geometry import Offset
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 
-from todooit.vim_engine import MODE_INSERT, MODE_NORMAL, FindView, Search, VimEngine
+from todooit.vim_engine import (
+    MODE_INSERT,
+    MODE_NORMAL,
+    FindView,
+    Search,
+    VimEngine,
+    VimFlashMatch,
+    VimFlashView,
+)
 
 from ..disp.document import FoldedDocument
-from ..disp.markup import BACKDROP, SEARCH_MATCH, TARGET
+from ..disp.markup import BACKDROP, MARKED, MARKED_FIRST, SEARCH_MATCH, TARGET
 from ..disp.view import NoteView, Overlay, OverlaySpan
 from .buffer import NoteBuffer
 from .history import NoteHistory, UndoStep
@@ -45,6 +53,9 @@ class ModalEditor(NoteView):
         # The character jump being shown
         self._find_view: Optional[FindView] = None
 
+        # The vim_flash being shown
+        self._vim_flash_view: Optional[VimFlashView] = None
+
     @property
     def host(self) -> EditorHost:
         """The window this editor is in."""
@@ -57,19 +68,20 @@ class ModalEditor(NoteView):
     @property
     def engine(self) -> VimEngine:
         if self._engine is None:
-            vim = self.app.api.vim
+            api = self.app.api
             self._engine = VimEngine(
                 NoteBuffer(self),
-                vim.keys,
-                search_memory=vim.search,
-                register_memory=vim.register,
+                api.vim.keys,
+                search_memory=api.vim.search,
+                register_memory=api.vim.register,
+                vim_flash_alphabet=api.vars.vim_flash_alphabet,
             )
 
         return self._engine
 
     @property
     def mode(self) -> str:
-        return MODE_NORMAL if self.read_only else MODE_INSERT
+        return self.engine.mode
 
     @property
     def search_prompt(self) -> Optional[str]:
@@ -86,7 +98,7 @@ class ModalEditor(NoteView):
     def show_mode(self, mode: str) -> None:
         """Take on the mode the engine has just moved to."""
 
-        self.read_only = mode == MODE_NORMAL
+        self.read_only = mode != MODE_INSERT
         self.host.mode_changed()
 
     def replace_stored(
@@ -199,6 +211,15 @@ class ModalEditor(NoteView):
             self._find_view = view
             self.show_overlay(self._find_overlay(view) if view else None)
 
+    def show_vim_flash(self) -> None:
+        """Draw the matches and labels of the vim_flash the engine has open."""
+
+        view = self.engine.vim_flash_view
+
+        if view != self._vim_flash_view:
+            self._vim_flash_view = view
+            self.show_overlay(self._vim_flash_overlay(view) if view else None)
+
     def show_search(self) -> None:
         """Draw the matches of whichever search the engine now has on show."""
 
@@ -219,6 +240,32 @@ class ModalEditor(NoteView):
         """A click moves the cursor with no key for the engine to see."""
 
         self.show_find_view()
+        self.show_vim_flash()
+
+    def _vim_flash_overlay(self, view: VimFlashView) -> Overlay:
+        def is_first(match: VimFlashMatch) -> bool:
+            return (match.row, match.start) == view.first
+
+        # With overlapping matches, it's the one `enter` goes to that stays on top
+        matches = sorted(view.matches, key=is_first)
+
+        return Overlay(
+            range(self.document.line_count),
+            [
+                (
+                    match.row,
+                    match.start,
+                    match.end,
+                    MARKED_FIRST if is_first(match) else MARKED,
+                )
+                for match in matches
+            ],
+            [
+                (match.row, match.label_column, match.label, TARGET)
+                for match in view.matches
+                if match.label
+            ],
+        )
 
     def _find_overlay(self, view: FindView) -> Overlay:
         row, column = view.origin

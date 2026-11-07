@@ -25,11 +25,13 @@ from todooit.ui.screens.note.disp.document import FoldedDocument
 from todooit.ui.screens.note.disp.markup import (
     BACKDROP,
     INDENT,
+    MARKED,
+    MARKED_FIRST,
     SEARCH_MATCH,
     TARGET,
 )
 from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
-from todooit.vim_engine import VimCommand, VimMotion
+from todooit.vim_engine import MODE_FLASH, VIM_FLASH_ALPHABET, VimCommand, VimMotion
 from todooit.vim_engine.engine import NESTING_LEVEL
 
 
@@ -2648,3 +2650,354 @@ async def test_the_nesting_operator_shows_as_pending():
 
 def test_the_engine_and_the_note_agree_on_a_level_of_nesting():
     assert NESTING_LEVEL == INDENT
+
+
+# ------------------------------------------------------------------
+# ------------------------- vim_flash ------------------------------
+# ------------------------------------------------------------------
+
+
+def drawn_row(editor, y: int) -> str:
+    return editor.render_line(y).text
+
+
+def labelled(editor, y: int, x: int) -> bool:
+    return cell(editor, y, x).bgcolor == theme_of(editor)[TARGET].bgcolor
+
+
+async def test_s_shows_the_flash_chip_and_the_text_typed_in_the_hint_line():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar")
+        hints = hint_text(screen)
+
+        await pilot.press("s", "b")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_FLASH
+        assert "FLASH" in str(screen.frame.border_subtitle)
+        assert hint_text(screen).startswith("sb")
+        assert screen.editor.read_only
+        assert screen.editor.text == "foo bar"
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert "NORMAL" in str(screen.frame.border_subtitle)
+        assert hint_text(screen) == hints
+
+
+async def test_a_label_is_drawn_over_the_cell_after_its_match():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar\nbaz")
+        editor = screen.editor
+
+        await pilot.press("s", "b")
+        await pilot.pause()
+
+        # `b` is followed by a: the first label free is s, for the nearer match
+        assert drawn_row(editor, 0).startswith("foo bsr")
+        assert drawn_row(editor, 1).startswith("bdz")
+        assert labelled(editor, 0, 5)
+        assert cell(editor, 0, 4).bgcolor == theme_of(editor)[MARKED_FIRST].bgcolor
+        assert cell(editor, 1, 0).bgcolor == theme_of(editor)[MARKED].bgcolor
+
+        # The text underneath is untouched
+        assert editor.text == "foo bar\nbaz"
+
+
+async def test_the_rest_of_the_note_is_dimmed_while_it_is_open():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar")
+        editor = screen.editor
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert cell(editor, 0, 1).color == theme_of(editor)[BACKDROP].color
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert cell(editor, 0, 1).color != theme_of(editor)[BACKDROP].color
+
+
+async def test_a_label_lands_after_a_match_at_the_end_of_a_line():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\nend")
+        editor = screen.editor
+
+        await pilot.press(*"send")
+        await pilot.pause()
+
+        assert drawn_row(editor, 1).startswith("enda")
+        assert labelled(editor, 1, 3)
+
+
+async def test_a_link_matches_on_its_name_and_the_label_lands_after_that_name():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\ngo [home](http://zzz) now")
+        editor = screen.editor
+
+        await pilot.press("s", "h", "o", "m", "e")
+        await pilot.pause()
+        assert drawn_row(editor, 1).startswith("go homea")
+        assert labelled(editor, 1, 7)
+
+        await pilot.press("a")
+        await pilot.pause()
+        assert editor.mode == MODE_NORMAL
+        assert editor.cursor_location == (1, 4)
+
+
+async def test_a_links_address_isnt_matched():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\ngo [home](http://zzz) now")
+
+        await pilot.press("s", "z")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_NORMAL
+        assert screen.editor.cursor_location == (0, 0)
+
+
+async def test_a_shortened_address_is_one_target_with_its_label_where_drawn():
+    url = "http://verylongaddress.example.com/some/really/long/path/here"
+
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, f"top\nsee {url} end")
+        editor = screen.editor
+        drawn = editor.document[1]
+        assert drawn != editor._stored_line(1)
+
+        await pilot.press("s", "e")
+        await pilot.pause()
+
+        # However many times it's in the address, there's one place to land
+        view = editor.engine.vim_flash_view
+        assert view is not None
+        in_link = [match for match in view.matches if match.start == 4]
+        assert len(in_link) == 1
+
+        label = in_link[0].label
+        assert label is not None
+        spot = drawn.index("e", 4) + 1
+        assert drawn_row(editor, 1)[spot] == label
+        assert labelled(editor, 1, spot)
+
+        await pilot.press(label)
+        await pilot.pause()
+        assert editor.cursor_location == (1, 4)
+
+
+async def test_a_match_across_hidden_markup_and_its_label_land_where_drawn():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\n*bo*ld next")
+        editor = screen.editor
+
+        await pilot.press("s", "b", "o", "l")
+        await pilot.pause()
+
+        assert drawn_row(editor, 1).startswith("bola next")
+        assert labelled(editor, 1, 3)
+        assert cell(editor, 1, 0).bgcolor == theme_of(editor)[MARKED_FIRST].bgcolor
+
+
+async def test_a_heading_matches_on_what_is_drawn():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\n# title")
+        editor = screen.editor
+
+        await pilot.press("s", "t", "i")
+        await pilot.pause()
+
+        # Typing `t` gave `top` the `a` and this the `s`, which it keeps
+        assert "TIsLE" in drawn_row(editor, 1)
+
+        await pilot.press("s")
+        await pilot.pause()
+        assert editor._stored_line(1)[editor.cursor_location[1]] == "t"
+
+
+async def test_a_rule_has_no_text_to_match():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "top\n---\nend")
+
+        await pilot.press("s", "-")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_NORMAL
+
+
+async def test_a_label_lands_on_a_wrapped_rows_hanging_indent():
+    long_item = "- " + "word " * 60 + "target"
+
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, f"top\n{long_item}")
+        editor = screen.editor
+
+        await pilot.press(*"starge")
+        await pilot.pause()
+
+        wrapped = editor.wrapped_document
+        location = (1, long_item.index("target") + len("targe"))
+        spot = wrapped.location_to_offset(location)
+
+        assert spot.y > 1 and spot.x >= 2
+
+        # At `t` it took `d`: `a` follows a `t` in it, and `top` is nearer for `s`
+        assert drawn_row(editor, spot.y)[spot.x] == "d"
+        assert labelled(editor, spot.y, spot.x)
+
+
+async def test_an_uppercase_label_jumps():
+    text = " ".join(f"x{n}" for n in range(1, 8))
+
+    async with run_pilot() as pilot:
+        pilot.app.api.vars.vim_flash_alphabet = "ab"
+        screen = await note_of(pilot, text)
+        editor = screen.editor
+
+        await pilot.press("s", "x")
+        await pilot.pause()
+        assert drawn_row(editor, 0).startswith("xa xb xA xB")
+
+        await pilot.press("B")
+        await pilot.pause()
+        assert editor.cursor_location == (0, 9)
+
+
+async def test_enter_jumps_to_the_first_match_and_redraws_without_labels():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar")
+        editor = screen.editor
+
+        await pilot.press("s", "b", "enter")
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 4)
+        assert editor.mode == MODE_NORMAL
+        assert drawn_row(editor, 0).startswith("foo bar")
+
+
+async def test_escape_cancels_without_closing_and_the_next_one_closes():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar", at=(0, 2))
+
+        await pilot.press("s", "b", "escape")
+        await pilot.pause()
+
+        assert pilot.app.screen is screen
+        assert screen.editor.cursor_location == (0, 2)
+        assert drawn_row(screen.editor, 0).startswith("foo bar")
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert pilot.app.screen is not screen
+
+
+async def test_only_what_is_on_screen_gets_found():
+    async with run_pilot() as pilot:
+        screen = await long_note(pilot)
+        editor = screen.editor
+        await pilot.press("G")
+        await pilot.pause()
+        place, top = editor.cursor_location, editor.scroll_offset.y
+
+        await pilot.press(*"sline")
+        await pilot.pause()
+
+        view = editor.engine.vim_flash_view
+        assert view is not None
+        rows = editor.engine.buffer.visible_rows
+        assert {match.row for match in view.matches} == set(rows)
+        assert len(rows) < 200
+
+        assert editor.cursor_location == place
+        assert editor.scroll_offset.y == top
+
+
+async def test_a_click_elsewhere_ends_it():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar\nbaz")
+        editor = screen.editor
+
+        await pilot.press("s", "b")
+        await pilot.pause()
+
+        await pilot.click(editor, offset=(2, 1))
+        await pilot.pause()
+
+        assert editor.mode == MODE_NORMAL
+        assert editor.overlay is None
+
+
+async def test_the_alphabet_is_its_own_setting():
+    async with run_pilot() as pilot:
+        vars = pilot.app.api.vars
+        assert vars.vim_flash_alphabet == VIM_FLASH_ALPHABET
+        assert vars.vim_flash_alphabet == vars.flash_alphabet
+
+        panes = vars.flash_alphabet
+        vars.vim_flash_alphabet = "qp"
+        assert vars.flash_alphabet == panes
+
+        screen = await note_of(pilot, "foo bar")
+        await pilot.press("s", "b")
+        await pilot.pause()
+        assert drawn_row(screen.editor, 0).startswith("foo bqr")
+
+
+async def test_a_bad_alphabet_is_refused():
+    async with run_pilot() as pilot:
+        with pytest.raises(ValueError):
+            pilot.app.api.vars.vim_flash_alphabet = "aa"
+
+        with pytest.raises(ValueError):
+            pilot.app.api.vars.vim_flash_alphabet = ""
+
+
+async def test_s_can_be_rebound():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar")
+        pilot.app.api.vim.keys.remap({"s": "ß"})
+
+        await pilot.press("ß", "b")
+        await pilot.pause()
+
+        assert screen.editor.mode == MODE_FLASH
+        assert hint_text(screen).startswith("ßb")
+
+
+async def test_the_pinned_note_flashes_too():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        PinnedNote.set_text("foo bar")
+        app.push_screen(PinnedNoteScreen())
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, PinnedNoteScreen)
+
+        await pilot.press("s", "b", "a")
+        await pilot.pause()
+        assert screen.editor.mode == MODE_FLASH
+
+        await pilot.press("enter")
+        await pilot.pause()
+        assert screen.editor.cursor_location == (0, 4)
+
+
+async def test_ds_deletes_from_the_cursor_through_the_target_in_a_note():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, "foo bar\nbaz")
+        editor = screen.editor
+
+        await pilot.press("d", "s", "z")
+        await pilot.pause()
+        assert editor.mode == MODE_FLASH
+
+        view = editor.engine.vim_flash_view
+        assert view is not None and view.matches[0].label is not None
+        await pilot.press(view.matches[0].label)
+        await pilot.pause()
+
+        assert editor.mode == MODE_NORMAL
+        assert editor.text == ""
+        assert "NORMAL" in str(screen.frame.border_subtitle)

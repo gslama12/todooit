@@ -4,6 +4,7 @@ from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.ui.widgets.trees.flash_jump import FLASH_ALPHABET
+from todooit.vim_engine import VIM_FLASH_ALPHABET
 
 from ._base import ApiComponent
 
@@ -22,6 +23,7 @@ class VarManager(ApiComponent):
         self._projects_pane_auto_width = True
         self._projects_pane_max_width = 0.25
         self._flash_alphabet = FLASH_ALPHABET
+        self._vim_flash_alphabet = VIM_FLASH_ALPHABET
 
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
@@ -90,6 +92,19 @@ class VarManager(ApiComponent):
             raise ValueError("flash_alphabet needs at least one key, none twice")
 
         self._flash_alphabet = value
+
+    @property
+    def vim_flash_alphabet(self) -> str:
+        """The letters a note's `vim_flash` (`s`) labels with, nearest match first"""
+
+        return self._vim_flash_alphabet
+
+    @vim_flash_alphabet.setter
+    def vim_flash_alphabet(self, value: str):
+        if len(set(value)) != len(value) or not value:
+            raise ValueError("vim_flash_alphabet needs at least one key, none twice")
+
+        self._vim_flash_alphabet = value
 
     @property
     def show_confirm(self):
