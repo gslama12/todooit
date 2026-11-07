@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Tuple
 
 from textual.content import Content
 
+from todooit.utils import copy_text, paste_text
 from todooit.utils.links import folded_link_at
 
 from ..disp.document import HangingDocument
@@ -164,3 +165,12 @@ class NoteBuffer:
 
     def prompt_changed(self) -> None:
         self._editor.host.prompt_changed()
+
+    def copy_to_clipboard(self, text: str) -> None:
+        copy_text(self._editor.app, text)
+
+    def clipboard_text(self) -> str:
+        return paste_text(self._editor.app)
+
+    def paste_clipboard_text(self, text: str) -> None:
+        self._editor.write_pasted(text)

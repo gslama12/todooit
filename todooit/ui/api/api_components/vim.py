@@ -1,4 +1,4 @@
-from todooit.vim_engine import SearchMemory, VimKeymap
+from todooit.vim_engine import RegisterMemory, SearchMemory, VimKeymap
 
 from ._base import ApiComponent
 
@@ -11,3 +11,6 @@ class VimManager(ApiComponent):
 
         # Lasts as long as the app, for `n` to carry on in another note
         self.search = SearchMemory()
+
+        # Likewise, for a yank in one note to paste in another
+        self.register = RegisterMemory()

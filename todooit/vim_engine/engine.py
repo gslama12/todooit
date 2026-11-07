@@ -8,6 +8,7 @@ from typing import Callable, Optional, Tuple
 from . import motions
 from .buffer import Buffer
 from .keymap import VimAction, VimCommand, VimKeymap, VimMotion, VimOperator
+from .register import Register, RegisterMemory
 from .search import MatchSpan, Search, SearchMemory
 
 MODE_NORMAL = "NORMAL"
@@ -29,6 +30,7 @@ LINE_ONLY = frozenset(
         VimCommand.CENTER_VIEW,
         VimCommand.PICK_FILES,
         VimCommand.DELETE_LINE,
+        VimCommand.YANK_LINE,
         VimCommand.OPEN_BELOW,
         VimCommand.OPEN_ABOVE,
     }
@@ -61,14 +63,6 @@ LINEWISE = frozenset(
     }
 )
 INCLUSIVE = frozenset({VimMotion.WORD_END, VimMotion.LAST_CHARACTER})
-
-
-@dataclass(frozen=True)
-class Register:
-    """What was last deleted, and whether it was whole lines."""
-
-    text: str
-    linewise: bool
 
 
 @dataclass(frozen=True)
@@ -115,7 +109,8 @@ class VimEngine:
     keys are left to the host, as if unbound.
 
     `search_memory` holds the last search, for a host that wants it to outlive
-    this engine by handing the same one to the next.
+    this engine by handing the same one to the next. `register_memory` is the
+    same for the register.
     """
 
     def __init__(
@@ -125,6 +120,7 @@ class VimEngine:
         *,
         multiline: bool = True,
         search_memory: Optional[SearchMemory] = None,
+        register_memory: Optional[RegisterMemory] = None,
     ) -> None:
         self.buffer = buffer
         self.keys = keys
@@ -140,7 +136,11 @@ class VimEngine:
         self._operator_count = ""
         self._operator_keys = ""
 
-        self.register: Optional[Register] = None
+        self._register_memory = register_memory or RegisterMemory()
+
+        # What's on the system clipboard by now is older than anything done here
+        if self._register_memory.known_clipboard is None:
+            self._register_memory.known_clipboard = buffer.clipboard_text()
 
         # The `f F t T` waiting for its character
         self._finding: Optional[VimMotion] = None
@@ -164,6 +164,12 @@ class VimEngine:
 
         # The search whose matches are on show
         self.lit_search: Optional[Search] = None
+
+    @property
+    def register(self) -> Optional[Register]:
+        """What a paste puts in, unless the system clipboard has news."""
+
+        return self._register_memory.register
 
     @property
     def search_prompt(self) -> Optional[str]:
@@ -434,6 +440,12 @@ class VimEngine:
                 )
             elif action is VimCommand.DELETE_CHAR:
                 self._operate(VimOperator.DELETE, VimMotion.RIGHT, count, counted)
+            elif action is VimCommand.YANK_LINE:
+                self._yank_lines(row, row + count - 1)
+            elif action is VimCommand.PASTE_AFTER:
+                self._paste(count, before=False)
+            elif action is VimCommand.PASTE_BEFORE:
+                self._paste(count, before=True)
             elif action is VimCommand.UNDO:
                 self._walk_history(self.buffer.undo, count)
             elif action is VimCommand.REDO:
@@ -820,8 +832,13 @@ class VimEngine:
             end = end[0] - 1, len(buffer.line(end[0] - 1))
 
         if start != end:
-            self.register = Register(self._text_between(start, end), linewise=False)
-            buffer.replace(start, end, "")
+            text = self._text_between(start, end)
+
+            if operator is VimOperator.YANK:
+                self._yank(text, linewise=False)
+            else:
+                self._register_memory.register = Register(text, linewise=False)
+                buffer.replace(start, end, "")
 
         if operator is VimOperator.CHANGE:
             self._insert_at(*start)
@@ -838,7 +855,9 @@ class VimEngine:
         *,
         column: Optional[int] = None,
     ) -> None:
-        if operator is VimOperator.CHANGE:
+        if operator is VimOperator.YANK:
+            self._yank_lines(top, bottom, column=column)
+        elif operator is VimOperator.CHANGE:
             self._change_lines(top, bottom)
         else:
             self._delete_lines(top, bottom, column=column)
@@ -855,9 +874,8 @@ class VimEngine:
         if column is None:
             column = buffer.cursor[1]
 
-        self.register = Register(
-            "\n".join(buffer.line(row) for row in range(top, bottom + 1)),
-            linewise=True,
+        self._register_memory.register = Register(
+            self._lines_between(top, bottom), linewise=True
         )
 
         if bottom < last:
@@ -881,9 +899,110 @@ class VimEngine:
         prefix = len(buffer.list_prefix(top))
         keep = first[: prefix + motions.indent_width(first[prefix:])]
 
-        self.register = Register(self._text_between((top, 0), end), linewise=True)
+        self._register_memory.register = Register(
+            self._lines_between(top, bottom), linewise=True
+        )
         buffer.replace((top, 0), end, keep)
         self._insert_at_line_end(top)
+
+    def _yank(self, text: str, *, linewise: bool) -> None:
+        memory = self._register_memory
+        memory.register = Register(text, linewise)
+        memory.known_clipboard = text
+        self.buffer.copy_to_clipboard(text)
+
+    def _yank_lines(
+        self, top: int, bottom: int, *, column: Optional[int] = None
+    ) -> None:
+        """Yank these lines, the cursor going no further than the first of them."""
+
+        buffer = self.buffer
+        bottom = min(bottom, buffer.line_count - 1)
+
+        if column is None:
+            column = buffer.cursor[1]
+
+        self._yank(self._lines_between(top, bottom), linewise=True)
+        buffer.move_cursor(top, min(column, self._last_column(top)))
+
+    def _paste(self, count: int, *, before: bool) -> None:
+        memory = self._register_memory
+        clipboard = self.buffer.clipboard_text()
+
+        if memory.pastes_clipboard(clipboard):
+            # Taken up, so it only wins once: a later `ddp` moves its line again
+            memory.register = Register(clipboard, False, from_clipboard=True)
+            memory.known_clipboard = clipboard
+
+        register = memory.register
+
+        if register is None:
+            self.buffer.report("Nothing to paste")
+        elif register.from_clipboard:
+            self._paste_clipboard_text(register.text, count, before)
+        elif register.linewise:
+            self._paste_lines(register.text, count, before)
+        else:
+            self._paste_characters(register.text, count, before)
+
+    def _paste_lines(self, text: str, count: int, before: bool) -> None:
+        buffer = self.buffer
+        row = buffer.cursor[0]
+        pasted = "\n".join([text] * count)
+
+        if before:
+            buffer.replace((row, 0), (row, 0), pasted + "\n")
+        else:
+            end = row, len(buffer.line(row))
+            buffer.replace(end, end, "\n" + pasted)
+            row += 1
+
+        self._to_first_non_blank(row)
+
+    def _paste_characters(self, text: str, count: int, before: bool) -> None:
+        start = self._paste_place(before)
+        self.buffer.replace(start, start, text * count)
+
+        if "\n" in text:
+            self.buffer.move_cursor(*start)
+        else:
+            self.buffer.move_cursor(start[0], start[1] + len(text) * count - 1)
+
+        self._clamp()
+
+    def _paste_clipboard_text(self, text: str, count: int, before: bool) -> None:
+        """
+        The host makes what it likes of this, so only it knows how long it came
+        out. Goes by way of INSERT, as only that can stand past a line's last
+        character, but it's no insert that `gi` should remember.
+        """
+
+        buffer = self.buffer
+        last_insert = self._last_insert
+        start = self._paste_place(before)
+
+        self._insert_at(*start)
+
+        for _ in range(count):
+            buffer.paste_clipboard_text(text)
+
+        row, column = buffer.cursor
+
+        if row == start[0]:
+            buffer.move_cursor(row, max(start[1], column - 1))
+        else:
+            buffer.move_cursor(*start)
+
+        self.set_mode(MODE_NORMAL)
+        self._last_insert = last_insert
+
+    def _paste_place(self, before: bool) -> Tuple[int, int]:
+        row, column = self.buffer.cursor
+
+        if before:
+            return row, column
+
+        return row, min(column + 1, len(self.buffer.line(row)))
 
     def _finish_replace(self, key: str) -> None:
         """The key after `r`. Only a character means anything there."""
@@ -933,6 +1052,9 @@ class VimEngine:
 
         self.set_mode(MODE_INSERT)
         self.buffer.move_cursor(row, column)
+
+    def _lines_between(self, top: int, bottom: int) -> str:
+        return "\n".join(self.buffer.line(row) for row in range(top, bottom + 1))
 
     def _text_between(self, start: Tuple[int, int], end: Tuple[int, int]) -> str:
         if start[0] == end[0]:

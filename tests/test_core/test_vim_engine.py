@@ -18,6 +18,7 @@ from todooit.vim_engine import (
     MODE_NORMAL,
     FindView,
     Register,
+    RegisterMemory,
     Search,
     SearchMemory,
     VimCommand,
@@ -47,6 +48,9 @@ class MemoryBuffer:
         self.step_edited = False
         self.reports: List[str] = []
         self.prompts_shown = 0
+        self.clipboard = ""
+        self.clipboard_reads = 0
+        self.clipboard_pastes: List[str] = []
 
     @property
     def line_count(self) -> int:
@@ -129,6 +133,23 @@ class MemoryBuffer:
 
     def prompt_changed(self) -> None:
         self.prompts_shown += 1
+
+    def copy_to_clipboard(self, text: str) -> None:
+        self.clipboard = text
+
+    def clipboard_text(self) -> str:
+        self.clipboard_reads += 1
+        return self.clipboard
+
+    def paste_clipboard_text(self, text: str) -> None:
+        self.clipboard_pastes.append(text)
+        row, column = self.cursor
+        self.replace(self.cursor, self.cursor, text)
+        lines = text.split("\n")
+        self.cursor = (
+            row + len(lines) - 1,
+            len(lines[-1]) + (column if len(lines) == 1 else 0),
+        )
 
     @property
     def text(self) -> str:
@@ -2661,3 +2682,412 @@ def test_a_single_line_host_can_search_too():
     engine = searched("foo foo", "foo", multiline=False)
 
     assert buffer_of(engine).cursor == (0, 4)
+
+
+# --- Yank and paste -----------------------------------------------------------
+
+
+def yank_keys() -> VimKeymap:
+    keys = change_keys()
+    keys.set("y", VimOperator.YANK)
+    keys.set("yy", VimCommand.YANK_LINE)
+    keys.set("p", VimCommand.PASTE_AFTER)
+    keys.set("P", VimCommand.PASTE_BEFORE)
+    keys.set("u", VimCommand.UNDO)
+    return keys
+
+
+def yanking_on(
+    text: str, cursor: Tuple[int, int] = (0, 0), **options
+) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), yank_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, register, cursor",
+    [
+        ("ab cd", (0, 0), "yw", "ab ", (0, 0)),
+        ("ab cd", (0, 3), "yb", "ab ", (0, 0)),
+        ("ab cd", (0, 0), "ye", "ab", (0, 0)),
+        ("ab cd", (0, 3), "y_", "cd", (0, 3)),
+        ("ab cd", (0, 0), "yt ", "ab", (0, 0)),
+        ("ab cd", (0, 0), "yf ", "ab ", (0, 0)),
+        ("ab cd ef", (0, 0), "2yw", "ab cd ", (0, 0)),
+        ("a b c d e f g", (0, 0), "2y3w", "a b c d e f ", (0, 0)),
+    ],
+)
+def test_y_takes_any_motion_and_changes_no_text(text, start, keys, register, cursor):
+    engine = yanking_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+    assert engine.register == Register(register, linewise=False)
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "start, keys, register, cursor",
+    [
+        ((1, 1), "yy", "bb", (1, 1)),
+        ((0, 1), "2yy", "aa\nbb", (0, 1)),
+        ((1, 0), "9yy", "bb\ncc", (1, 0)),
+        ((1, 1), "yk", "aa\nbb", (0, 1)),
+        ((1, 1), "yl", "bb\ncc", (1, 1)),
+        ((1, 1), "ygg", "aa\nbb", (0, 1)),
+        ((0, 0), "yG", "aa\nbb\ncc", (0, 0)),
+    ],
+)
+def test_whole_lines_are_yanked_as_lines(start, keys, register, cursor):
+    engine = yanking_on("aa\nbb\ncc", start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == "aa\nbb\ncc"
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register == Register(register, linewise=True)
+
+
+def test_a_yank_whose_motion_fails_takes_nothing():
+    engine = yanking_on("abc")
+    buffer_of(engine).clipboard = "kept"
+
+    feed(engine, "yfz")
+    feed(engine, "yk")
+
+    assert engine.register is None
+    assert buffer_of(engine).clipboard == "kept"
+
+
+def test_yanking_is_no_undo_step():
+    engine = yanking_on("abc")
+
+    feed(engine, "yy")
+    feed(engine, "yw")
+
+    assert buffer_of(engine).undo_steps == []
+
+
+@pytest.mark.parametrize(
+    "text, start, yank, paste, after, cursor",
+    [
+        # Characters: after or before the cursor, ending on the last one put
+        ("ab cd", (0, 0), "ye", "p", "aabb cd", (0, 2)),
+        ("ab cd", (0, 3), "yw", "P", "ab cdcd", (0, 4)),
+        ("ab cd", (0, 0), "ye", "2p", "aababb cd", (0, 4)),
+        # Lines: under or over the line, on its first non-blank
+        ("ab\ncd", (0, 1), "yy", "p", "ab\nab\ncd", (1, 0)),
+        ("ab\ncd", (1, 1), "yy", "p", "ab\ncd\ncd", (2, 0)),
+        ("ab\ncd", (1, 1), "yy", "P", "ab\ncd\ncd", (1, 0)),
+        ("ab\ncd", (0, 0), "yy", "2p", "ab\nab\nab\ncd", (1, 0)),
+        ("  ab", (0, 3), "yy", "p", "  ab\n  ab", (1, 2)),
+        ("ab\ncd", (0, 0), "2yy", "p", "ab\nab\ncd\ncd", (1, 0)),
+    ],
+)
+def test_paste_respects_how_it_was_yanked(text, start, yank, paste, after, cursor):
+    engine = yanking_on(text, start)
+    feed(engine, yank)
+    feed(engine, paste)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+
+
+def test_a_yank_over_lines_from_mid_line_pastes_as_characters_from_its_start():
+    engine = yanking_on("ab\ncd\nef", (0, 1))
+    feed(engine, "yfd")
+
+    assert engine.register == Register("b\ncd", linewise=False)
+
+    buffer_of(engine).move_cursor(2, 0)
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "ab\ncd\neb\ncdf"
+    assert buffer_of(engine).cursor == (2, 1)
+
+
+def test_paste_on_an_empty_line():
+    engine = yanking_on("ab\n", (0, 0))
+    feed(engine, "ye")
+    buffer_of(engine).move_cursor(1, 0)
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "ab\nab"
+    assert buffer_of(engine).cursor == (1, 1)
+
+
+def test_a_paste_is_one_undo_step():
+    engine = yanking_on("ab\ncd")
+    feed(engine, "yy")
+    feed(engine, "p")
+    feed(engine, "u")
+
+    assert buffer_of(engine).text == "ab\ncd"
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_with_nothing_to_paste_it_says_so():
+    engine = yanking_on("ab")
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "ab"
+    assert buffer_of(engine).reports == ["Nothing to paste"]
+
+
+@pytest.mark.parametrize(
+    "start, keys, paste, after",
+    [
+        ((0, 0), "dd", "p", "cd\nab"),
+        ((0, 0), "dw", "P", "ab\ncd"),
+        ((0, 0), "x", "p", "ba\ncd"),
+        ((1, 0), "D", "P", "ab\ncd"),
+    ],
+)
+def test_the_deletes_fill_the_register_for_paste(start, keys, paste, after):
+    engine = yanking_on("ab\ncd", start)
+
+    feed(engine, keys)
+    feed(engine, paste)
+
+    assert buffer_of(engine).text == after
+
+
+def test_a_change_fills_the_register_too():
+    engine = yanking_on("foo bar")
+
+    feed(engine, "cw")
+    engine.feed("escape")
+    feed(engine, "P")
+
+    assert engine.register == Register("foo", linewise=False)
+    assert buffer_of(engine).text == "foo bar"
+
+
+def test_the_register_outlives_the_engine():
+    memory = RegisterMemory()
+    first = VimEngine(MemoryBuffer("hello"), yank_keys(), register_memory=memory)
+    feed(first, "yy")
+
+    second = VimEngine(MemoryBuffer("other"), yank_keys(), register_memory=memory)
+    buffer_of(second).clipboard = "hello"
+    feed(second, "p")
+
+    assert buffer_of(second).text == "other\nhello"
+    assert second.register == Register("hello", linewise=True)
+
+
+def test_y_copies_to_the_clipboard():
+    engine = yanking_on("ab\ncd")
+
+    feed(engine, "yw")
+    assert buffer_of(engine).clipboard == "ab"
+
+    feed(engine, "2yy")
+    assert buffer_of(engine).clipboard == "ab\ncd"
+
+
+@pytest.mark.parametrize("keys", ["dw", "dd", "x", "D", "cw", "cc", "C"])
+def test_the_deletes_leave_the_clipboard_alone(keys):
+    engine = yanking_on("ab cd")
+    buffer_of(engine).clipboard = "from elsewhere"
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).clipboard == "from elsewhere"
+
+
+def test_paste_uses_the_register_while_the_clipboard_holds_the_last_yank():
+    engine = yanking_on("ab\ncd")
+    feed(engine, "yy")
+
+    # A delete takes the register, not the clipboard, and that's what's put
+    buffer_of(engine).move_cursor(1, 0)
+    feed(engine, "dd")
+    feed(engine, "P")
+
+    assert buffer_of(engine).text == "cd\nab"
+    assert buffer_of(engine).clipboard_pastes == []
+
+
+@pytest.mark.parametrize(
+    "start, key, after, cursor",
+    [
+        ((0, 0), "p", "aXYb", (0, 2)),
+        ((0, 1), "p", "abXY", (0, 3)),
+        ((0, 0), "P", "XYab", (0, 1)),
+    ],
+)
+def test_a_changed_clipboard_goes_through_the_hosts_paste(start, key, after, cursor):
+    engine = yanking_on("ab", start)
+    feed(engine, "yy")
+    buffer_of(engine).clipboard = "XY"
+
+    feed(engine, key)
+
+    assert buffer_of(engine).clipboard_pastes == ["XY"]
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+
+
+def test_a_multiline_clipboard_leaves_the_cursor_where_it_began():
+    engine = yanking_on("ab")
+    buffer_of(engine).clipboard = "X\nY"
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "aX\nYb"
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_a_clipboard_paste_is_one_undo_step_and_counts():
+    engine = yanking_on("ab")
+    buffer_of(engine).clipboard = "X"
+
+    feed(engine, "2p")
+    assert buffer_of(engine).text == "aXXb"
+    assert engine.mode == MODE_NORMAL
+
+    feed(engine, "u")
+    assert buffer_of(engine).text == "ab"
+
+
+def test_a_clipboard_paste_leaves_gi_where_it_was():
+    engine = yanking_on("ab cd", (0, 0))
+    feed(engine, "i")
+    engine.feed("escape")
+    buffer_of(engine).clipboard = "X"
+    buffer_of(engine).move_cursor(0, 3)
+    feed(engine, "p")
+
+    keys = engine.keys
+    keys.set("gi", VimCommand.INSERT_AT_LAST)
+    feed(engine, "gi")
+
+    assert buffer_of(engine).cursor == (0, 0)
+
+
+def test_what_came_off_the_clipboard_is_in_the_register_from_then_on():
+    engine = yanking_on("ab\ncd")
+    buffer_of(engine).clipboard = "X"
+
+    feed(engine, "p")
+    assert engine.register == Register("X", linewise=False, from_clipboard=True)
+
+    # Move a line: the clipboard was taken up, so it doesn't get in the way
+    feed(engine, "dd")
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "cd\naXb"
+    assert buffer_of(engine).clipboard_pastes == ["X"]
+
+
+def test_clipboard_text_pastes_the_same_way_every_time():
+    engine = yanking_on("ab")
+    buffer_of(engine).clipboard = "X"
+
+    feed(engine, "p")
+    feed(engine, "p")
+
+    assert buffer_of(engine).clipboard_pastes == ["X", "X"]
+    assert buffer_of(engine).text == "aXXb"
+
+
+def test_an_empty_clipboard_is_no_news():
+    engine = yanking_on("ab\ncd")
+    feed(engine, "yy")
+    buffer_of(engine).clipboard = ""
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "ab\nab\ncd"
+    assert buffer_of(engine).clipboard_pastes == []
+
+
+def test_a_clipboard_that_only_came_back_reformatted_is_no_news():
+    """Some hosts hand back CRLF, or take a trailing line break off or put one on."""
+
+    engine = yanking_on("ab\ncd")
+    feed(engine, "2yy")
+    buffer_of(engine).clipboard = "ab\r\ncd\r\n"
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).clipboard_pastes == []
+
+
+def test_a_clipboard_with_no_yank_yet_is_pasted():
+    engine = yanking_on("ab")
+    buffer_of(engine).clipboard = "from before"
+
+    feed(engine, "P")
+
+    assert buffer_of(engine).text == "from beforeab"
+
+
+def on_a_clipboard_already_holding(clipboard: str, text: str) -> VimEngine:
+    buffer = MemoryBuffer(text)
+    buffer.clipboard = clipboard
+    return VimEngine(buffer, yank_keys())
+
+
+def test_a_clipboard_older_than_the_engine_is_pasted_with_nothing_else_to_paste():
+    engine = on_a_clipboard_already_holding("from before", "ab")
+
+    feed(engine, "P")
+
+    assert buffer_of(engine).text == "from beforeab"
+
+
+def test_a_clipboard_older_than_the_engine_doesnt_stop_dd_p():
+    engine = on_a_clipboard_already_holding("from before", "ab\ncd")
+
+    feed(engine, "dd")
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "cd\nab"
+    assert buffer_of(engine).clipboard_pastes == []
+
+
+def test_a_clipboard_changed_before_the_first_delete_still_wins_over_it():
+    engine = yanking_on("abc")
+    buffer_of(engine).clipboard = "X"
+
+    feed(engine, "x")
+    feed(engine, "p")
+
+    assert buffer_of(engine).clipboard_pastes == ["X"]
+
+
+def test_a_delete_never_reads_the_clipboard():
+    engine = yanking_on("a\nb\nc")
+    reads = buffer_of(engine).clipboard_reads
+
+    feed(engine, "dd")
+    feed(engine, "dd")
+
+    assert buffer_of(engine).clipboard_reads == reads
+
+
+def test_a_clipboard_changed_after_a_delete_wins_over_it():
+    engine = yanking_on("ab\ncd")
+
+    feed(engine, "dd")
+    buffer_of(engine).clipboard = "X"
+    feed(engine, "P")
+
+    assert buffer_of(engine).text == "Xcd"
+
+
+def test_yy_is_left_to_a_single_line_host():
+    engine = yanking_on("ab", multiline=False)
+
+    assert engine.feed("y")
+    assert engine.feed("y") is True
+    assert engine.register is None
+    assert engine.pending == ""

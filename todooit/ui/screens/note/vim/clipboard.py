@@ -106,15 +106,19 @@ class ClipboardEditing(TextEditing):
 
     def _paste(self, text: str) -> None:
         """
-        Write pasted text in at the cursor: a bare URL as a link, anything else read as markdown.
+        Go into INSERT, as an edit from the clipboard keys does, and write the paste in.
         """
 
         self.enter_insert()
+        self.write_pasted(text)
 
-        if self._paste_as_link(text):
-            return
+    def write_pasted(self, text: str) -> None:
+        """
+        Write pasted text in at the cursor: a bare URL as a link, anything else read as markdown.
+        """
 
-        self._paste_markdown(text)
+        if not self._paste_as_link(text):
+            self._paste_markdown(text)
 
     def _paste_markdown(self, text: str) -> None:
         """

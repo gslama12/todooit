@@ -59,7 +59,10 @@ class ModalEditor(NoteView):
         if self._engine is None:
             vim = self.app.api.vim
             self._engine = VimEngine(
-                NoteBuffer(self), vim.keys, search_memory=vim.search
+                NoteBuffer(self),
+                vim.keys,
+                search_memory=vim.search,
+                register_memory=vim.register,
             )
 
         return self._engine
@@ -102,6 +105,11 @@ class ModalEditor(NoteView):
         document.show_raw(range(start[0], end[0] + 1))
 
         self.replace(text, start, end, maintain_selection_offset=False)
+
+    def write_pasted(self, text: str) -> None:
+        """Write pasted text in at the cursor, as `ClipboardEditing` reads a paste."""
+
+        raise NotImplementedError
 
     def _undo_batch(self, edits: Sequence[Edit]) -> None:
         super()._undo_batch(edits)

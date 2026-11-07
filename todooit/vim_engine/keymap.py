@@ -55,6 +55,9 @@ class VimCommand(Enum):
     CHANGE_LINE = "change_line"
     CHANGE_TO_LINE_END = "change_to_line_end"
     REPLACE_CHAR = "replace_char"
+    YANK_LINE = "yank_line"
+    PASTE_AFTER = "paste_after"
+    PASTE_BEFORE = "paste_before"
     UNDO = "undo"
     REDO = "redo"
     SEARCH = "search"
@@ -66,6 +69,7 @@ class VimOperator(Enum):
 
     DELETE = "delete"
     CHANGE = "change"
+    YANK = "yank"
 
 
 VimAction = Union[VimMotion, VimCommand, VimOperator]

@@ -86,3 +86,15 @@ class Buffer(Protocol):
 
     def prompt_changed(self) -> None:
         """The search prompt opened, changed or closed: redraw whatever shows it."""
+
+    def copy_to_clipboard(self, text: str) -> None:
+        """Put `text` on the system clipboard."""
+
+    def clipboard_text(self) -> str:
+        """What the system clipboard holds, or "" if nothing can be had."""
+
+    def paste_clipboard_text(self, text: str) -> None:
+        """
+        Write text off the system clipboard in at the cursor, however the host
+        reads a paste, and leave the cursor after it. Only ever called in INSERT.
+        """

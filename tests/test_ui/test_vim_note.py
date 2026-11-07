@@ -2378,3 +2378,179 @@ async def test_the_pinned_note_searches_too():
         screen = app.screen
         assert isinstance(screen, PinnedNoteScreen)
         assert screen.editor.cursor_location == (0, 4)
+
+
+# --- Yank and paste -----------------------------------------------------------
+
+
+async def test_yyp_duplicates_a_line_and_u_takes_it_back():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc\ndef")
+        editor = screen.editor
+
+        await pilot.press("y", "y", "p")
+        await pilot.pause()
+
+        assert editor.text == "abc\nabc\ndef"
+        assert editor.cursor_location == (1, 0)
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "abc\ndef"
+
+
+async def test_y_reaches_the_system_clipboard_but_d_does_not():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        await note_holding(pilot, "abc def\nghi")
+
+        await pilot.press("y", "e")
+        await pilot.pause()
+        assert pilot.app.clipboard == "abc"
+
+        with patch("todooit.utils.clipboard.pyperclip.copy") as copied:
+            await pilot.press("d", "w", "x", "c", "c", "escape")
+            await pilot.pause()
+
+        copied.assert_not_called()
+        assert pilot.app.clipboard == "abc"
+
+
+async def test_p_prefers_a_clipboard_changed_since_the_yank():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+        editor = screen.editor
+
+        await pilot.press("y", "y")
+        await pilot.pause()
+
+        # What the yank put there, as a real clipboard would hand it back
+        set_clipboard("abc")
+        await pilot.press("p")
+        await pilot.pause()
+        assert editor.text == "abc\nabc"
+
+        set_clipboard("from a browser")
+        await pilot.press("P")
+        await pilot.pause()
+
+        assert editor.text == "abc\nfrom a browserabc"
+        assert editor.mode == MODE_NORMAL
+        assert editor.cursor_location == (1, len("from a browser") - 1)
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "abc\nabc"
+
+
+async def test_p_reads_the_clipboard_as_markdown_as_the_paste_path_does():
+    set_clipboard("* one\n* two")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "")
+        editor = screen.editor
+
+        await pilot.press("p")
+        await pilot.pause()
+
+        assert editor.text == "- one\n- two"
+        assert editor.mode == MODE_NORMAL
+
+
+async def test_p_makes_a_long_bare_url_a_link():
+    url = "https://example.com/" + "long-path/" * 12
+    set_clipboard(url)
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "")
+
+        await pilot.press("p")
+        await pilot.pause()
+
+        assert screen.editor.text == f"[]({url})"
+
+        await pilot.press("p")
+        await pilot.pause()
+
+        # The same paste again comes out the same, not as the bare address
+        assert screen.editor.text.count(f"]({url})") == 2
+
+
+async def test_p_always_pastes_text_while_ctrl_v_attaches_files():
+    set_clipboard("/tmp/some-file.txt")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "")
+        editor = screen.editor
+
+        with patch.object(screen, "attach") as attach:
+            await pilot.press("p")
+            await pilot.pause()
+
+            attach.assert_not_called()
+            assert editor.text == "/tmp/some-file.txt"
+
+            await pilot.press("ctrl+v")
+            await pilot.pause()
+
+            attach.assert_called_once_with(["/tmp/some-file.txt"])
+
+
+async def test_p_never_looks_for_a_copied_file():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        await note_holding(pilot, "abc")
+
+        with patch("todooit.ui.screens.note.vim.clipboard.paste_files") as files:
+            await pilot.press("p")
+            await pilot.pause()
+
+        files.assert_not_called()
+
+
+async def test_yyp_renumbers_a_list():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "1. a\nb")
+        editor = screen.editor
+        assert editor.text == "1. a\n2. b"
+
+        await pilot.press("y", "y", "p")
+        await pilot.pause()
+
+        assert editor.text == "1. a\n2. a\n3. b"
+
+
+async def test_a_yank_in_one_note_pastes_in_another():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        await note_holding(pilot, "carried over")
+        await pilot.press("y", "y")
+        await pilot.pause()
+
+        # What the yank put on the clipboard
+        set_clipboard("carried over")
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        app = pilot.app
+        PinnedNote.set_text("pinned")
+        app.push_screen(PinnedNoteScreen())
+        await pilot.pause()
+
+        screen = app.screen
+        assert isinstance(screen, PinnedNoteScreen)
+        await pilot.press("p")
+        await pilot.pause()
+
+        assert screen.editor.text == "pinned\ncarried over"
