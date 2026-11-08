@@ -3205,3 +3205,41 @@ async def test_a_drag_enters_visual_and_a_click_leaves_it():
 
         assert editor.mode == MODE_NORMAL
         assert editor.selection.is_empty
+
+
+# vim_flash in VISUAL and V-LINE, in the window
+
+
+async def test_s_in_visual_extends_the_drawn_selection_to_the_label():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc\nxyz")
+        editor = screen.editor
+
+        await pilot.press("v", "s", "y")
+        await pilot.pause()
+        assert "FLASH" in str(screen.frame.border_subtitle)
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL
+        assert screen.frame.border_subtitle == " VISUAL "
+        assert editor.cursor_location == (1, 1)
+        assert visual_text(editor) == "abc\nxy"
+
+
+async def test_escape_in_vim_flash_from_v_line_draws_its_lines_again():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "- one\ntwo\nthree")
+        editor = screen.editor
+
+        await pilot.press("V", "l", "s", "t")
+        await pilot.pause()
+        assert editor.mode == MODE_FLASH
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL_LINE
+        assert screen.frame.border_subtitle == " V-LINE "
+        assert selected_spans(editor) == [(0, 0, 5, SELECTED), (1, 0, 5, SELECTED)]

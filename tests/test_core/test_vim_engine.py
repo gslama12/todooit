@@ -4487,3 +4487,96 @@ def test_a_host_on_one_line_has_no_v_line():
 
     feed(engine, "vöd")
     assert buffer_of(engine).text == "c"
+
+
+# vim_flash in VISUAL and V-LINE
+
+
+def test_s_in_visual_extends_the_selection_to_the_target():
+    engine = visual_on("xa xb xc", (0, 1))
+    feed(engine, "vösxc")
+    assert engine.mode == MODE_FLASH
+
+    feed(engine, labels_of(engine)[(0, 6)] or "")
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 1), (0, 6))
+    assert buffer_of(engine).selected == ((0, 1), (0, 6), False)
+    assert buffer_of(engine).text == "xa xb xc"
+    assert engine.register is None
+    assert engine.pending == ""
+
+
+def test_s_in_visual_goes_backward_past_where_it_started():
+    engine = visual_on("xa xb xc", (0, 4))
+    feed(engine, "vsxa")
+    feed(engine, labels_of(engine)[(0, 0)] or "")
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 4), (0, 0))
+
+    feed(engine, "d")
+    assert buffer_of(engine).text == " xc"
+
+
+def test_s_in_v_line_extends_by_lines_and_an_operator_takes_them():
+    engine = visual_on("aa\nbb\ncc\ndd", (0, 0))
+    feed(engine, "Vsc")
+    engine.feed("enter")
+
+    assert engine.mode == MODE_VISUAL_LINE
+    assert engine.selection == ((0, 0), (2, 0))
+    assert buffer_of(engine).selected == ((0, 0), (2, 0), True)
+
+    feed(engine, "d")
+    assert buffer_of(engine).text == "dd"
+    assert engine.register == Register("aa\nbb\ncc", linewise=True)
+
+
+def test_escape_in_vim_flash_goes_back_to_the_selection_as_it_was():
+    engine = visual_on("xa xb xc", (0, 1))
+    feed(engine, "vösx")
+
+    assert engine.feed("escape")
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 1), (0, 2))
+    assert buffer_of(engine).selected == ((0, 1), (0, 2), False)
+    assert buffer_of(engine).cursor == (0, 2)
+    assert engine.vim_flash_view is None
+
+    # The next one leaves VISUAL, as ever
+    assert engine.feed("escape")
+    assert engine.mode == MODE_NORMAL
+
+
+def test_nothing_left_to_go_to_in_v_line_keeps_the_selection():
+    engine = visual_on("aa\nbb", (0, 1))
+    feed(engine, "Vsq")
+
+    assert engine.mode == MODE_VISUAL_LINE
+    assert engine.selection == ((0, 1), (0, 1))
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_escape_in_vim_flash_after_y_drops_the_yank():
+    engine = flash_on("xa xb", (0, 3))
+    engine.keys.set("y", VimOperator.YANK)
+    feed(engine, "ysx")
+    engine.feed("escape")
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+    assert engine.register is None
+    assert buffer_of(engine).cursor == (0, 3)
+
+
+def test_cs_backward_changes_back_to_the_target_with_the_cursors_character():
+    engine = flash_on("xa xb xc", (0, 4))
+    engine.keys.set("c", VimOperator.CHANGE)
+    feed(engine, "csxa")
+    feed(engine, labels_of(engine)[(0, 0)] or "")
+
+    assert buffer_of(engine).text == " xc"
+    assert buffer_of(engine).cursor == (0, 0)
+    assert engine.mode == MODE_INSERT
+    assert engine.register == Register("xa xb", linewise=False)

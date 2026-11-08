@@ -215,6 +215,8 @@ class VimEngine:
         self._vim_flash: Optional[VimFlashMode] = None
         # The operator waiting on the `vim_flash` target, if one is
         self._vim_flash_operator: Optional[VimOperator] = None
+        # The VISUAL or V-LINE a `vim_flash` came from, and where it started
+        self._vim_flash_from_visual: Optional[Tuple[str, Tuple[int, int]]] = None
 
         # Where VISUAL's selection started, the cursor being its other end
         self._anchor: Optional[Tuple[int, int]] = None
@@ -425,10 +427,6 @@ class VimEngine:
             return True
 
         if action is VimMotion.VIM_FLASH:
-            if visual:
-                self._cancel()
-                return True
-
             self._open_vim_flash()
             return True
 
@@ -529,10 +527,16 @@ class VimEngine:
         self._search_prompt = None
         self._vim_flash = None
         self._vim_flash_operator = None
+        self._vim_flash_from_visual = None
 
     def _escape(self) -> bool:
         if self._search_prompt is not None:
             self._cancel_search_prompt(self._search_prompt)
+            return True
+
+        # Back to what it came from: a selection as it was, an operator dropped
+        if self._vim_flash is not None:
+            self._end_vim_flash(None)
             return True
 
         if self.pending:
@@ -862,11 +866,18 @@ class VimEngine:
             self.buffer.report(f"Search wrapped to the {end}")
 
     def _open_vim_flash(self) -> None:
-        # Kept past the mode change, which cancels what's pending
+        # Kept past the mode change, which cancels what's pending and drops the
+        # anchor. A selection's mode and anchor are put aside to go back to.
         operator = self._operator
+        from_visual = None
+
+        if self.mode in VISUAL_MODES and self._anchor is not None:
+            from_visual = self.mode, self._anchor
+
         self.set_mode(MODE_FLASH)
         self._vim_flash = VimFlashMode(self.buffer, self._vim_flash_alphabet)
         self._vim_flash_operator = operator
+        self._vim_flash_from_visual = from_visual
         self.buffer.prompt_changed()
 
     def _feed_vim_flash(self, flash: VimFlashMode, key: str) -> None:
@@ -893,6 +904,20 @@ class VimEngine:
                 self._end_vim_flash(None)
 
     def _end_vim_flash(self, place: Optional[Tuple[int, int]]) -> None:
+        from_visual = self._vim_flash_from_visual
+
+        if from_visual is not None:
+            # The selection carries on from where it started, out to the target.
+            # An anchor already there is one set_mode keeps.
+            mode, self._anchor = from_visual
+            self.set_mode(mode)
+
+            if place is not None:
+                self.buffer.move_cursor(*place)
+                self._clamp()
+
+            return
+
         operator = self._vim_flash_operator
         origin = self.buffer.cursor
         self.set_mode(MODE_NORMAL)
