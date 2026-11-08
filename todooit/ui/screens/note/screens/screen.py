@@ -290,7 +290,7 @@ class NoteScreenBase(BaseScreen):
             )
 
     def prompt_changed(self) -> None:
-        """Redraw the hint line, where a search or vim_flash prompt stands in for the hints."""
+        """Redraw the hint line, where a search, replace or vim_flash prompt stands in for the hints."""
 
         if self._report_timer is not None:
             self._report_timer.stop()
@@ -298,11 +298,16 @@ class NoteScreenBase(BaseScreen):
         self.mode_changed()
 
     def _prompt_line(self) -> Optional[Content]:
-        """The search or vim_flash being typed, as typed, with a cursor at its end."""
+        """The search, replace or vim_flash being typed, as typed, with a cursor at its end."""
 
         engine = self.editor.engine
         flash = engine.vim_flash_view
+        replace = engine.replace_prompt
         action: VimAction = VimCommand.SEARCH
+
+        if replace is not None:
+            what, text = replace
+            return Content(f"replace {what} with: {text}█")
 
         if flash is not None:
             text, action = flash.text, VimMotion.VIM_FLASH

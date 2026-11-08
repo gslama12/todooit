@@ -66,6 +66,7 @@ class VimCommand(Enum):
     REDO = "redo"
     SEARCH = "search"
     SEARCH_WORD = "search_word"
+    REPLACE_MATCHES = "replace_matches"
     VISUAL = "visual"
     VISUAL_LINE = "visual_line"
 

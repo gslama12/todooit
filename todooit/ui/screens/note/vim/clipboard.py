@@ -100,6 +100,7 @@ class ClipboardEditing(TextEditing):
         if (
             self.host.awaiting_answer
             or self.search_prompt is not None
+            or self.engine.replace_prompt is not None
             or not event.text
         ):
             return

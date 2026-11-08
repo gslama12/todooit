@@ -144,6 +144,14 @@ class _SearchPrompt:
     text: str = ""
 
 
+@dataclass
+class _ReplacePrompt:
+    """What every match of `search` is being replaced with, as typed."""
+
+    search: Search
+    text: str = ""
+
+
 class VimEngine:
     """
     One editing session on one buffer. Always starts in NORMAL.
@@ -207,6 +215,7 @@ class VimEngine:
 
         self._search_memory = search_memory or SearchMemory()
         self._search_prompt: Optional[_SearchPrompt] = None
+        self._replace_prompt: Optional[_ReplacePrompt] = None
 
         # The search whose matches are on show
         self.lit_search: Optional[Search] = None
@@ -254,6 +263,13 @@ class VimEngine:
         """What's typed in the search prompt, or None if it isn't open."""
 
         return self._search_prompt.text if self._search_prompt else None
+
+    @property
+    def replace_prompt(self) -> Optional[Tuple[str, str]]:
+        """What `R` replaces and what's typed to replace it with, if it's open."""
+
+        prompt = self._replace_prompt
+        return (prompt.search.text, prompt.text) if prompt else None
 
     @property
     def search_matches(self) -> Tuple[MatchSpan, ...]:
@@ -349,6 +365,10 @@ class VimEngine:
 
         if self._search_prompt is not None:
             self._feed_search_prompt(self._search_prompt, key)
+            return True
+
+        if self._replace_prompt is not None:
+            self._feed_replace_prompt(self._replace_prompt, key)
             return True
 
         if self._vim_flash is not None:
@@ -525,6 +545,7 @@ class VimEngine:
         self._finding = None
         self._replacing = False
         self._search_prompt = None
+        self._replace_prompt = None
         self._vim_flash = None
         self._vim_flash_operator = None
         self._vim_flash_from_visual = None
@@ -532,6 +553,10 @@ class VimEngine:
     def _escape(self) -> bool:
         if self._search_prompt is not None:
             self._cancel_search_prompt(self._search_prompt)
+            return True
+
+        if self._replace_prompt is not None:
+            self._close_replace_prompt()
             return True
 
         # Back to what it came from: a selection as it was, an operator dropped
@@ -614,6 +639,8 @@ class VimEngine:
                 self.buffer.prompt_changed()
             elif action is VimCommand.SEARCH_WORD:
                 self._search_word(cursor, count)
+            elif action is VimCommand.REPLACE_MATCHES:
+                self._open_replace_prompt()
             elif action in VISUAL_COMMANDS:
                 self.set_mode(VISUAL_COMMANDS[action])
 
@@ -777,6 +804,18 @@ class VimEngine:
         self.buffer.move_cursor(*shown.landed)
         return True
 
+    @staticmethod
+    def _typed(text: str, key: str) -> Optional[str]:
+        """
+        A prompt's text after a key other than enter: a character more, one
+        less for backspace, or None for a backspace with nothing left to take.
+        """
+
+        if key == "backspace":
+            return text[:-1] if text else None
+
+        return text + key if len(key) == 1 else text
+
     def _feed_search_prompt(self, prompt: _SearchPrompt, key: str) -> None:
         """A key while typing a search. Only characters mean anything but these."""
 
@@ -784,16 +823,17 @@ class VimEngine:
             self._confirm_search_prompt(prompt)
             return
 
-        if key == "backspace":
-            if not prompt.text:
-                self._cancel_search_prompt(prompt)
-                return
+        typed = self._typed(prompt.text, key)
 
-            prompt.text = prompt.text[:-1]
-        elif len(key) == 1:
-            prompt.text += key
-        else:
+        if typed is None:
+            self._cancel_search_prompt(prompt)
             return
+
+        # A key that means nothing here
+        if typed == prompt.text:
+            return
+
+        prompt.text = typed
 
         # Always from where it began, so the text alone decides where it stands
         search = Search(prompt.text) if prompt.text else None
@@ -818,6 +858,57 @@ class VimEngine:
         self.lit_search = prompt.lit_before
         self.buffer.move_cursor(*prompt.origin)
         self.buffer.prompt_changed()
+
+    def _open_replace_prompt(self) -> None:
+        last = self._search_memory.last
+
+        if last is None:
+            self.buffer.report("No search yet")
+            return
+
+        if next(last.matches(self.buffer), None) is None:
+            self.buffer.report(f"Not found: {last.text}")
+            return
+
+        self._replace_prompt = _ReplacePrompt(last)
+        self.buffer.prompt_changed()
+
+    def _feed_replace_prompt(self, prompt: _ReplacePrompt, key: str) -> None:
+        """A key while typing a replacement. Only characters mean anything but these."""
+
+        if key == "enter":
+            self._close_replace_prompt()
+            self._replace_matches(prompt.search, prompt.text)
+            return
+
+        typed = self._typed(prompt.text, key)
+
+        if typed is None:
+            self._close_replace_prompt()
+        elif typed != prompt.text:
+            prompt.text = typed
+            self.buffer.prompt_changed()
+
+    def _close_replace_prompt(self) -> None:
+        self._replace_prompt = None
+        self.buffer.prompt_changed()
+
+    def _replace_matches(self, search: Search, text: str) -> None:
+        """
+        Every match of `search` becomes `text`, the cursor on the first of them.
+        There is one at least: `R` checked, and the text can't change in the prompt.
+        """
+
+        matches = list(search.matches(self.buffer))
+
+        # From the bottom up, so the places still to go stay where they were
+        for row, start, end in reversed(matches):
+            self.buffer.replace((row, start), (row, end), text)
+
+        row, start, _ = matches[0]
+        self.buffer.move_cursor(row, start)
+        self._clamp()
+        self.buffer.report(f"{len(matches)} replaced")
 
     def _search_word(self, cursor: Tuple[int, int], count: int) -> None:
         row, column = cursor
@@ -1034,7 +1125,7 @@ class VimEngine:
             self._replace_selection(count, keep=action is VimCommand.PASTE_BEFORE)
         elif action in KEPT_IN_VISUAL:
             self._run(action, count, counted)
-        elif action in (VimCommand.UNDO, VimCommand.REDO):
+        elif action in (VimCommand.UNDO, VimCommand.REDO, VimCommand.REPLACE_MATCHES):
             # Nothing it could mean on a selection, so it's NORMAL's
             self.set_mode(MODE_NORMAL)
             self._run(action, count, counted)

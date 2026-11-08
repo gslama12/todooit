@@ -2405,6 +2405,106 @@ async def test_the_pinned_note_searches_too():
         assert screen.editor.cursor_location == (0, 4)
 
 
+# --- Search and replace ------------------------------------------------------
+
+
+async def test_the_replace_prompt_is_in_the_hint_line_labelled_with_the_search():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo bar foo")
+        editor = screen.editor
+        hints = hint_text(screen)
+
+        await pilot.press(*"?foo", "enter", "R", "d", "d", "space", "x")
+        await pilot.pause()
+
+        assert hint_text(screen) == "replace foo with: dd x█"
+        assert editor.text == "foo bar foo"
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert hint_text(screen) == hints
+        assert editor.text == "foo bar foo"
+        assert pilot.app.screen is screen
+
+
+async def test_markup_in_the_replace_prompt_shows_as_typed():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "[b]")
+
+        await pilot.press(*"?[b]", "enter", "R", *"[red]")
+        await pilot.pause()
+
+        assert hint_text(screen) == "replace [b] with: [red]█"
+
+
+async def test_enter_replaces_every_match_and_says_how_many_in_the_hint_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "x foo\nfoo foo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "R", *"bar", "enter")
+        await pilot.pause()
+
+        assert editor.text == "x bar\nbar bar"
+        assert hint_text(screen) == "3 replaced"
+        assert editor.cursor_location == (0, 2)
+
+        await pilot.press("u")
+        await pilot.pause()
+        assert editor.text == "x foo\nfoo foo"
+
+
+async def test_an_empty_replace_deletes_the_matches():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "a-b-c")
+        editor = screen.editor
+
+        await pilot.press(*"?-", "enter", "R", "enter")
+        await pilot.pause()
+
+        assert editor.text == "abc"
+        assert hint_text(screen) == "2 replaced"
+
+
+async def test_r_with_no_search_yet_says_so_in_the_hint_line():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+
+        await pilot.press("R")
+        await pilot.pause()
+
+        assert "No search yet" in hint_text(screen)
+        assert screen.editor.engine.replace_prompt is None
+        assert pilot.app.screen is screen
+
+
+async def test_a_replace_with_no_match_says_so_and_changes_nothing():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+        editor = screen.editor
+
+        await pilot.press(*"?zz", "enter", "R")
+        await pilot.pause()
+
+        assert hint_text(screen) == "Not found: zz"
+        assert editor.engine.replace_prompt is None
+        assert editor.text == "foo"
+
+
+async def test_a_paste_doesnt_write_into_the_note_during_the_replace_prompt():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "foo")
+        editor = screen.editor
+
+        await pilot.press(*"?foo", "enter", "R")
+        await editor._on_paste(events.Paste("pasted"))
+        await pilot.pause()
+
+        assert editor.text == "foo"
+        assert editor.engine.replace_prompt == ("foo", "")
+
+
 # --- Yank and paste -----------------------------------------------------------
 
 

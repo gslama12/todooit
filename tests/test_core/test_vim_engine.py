@@ -2738,6 +2738,215 @@ def test_a_single_line_host_can_search_too():
     assert buffer_of(engine).cursor == (0, 4)
 
 
+# --- Search and replace ------------------------------------------------------
+
+
+def replacing(
+    text: str, query: str, cursor: Tuple[int, int] = (0, 0), **options
+) -> VimEngine:
+    """An engine on `text` with `query` searched for and `R` pressed."""
+
+    engine = searched(text, query, cursor, **options)
+    engine.keys.set("R", VimCommand.REPLACE_MATCHES)
+    engine.keys.set("u", VimCommand.UNDO)
+    engine.keys.set("d", VimOperator.DELETE)
+    buffer_of(engine).reports.clear()
+    feed(engine, "R")
+    return engine
+
+
+def replaced(text: str, query: str, replacement: str, **options) -> VimEngine:
+    """`text` with every match of `query` replaced by `replacement`, confirmed."""
+
+    engine = replacing(text, query, **options)
+    feed(engine, replacement)
+    engine.feed("enter")
+    return engine
+
+
+def test_r_opens_a_prompt_for_the_last_search_that_takes_every_character():
+    engine = replacing("foo bar", "foo", (0, 4))
+
+    assert engine.replace_prompt == ("foo", "")
+    assert engine.mode == MODE_NORMAL
+
+    # Keys that mean something in NORMAL are just text in here
+    feed(engine, "dd uR")
+    assert engine.replace_prompt == ("foo", "dd uR")
+    assert buffer_of(engine).text == "foo bar"
+
+
+def test_enter_replaces_every_match_and_says_how_many():
+    engine = replaced("foo x foo\nfoo", "foo", "bar")
+    buffer = buffer_of(engine)
+
+    assert buffer.text == "bar x bar\nbar"
+    assert buffer.reports == ["3 replaced"]
+    assert engine.replace_prompt is None
+    assert engine.mode == MODE_NORMAL
+
+
+def test_the_cursor_stands_on_the_first_replacement():
+    engine = replaced("x foo\nfoo", "foo", "bar", cursor=(1, 0))
+
+    assert buffer_of(engine).cursor == (0, 2)
+
+
+def test_an_empty_prompt_deletes_the_matches():
+    engine = replaced("a, b, c,", ",", "")
+
+    assert buffer_of(engine).text == "a b c"
+    assert buffer_of(engine).reports == ["3 replaced"]
+    # The first match's place is past the line's end now; it stays on the text
+    assert buffer_of(engine).cursor == (0, 1)
+
+
+def test_deleting_a_whole_line_of_matches_keeps_the_cursor_on_it():
+    engine = replaced("ab\nfoo", "foo", "")
+
+    assert buffer_of(engine).text == "ab\n"
+    assert buffer_of(engine).cursor == (1, 0)
+
+
+def test_escape_cancels_the_prompt_and_changes_nothing():
+    engine = replacing("foo foo", "foo")
+    before = buffer_of(engine).cursor
+    feed(engine, "bar")
+
+    assert engine.feed("escape") is True
+    assert engine.replace_prompt is None
+    assert buffer_of(engine).text == "foo foo"
+    assert buffer_of(engine).cursor == before
+    assert buffer_of(engine).undo_steps == []
+
+
+def test_backspace_edits_the_prompt_and_on_an_empty_one_cancels_it():
+    engine = replacing("foo", "foo")
+    feed(engine, "ab")
+    engine.feed("backspace")
+    assert engine.replace_prompt == ("foo", "a")
+
+    engine.feed("backspace")
+    engine.feed("backspace")
+    assert engine.replace_prompt is None
+    assert buffer_of(engine).text == "foo"
+
+
+def test_a_named_key_in_the_prompt_is_ignored():
+    engine = replacing("foo", "foo")
+    engine.feed("ctrl+d")
+
+    assert engine.replace_prompt == ("foo", "")
+
+
+@pytest.mark.parametrize(
+    "query, result",
+    [
+        ("foo", "x x x"),
+        ("Foo", "foo x FOO"),
+    ],
+)
+def test_replace_ignores_case_unless_the_search_has_a_capital(query, result):
+    assert buffer_of(replaced("foo Foo FOO", query, "x")).text == result
+
+
+def test_replace_is_plain_text_not_a_pattern():
+    assert buffer_of(replaced("abc a.c", "a.c", "Z")).text == "abc Z"
+    assert buffer_of(replaced("a\\1 b", "\\1", "$0")).text == "a$0 b"
+
+
+def test_replace_after_star_takes_whole_words_only():
+    engine = engine_on("foo food foo", (0, 0))
+    engine.keys.set("R", VimCommand.REPLACE_MATCHES)
+    feed(engine, "*R")
+    assert engine.replace_prompt == ("foo", "")
+
+    feed(engine, "bar")
+    engine.feed("enter")
+    assert buffer_of(engine).text == "bar food bar"
+
+
+def test_replace_works_on_the_raw_text():
+    engine = replaced("[name](http://url.example)", "url", "site")
+
+    assert buffer_of(engine).text == "[name](http://site.example)"
+
+
+def test_a_replacement_holding_the_search_is_not_replaced_again():
+    engine = replaced("a a", "a", "aa")
+
+    assert buffer_of(engine).text == "aa aa"
+    assert buffer_of(engine).reports == ["2 replaced"]
+
+
+def test_one_replace_is_one_undo_step():
+    engine = replaced("foo\nfoo\nfoo", "foo", "bar")
+    assert len(buffer_of(engine).undo_steps) == 1
+
+    engine.feed("u")
+    assert buffer_of(engine).text == "foo\nfoo\nfoo"
+
+
+def test_replace_leaves_the_register_alone():
+    engine = replaced("foo bar", "foo", "")
+
+    assert engine.register is None
+
+
+def test_r_with_no_search_yet_says_so_and_opens_no_prompt():
+    engine = engine_on("foo")
+    engine.keys.set("R", VimCommand.REPLACE_MATCHES)
+    feed(engine, "R")
+
+    assert engine.replace_prompt is None
+    assert buffer_of(engine).reports == ["No search yet"]
+
+
+def test_with_no_match_it_says_so_opens_no_prompt_and_changes_nothing():
+    engine = replacing("foo", "nope")
+
+    assert engine.replace_prompt is None
+    assert buffer_of(engine).reports == ["Not found: nope"]
+
+    feed(engine, "x")
+    assert buffer_of(engine).text == "foo"
+    assert buffer_of(engine).undo_steps == []
+
+
+def test_r_in_visual_leaves_it_and_replaces_the_whole_note():
+    engine = searched("foo x foo", "foo")
+    engine.keys.set("v", VimCommand.VISUAL)
+    engine.keys.set("R", VimCommand.REPLACE_MATCHES)
+    feed(engine, "vR")
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.replace_prompt == ("foo", "")
+
+    feed(engine, "y")
+    engine.feed("enter")
+    assert buffer_of(engine).text == "y x y"
+
+
+def test_a_single_line_host_can_replace_too():
+    engine = replaced("foo foo", "foo", "x", multiline=False)
+
+    assert buffer_of(engine).text == "x x"
+
+
+def test_r_uses_the_last_search_from_another_engine():
+    memory = SearchMemory()
+    first = engine_on("foo", search_memory=memory)
+    feed(first, "?foo")
+    first.feed("enter")
+
+    second = engine_on("x foo", search_memory=memory)
+    second.keys.set("R", VimCommand.REPLACE_MATCHES)
+    feed(second, "Rbar")
+    second.feed("enter")
+
+    assert buffer_of(second).text == "x bar"
+
+
 # --- Yank and paste -----------------------------------------------------------
 
 
