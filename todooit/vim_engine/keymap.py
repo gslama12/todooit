@@ -16,6 +16,7 @@ class VimMotion(Enum):
     WORD_FORWARD = "word_forward"
     WORD_BACKWARD = "word_backward"
     WORD_END = "word_end"
+    LINE_START = "line_start"
     FIRST_NON_BLANK = "first_non_blank"
     LAST_CHARACTER = "last_character"
     LINE_ABOVE = "line_above"

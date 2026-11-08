@@ -634,6 +634,34 @@ def test_repeating_a_character_jump(start, keys, end):
     assert run_keys("a b c b d\nq", start, keys) == end
 
 
+@pytest.mark.parametrize(
+    "text, start, keys, end",
+    [
+        ("  ab cd", (0, 5), "0", (0, 0)),
+        ("  ab cd", (0, 0), "0", (0, 0)),
+        # A 0 after a digit is still part of the count
+        ("abcdefghijklmn", (0, 0), "10ö", (0, 10)),
+    ],
+)
+def test_line_start_goes_to_the_first_column(text, start, keys, end):
+    vim_keys = motion_keys()
+    vim_keys.set("0", VimMotion.LINE_START)
+    engine = VimEngine(MemoryBuffer(text, start), vim_keys)
+    feed(engine, keys)
+
+    assert buffer_of(engine).cursor == end
+    assert engine.pending == ""
+
+
+def test_deleting_to_the_line_start_takes_the_indent_too():
+    engine = deleting_on("  ab cd", (0, 5))
+    engine.keys.set("0", VimMotion.LINE_START)
+    feed(engine, "d0")
+
+    assert buffer_of(engine).text == "cd"
+    assert buffer_of(engine).cursor == (0, 0)
+
+
 def test_repeating_with_no_jump_yet_does_nothing():
     assert run_keys("a b", (0, 1), "h") == (0, 1)
     assert run_keys("a b", (0, 1), "H") == (0, 1)

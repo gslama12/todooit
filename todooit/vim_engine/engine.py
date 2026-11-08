@@ -567,6 +567,8 @@ class VimEngine:
             self._walk(motions.previous_word_start, count)
         elif motion is VimMotion.WORD_END:
             self._walk(motions.next_word_end, count)
+        elif motion is VimMotion.LINE_START:
+            buffer.move_cursor(row, 0)
         elif motion is VimMotion.FIRST_NON_BLANK:
             self._to_first_non_blank(min(row + count - 1, last_row))
         elif motion is VimMotion.LAST_CHARACTER:

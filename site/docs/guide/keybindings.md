@@ -108,6 +108,16 @@ Everything else stays as listed above. The note window, the calendar, the help
 screen and the attachment strip steer with whatever the panes move with, so
 they switch to `h` `j` `k` `l` too (and the calendar's months to `H` / `L`).
 
+Inside a note, both also switch to vim's own keys:
+
+| Note action | Default | `qwertz_vim.py` | `qwerty_vim.py` |
+| --- | --- | --- | --- |
+| Line start: column 0 / first non-blank / end | — / `=` / `_` | `0` / `^` / `$` | `0` / `^` / `$` |
+| Repeat / reverse `f` `F` `t` `T` | `h` / `H` | `ö` / `Ö` | `;` / `,` |
+| Line above / below | `ü` / `ä` | `ü` / `ä` | `-` / `+` |
+
+`I` and `A` insert at the start and end of the line in all three.
+
 ```bash
 mkdir -p "$(dirname "$(todooit config-loc)")"
 cp config/qwerty_vim.py "$(todooit config-loc)"

@@ -20,6 +20,7 @@ or try it out once with `todooit -c config/qwertz_vim.py`.
 
 from todooit.ui.api import TodooitAPI, subscribe
 from todooit.ui.api.events import Startup
+from todooit.vim_engine import VimMotion
 
 # Default key -> vim key. Applied all at once, so keys can trade places.
 VIM_KEYS = {
@@ -40,6 +41,8 @@ VIM_NOTE_KEYS = {
     "l": "j",  # down (k, up, stays where it is)
     "h": "ö",  # repeat the last f F t T
     "H": "Ö",  # the same, the other way
+    "=": "^",  # first non-blank of the line
+    "_": "$",  # last character of the line
 }
 
 
@@ -47,3 +50,5 @@ VIM_NOTE_KEYS = {
 def vim_keys(api: TodooitAPI, _):
     api.keys.remap(VIM_KEYS)
     api.vim.keys.remap(VIM_NOTE_KEYS)
+    # Free by default: a lone 0 is never a count
+    api.vim.keys.set("0", VimMotion.LINE_START)

@@ -7,8 +7,10 @@ those too without touching anything else.
 """
 
 import importlib.util
+from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Tuple
 
 import pytest
 
@@ -19,6 +21,7 @@ from todooit.ui.api.api_components.keys import MotionKeys
 from todooit.ui.screens import HelpScreen
 from todooit.ui.screens.note.vim.modes import MODE_NORMAL
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
+from todooit.vim_engine import VimCommand, VimMotion
 
 CONFIG_DIR = Path(__file__).parents[2] / "config"
 
@@ -185,3 +188,108 @@ async def test_vim_layout_scrolls_the_help():
         assert scrolls["h"] == "scroll_left"
         assert scrolls["l"] == "scroll_right"
         assert "ö" not in scrolls
+
+
+
+# The keys both templates give the note, standard vim's
+VIM_NOTE_BINDINGS = {
+    "h": VimMotion.LEFT,
+    "j": VimMotion.DOWN,
+    "k": VimMotion.UP,
+    "l": VimMotion.RIGHT,
+    "0": VimMotion.LINE_START,
+    "^": VimMotion.FIRST_NON_BLANK,
+    "$": VimMotion.LAST_CHARACTER,
+    "I": VimCommand.INSERT_FIRST_NON_BLANK,
+    "A": VimCommand.INSERT_LINE_END,
+    "?": VimCommand.SEARCH,
+}
+
+
+@dataclass
+class NoteLayout:
+    repeat: str  # repeat the last f F t T
+    above: str  # first non-blank of the line above
+    below: str  # and below
+    freed: Tuple[str, ...]  # default keys left unbound
+
+
+NOTE_LAYOUTS = {
+    "qwertz_vim.py": NoteLayout("ö", "ü", "ä", ("=", "_")),
+    "qwerty_vim.py": NoteLayout(";", "-", "+", ("=", "_", "ü", "ä")),
+}
+
+
+@pytest.mark.parametrize("layout", NOTE_LAYOUTS)
+async def test_vim_layout_binds_standard_note_keys(layout):
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        apply_layout(app.api, layout)
+        keys = app.api.vim.keys
+        note = NOTE_LAYOUTS[layout]
+        bindings = {
+            **VIM_NOTE_BINDINGS,
+            note.repeat: VimMotion.REPEAT_FIND,
+            note.above: VimMotion.LINE_ABOVE,
+            note.below: VimMotion.LINE_BELOW,
+        }
+
+        for key, action in bindings.items():
+            assert keys.action_for(key) is action, key
+        for key in note.freed:
+            assert keys.action_for(key) is None, key
+
+
+async def test_default_note_keys_are_unchanged_without_a_template():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        keys = app.api.vim.keys
+
+        assert keys.action_for("=") is VimMotion.FIRST_NON_BLANK
+        assert keys.action_for("_") is VimMotion.LAST_CHARACTER
+        assert keys.action_for("?") is VimCommand.SEARCH
+        assert keys.action_for("h") is VimMotion.REPEAT_FIND
+        assert keys.action_for("ü") is VimMotion.LINE_ABOVE
+        assert keys.action_for("ä") is VimMotion.LINE_BELOW
+        for key in ("0", "^", "$", "-", "+"):
+            assert keys.action_for(key) is None, key
+
+
+@pytest.mark.parametrize("layout", NOTE_LAYOUTS)
+async def test_vim_layout_edits_the_note(layout):
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        screen = await open_note(pilot)
+        apply_layout(app.api, layout)
+        editor = screen.editor
+        note = NOTE_LAYOUTS[layout]
+
+        await pilot.press(*"  ab cd")
+        await pilot.press("enter")
+        await pilot.press(*"  ef")
+        await pilot.press("escape")
+        await pilot.pause()
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("0")
+        assert editor.cursor_location == (1, 0)
+        await pilot.press(note.above)
+        assert editor.cursor_location == (0, 2)
+        await pilot.press("$")
+        assert editor.cursor_location == (0, 6)
+        await pilot.press("^")
+        assert editor.cursor_location == (0, 2)
+        await pilot.press(note.below)
+        assert editor.cursor_location == (1, 2)
+
+        # A count still takes a 0 after its first digit
+        await pilot.press("k", "0", "1", "0", "l")
+        assert editor.cursor_location == (0, 6)
+
+        # Search with `?`, then repeat a find with the template's key
+        await pilot.press("0", "?", "c", "enter")
+        assert editor.cursor_location == (0, 5)
+        await pilot.press("0", "f", "b")
+        assert editor.cursor_location == (0, 3)
+        await pilot.press("0", note.repeat)
+        assert editor.cursor_location == (0, 3)
