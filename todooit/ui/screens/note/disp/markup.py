@@ -48,6 +48,10 @@ SELECTED = "note-selected"
 QUOTE = "note-quote"
 QUOTE_BAR = "note-quote-bar"
 QUOTE_ITEM = "note-quote-item"
+# Drawn by the view itself, not found in the text
+GUTTER = "note-gutter"
+GUTTER_CURSOR = "note-gutter-cursor"
+YANKED = "note-yanked"
 
 # A mark only opens a line when it has nothing but indent before it and a space
 # after it - otherwise `-` is a hyphen, `*` is emphasis. A number keeps its own

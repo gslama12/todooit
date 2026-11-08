@@ -1121,7 +1121,8 @@ async def test_a_click_on_a_folded_line_lands_on_the_character_clicked():
         await pilot.pause()
 
         # The "f" of "folder", drawn at column 8 of "see the folder here"
-        await pilot.click(editor, offset=(editor.gutter.left + 8, editor.gutter.top + 1))
+        x = editor.gutter.left + editor.gutter_width
+        await pilot.click(editor, offset=(x + 8, editor.gutter.top + 1))
         await pilot.pause()
 
         row, column = editor.cursor_location
@@ -1319,9 +1320,8 @@ async def test_a_click_on_a_short_bare_address_lands_on_the_character_clicked():
         await pilot.pause()
 
         column = written.index("example")
-        await pilot.click(
-            editor, offset=(editor.gutter.left + column, editor.gutter.top + 1)
-        )
+        x = editor.gutter.left + editor.gutter_width
+        await pilot.click(editor, offset=(x + column, editor.gutter.top + 1))
         await pilot.pause()
 
         assert editor.cursor_location == (1, column)
@@ -2250,6 +2250,7 @@ async def test_a_pasted_sentence_is_still_a_sentence(tmp_path):
 async def test_gf_picks_the_files_up_and_escape_puts_them_down(tmp_path):
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        screen.api.vars.note_hints = True
 
         await pilot.press(*list("some words"))
         await pilot.press("escape")

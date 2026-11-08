@@ -164,6 +164,9 @@ class NoteBuffer:
     def pick_files(self) -> None:
         self._editor.host.pick_files()
 
+    def show_help(self) -> None:
+        self._editor.host.show_help()
+
     def list_prefix(self, row: int) -> str:
         return line_prefix(self.line(row))
 

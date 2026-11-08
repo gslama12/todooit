@@ -41,5 +41,8 @@ class EditorHost(Protocol):
     def request_clear(self) -> None:
         """Ask whether to clear the whole note, and do so on a yes."""
 
+    def show_help(self) -> None:
+        """Show the note's keys, over the note."""
+
     def resolve_key(self, event: events.Key) -> str:
         """The key `event` stands for, resolved through the keyboard layout."""

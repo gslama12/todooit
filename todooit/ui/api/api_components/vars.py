@@ -24,6 +24,8 @@ class VarManager(ApiComponent):
         self._projects_pane_max_width = 0.25
         self._flash_alphabet = FLASH_ALPHABET
         self._vim_flash_alphabet = VIM_FLASH_ALPHABET
+        self._note_line_numbers = True
+        self._note_hints = False
 
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
@@ -105,6 +107,26 @@ class VarManager(ApiComponent):
             raise ValueError("vim_flash_alphabet needs at least one key, none twice")
 
         self._vim_flash_alphabet = value
+
+    @property
+    def note_line_numbers(self) -> bool:
+        """Whether a note has hybrid line numbers down its left, as LazyVim's"""
+
+        return self._note_line_numbers
+
+    @note_line_numbers.setter
+    def note_line_numbers(self, value: bool):
+        self._note_line_numbers = value
+
+    @property
+    def note_hints(self) -> bool:
+        """Whether the key hints show under a note; prompts and messages always do"""
+
+        return self._note_hints
+
+    @note_hints.setter
+    def note_hints(self, value: bool):
+        self._note_hints = value
 
     @property
     def show_confirm(self):

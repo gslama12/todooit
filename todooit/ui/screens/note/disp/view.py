@@ -23,6 +23,8 @@ from .document import (
 )
 from .markup import (
     BACKDROP,
+    GUTTER,
+    GUTTER_CURSOR,
     MARKED,
     MARKED_FIRST,
     QUOTE_BAR,
@@ -59,11 +61,28 @@ class Overlay:
 # What still shows on a row put aside
 KEPT_WHEN_DIMMED = (TARGET, MARKED, MARKED_FIRST)
 
+# The blank columns after the line numbers, towards the text. None go before
+# them: the note's frame already pads them off its edge by one.
+GUTTER_GAP = 2
+
 
 class NoteView(TextArea):
     """A TextArea that draws the note's markup instead of showing it raw."""
 
     overlay: Optional[Overlay] = None
+
+    # Hybrid line numbers down the left, as LazyVim's `number` + `relativenumber`.
+    # Drawn here rather than by TextArea, whose own are absolute only.
+    line_numbers: bool = False
+
+    @property
+    def gutter_width(self) -> int:
+        """The line numbers' columns and the gap after them; 0 without them."""
+
+        if not self.line_numbers:
+            return 0
+
+        return len(str(self.document.line_count)) + GUTTER_GAP
 
     def show_overlay(self, overlay: Optional[Overlay]) -> None:
         """Draw `overlay` over the note, or none."""
@@ -176,7 +195,11 @@ class NoteView(TextArea):
         self._refold()
 
     def _render_line(self, y: int) -> Strip:
-        """A row of the note, with the wash behind it if it's a heading's."""
+        """
+        A row of the note, with the wash behind it if it's a heading's, and its
+        line number in front. The rest is drawn without the gutter: TextArea
+        leaves room for it, but only draws its own.
+        """
 
         strip = self._draw_row(y)
         wrapped = self.wrapped_document
@@ -193,7 +216,30 @@ class NoteView(TextArea):
         elif span:
             strip = self._wash(strip, span)
 
-        return self._draw_labels(strip, y)
+        strip = self._draw_labels(strip, y)
+
+        return Strip.join([self._draw_gutter(found), strip]) if self.line_numbers else strip
+
+    def _draw_gutter(self, found: Optional[Tuple[int, int]]) -> Strip:
+        """
+        One row's line number: the cursor line's own, every other its distance
+        from it. Counted in stored lines, so a wrapped line's other rows have none.
+        """
+
+        width = self.gutter_width
+        base = self._theme.base_style or Style()
+
+        if found is None or found[1]:
+            return Strip([Segment(" " * width, base)], width)
+
+        row = found[0]
+        cursor = self.cursor_location[0]
+        number = row + 1 if row == cursor else abs(row - cursor)
+        name = GUTTER_CURSOR if row == cursor else GUTTER
+        style = base + self._theme.syntax_styles[name]
+        text = f"{number:>{width - GUTTER_GAP}}" + " " * GUTTER_GAP
+
+        return Strip([Segment(text, style)], width)
 
     def _draw_labels(self, strip: Strip, y: int) -> Strip:
         """Put the overlay's labels over whatever is on this row of the window."""
@@ -203,7 +249,7 @@ class NoteView(TextArea):
 
         for row, column, text, name in self.overlay.labels:
             spot = self.wrapped_document.location_to_offset((row, column))
-            x = spot.x + self.gutter_width
+            x = spot.x
 
             if spot.y == y + self.scroll_offset.y and x < strip.cell_length:
                 label = Segment(text, self._theme.syntax_styles[name])
@@ -283,20 +329,13 @@ class NoteView(TextArea):
         if not pad:
             return strip
 
-        gutter_width = self.gutter_width
-
-        if gutter_width:
-            gutter, body = strip.divide([gutter_width, strip.cell_length])
-        else:
-            gutter, body = None, strip
-
         # Blend the padding into the row's background (already full-width;
         # cursor line is lit a different color).
-        segments = list(body)
+        segments = list(strip)
         trailing = segments[-1].style if segments else None
         style = Style(bgcolor=trailing.bgcolor) if trailing else Style()
 
-        body = body.crop_pad(max(0, body.cell_length - pad), pad, 0, style)
+        body = strip.crop_pad(max(0, strip.cell_length - pad), pad, 0, style)
 
         # A wrapped quote keeps its bar on every row, not just the first
         bar = wrapped.bar_at(y + self.scroll_offset.y)
@@ -308,29 +347,21 @@ class NoteView(TextArea):
                 [body.crop(0, bar), glyph, body.crop(bar + glyph.cell_length)]
             )
 
-        return Strip.join([gutter, body]) if gutter else body
+        return body
 
     def _draw_block(self, strip: Strip, block: str) -> Strip:
         """A heading or a rule, across the whole width of the window, on one row."""
 
-        gutter_width = self.gutter_width
-        width = self.scrollable_content_region.width - gutter_width
-
-        if gutter_width:
-            gutter, body = strip.divide([gutter_width, strip.cell_length])
-        else:
-            gutter, body = None, strip
+        width = self.scrollable_content_region.width - self.gutter_width
 
         if block == RULE_SPAN:
-            trailing = list(body)[-1].style if body.cell_length else None
+            trailing = list(strip)[-1].style if strip.cell_length else None
             background = Style(bgcolor=trailing.bgcolor) if trailing else Style()
             style = background + self._theme.syntax_styles.get(RULE_SPAN, Style())
-            body = Strip([Segment(RULE * width, style)])
-        else:
-            # A long title is cut at the window's edge, keeping it to one row
-            body = body.crop_extend(0, width, None)
+            return Strip([Segment(RULE * width, style)])
 
-        return Strip.join([gutter, body]) if gutter else body
+        # A long title is cut at the window's edge, keeping it to one row
+        return strip.crop_extend(0, width, None)
 
     def _stored_line(self, row: int) -> str:
         """

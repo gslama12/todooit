@@ -32,6 +32,7 @@ from todooit.vim_engine import (
     VimMotion,
     VimOperator,
     VimTextObject,
+    YankedRange,
 )
 
 
@@ -48,6 +49,7 @@ class MemoryBuffer:
         self.centred = 0
         self.links_opened = 0
         self.files_picked = 0
+        self.helps_shown = 0
         self.undo_steps: List[Tuple[List[str], Tuple[int, int], List[str]]] = []
         self.redo_steps: List[Tuple[List[str], Tuple[int, int], List[str]]] = []
         self.step_start: Optional[Tuple[List[str], Tuple[int, int]]] = None
@@ -116,6 +118,9 @@ class MemoryBuffer:
 
     def pick_files(self) -> None:
         self.files_picked += 1
+
+    def show_help(self) -> None:
+        self.helps_shown += 1
 
     def list_prefix(self, row: int) -> str:
         found = re.match(r"(> )?\s*([-*] |\d+\. )?", self.lines[row])
@@ -4789,3 +4794,118 @@ def test_cs_backward_changes_back_to_the_target_with_the_cursors_character():
     assert buffer_of(engine).cursor == (0, 0)
     assert engine.mode == MODE_INSERT
     assert engine.register == Register("xa xb", linewise=False)
+
+
+# --- The yanked range, for a host to flash ------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, yanked",
+    [
+        # charwise, with motions
+        ("ab cd", (0, 0), "yw", ((0, 0), (0, 3), False)),
+        ("ab cd", (0, 3), "yb", ((0, 0), (0, 3), False)),
+        ("ab cd", (0, 0), "ye", ((0, 0), (0, 2), False)),
+        ("ab cd", (0, 0), "yf ", ((0, 0), (0, 3), False)),
+        # a text object
+        ("ab cd", (0, 3), "yiw", ((0, 3), (0, 5), False)),
+        # linewise: whole lines, from the first's start to the last's end
+        ("aa\nbb\ncc", (1, 1), "yy", ((1, 0), (1, 2), True)),
+        ("aa\nbb\ncc", (0, 1), "2yy", ((0, 0), (1, 2), True)),
+        ("aa\nbb\ncc", (1, 1), "yk", ((0, 0), (1, 2), True)),
+        ("aa\nbb\ncc", (0, 0), "yG", ((0, 0), (2, 2), True)),
+    ],
+)
+def test_a_yank_reports_the_range_it_took(text, start, keys, yanked):
+    engine = visual_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == text
+    assert engine.mode == MODE_NORMAL
+    assert engine.yanked == YankedRange(*yanked)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, yanked, register",
+    [
+        ("abc def", (0, 1), "vöy", ((0, 1), (0, 3), False), "bc"),
+        ("abc def", (0, 2), "vjy", ((0, 1), (0, 3), False), "bc"),
+        ("abc\ndef", (0, 1), "vly", ((0, 1), (1, 2), False), "bc\nde"),
+        ("aa\nbb\ncc", (0, 1), "Vly", ((0, 0), (1, 2), True), "aa\nbb"),
+    ],
+)
+def test_a_visual_yank_reports_what_was_selected_back_in_normal(
+    text, start, keys, yanked, register
+):
+    engine = visual_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.selection is None
+    assert engine.register is not None
+    assert engine.register.text == register
+    assert engine.yanked == YankedRange(*yanked)
+
+
+@pytest.mark.parametrize("keys", ["dw", "dd", "x", "cw", "D", "vöd", "Vx"])
+def test_deleting_and_changing_report_no_yank(keys):
+    engine = visual_on("ab cd\nef", (0, 0))
+
+    feed(engine, keys)
+
+    assert engine.register is not None
+    assert engine.yanked is None
+
+
+def test_the_yanked_range_lasts_only_until_the_next_key():
+    engine = visual_on("ab cd", (0, 0))
+
+    feed(engine, "yw")
+    assert engine.yanked is not None
+
+    feed(engine, "ö")
+    assert engine.yanked is None
+
+    # A key that only starts a command clears it too
+    feed(engine, "yw")
+    feed(engine, "y")
+    assert engine.yanked is None
+
+
+def test_a_yank_that_takes_nothing_reports_nothing():
+    engine = visual_on("abc")
+
+    feed(engine, "yfz")
+    assert engine.yanked is None
+
+
+# --- The help, left to the host -----------------------------------------------
+
+
+@pytest.mark.parametrize("before, mode", [("", MODE_NORMAL), ("v", MODE_VISUAL)])
+def test_space_question_mark_asks_the_host_for_the_help(before, mode):
+    engine = visual_on("abc def", (0, 1))
+    engine.keys.set(" ?", VimCommand.HELP)
+
+    feed(engine, before + " ?")
+
+    assert buffer_of(engine).helps_shown == 1
+    assert engine.mode == mode
+    assert buffer_of(engine).cursor == (0, 1)
+    assert buffer_of(engine).text == "abc def"
+    assert engine.pending == ""
+
+
+def test_space_alone_waits_for_the_question_mark():
+    engine = visual_on("abc def")
+    engine.keys.set(" ?", VimCommand.HELP)
+
+    feed(engine, " ")
+    assert engine.pending == " "
+    assert buffer_of(engine).helps_shown == 0
+
+    feed(engine, "w")
+    assert engine.pending == ""
+    assert buffer_of(engine).helps_shown == 0

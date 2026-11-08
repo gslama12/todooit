@@ -75,4 +75,5 @@ FEATURE_BY_MODULE = {
     "test_loader": "config",
     "test_keyboard_layouts": "config",
     "test_vim_note": "vim",
+    "test_note_lazyvim": "vim",
 }

@@ -15,7 +15,7 @@ from .keymap import (
     VimOperator,
     VimTextObject,
 )
-from .register import Register, RegisterMemory
+from .register import Register, RegisterMemory, YankedRange
 from .search import MatchSpan, Search, SearchMemory
 from .vim_flash import VIM_FLASH_ALPHABET, VimFlashMode, VimFlashView
 
@@ -38,7 +38,12 @@ VISUAL_MEANINGS: Dict[VimAction, VimAction] = {
 }
 OTHER_END = frozenset({VimCommand.OPEN_BELOW, VimCommand.OPEN_ABOVE})
 KEPT_IN_VISUAL = frozenset(
-    {VimCommand.SEARCH, VimCommand.SEARCH_WORD, VimCommand.CENTER_VIEW}
+    {
+        VimCommand.SEARCH,
+        VimCommand.SEARCH_WORD,
+        VimCommand.CENTER_VIEW,
+        VimCommand.HELP,
+    }
 )
 
 # Commands that mean nothing on a host holding a single line of text
@@ -230,6 +235,9 @@ class VimEngine:
         # Where VISUAL's selection started, the cursor being its other end
         self._anchor: Optional[Tuple[int, int]] = None
 
+        # What the key just taken yanked, if it did
+        self.yanked: Optional[YankedRange] = None
+
     @property
     def register(self) -> Optional[Register]:
         """What a paste puts in, unless the system clipboard has news."""
@@ -333,6 +341,8 @@ class VimEngine:
 
     def feed(self, key: str) -> bool:
         """Take one key. True if it was used, False to leave it to the host."""
+
+        self.yanked = None
 
         # A command is one undo step, unless it ends in INSERT: that step lasts
         # until INSERT does
@@ -616,6 +626,8 @@ class VimEngine:
                 self.buffer.open_link()
             elif action is VimCommand.PICK_FILES:
                 self.buffer.pick_files()
+            elif action is VimCommand.HELP:
+                self.buffer.show_help()
             elif action is VimCommand.DELETE_LINE:
                 self._delete_lines(row, row + count - 1)
             elif action is VimCommand.DELETE_TO_LINE_END:
@@ -1342,7 +1354,7 @@ class VimEngine:
             text = self._text_between(start, end)
 
             if operator is VimOperator.YANK:
-                self._yank(text, linewise=False)
+                self._yank(text, YankedRange(start, end, linewise=False))
             else:
                 self._register_memory.register = Register(text, linewise=False)
                 buffer.replace(start, end, "")
@@ -1414,9 +1426,10 @@ class VimEngine:
         buffer.replace((top, 0), end, keep)
         self._insert_at_line_end(top)
 
-    def _yank(self, text: str, *, linewise: bool) -> None:
+    def _yank(self, text: str, yanked: YankedRange) -> None:
         memory = self._register_memory
-        memory.register = Register(text, linewise)
+        memory.register = Register(text, yanked.linewise)
+        self.yanked = yanked
         memory.known_clipboard = text
         self.buffer.copy_to_clipboard(text)
 
@@ -1431,7 +1444,11 @@ class VimEngine:
         if column is None:
             column = buffer.cursor[1]
 
-        self._yank(self._lines_between(top, bottom), linewise=True)
+        end = bottom, len(buffer.line(bottom))
+        self._yank(
+            self._lines_between(top, bottom),
+            YankedRange((top, 0), end, linewise=True),
+        )
         buffer.move_cursor(top, min(column, self._last_column(top)))
 
     def _register_to_paste(self) -> Optional[Register]:

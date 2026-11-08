@@ -7,11 +7,20 @@ from textual.widgets.text_area import TextAreaTheme
 
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import blend
+from todooit.vim_engine import (
+    MODE_FLASH,
+    MODE_INSERT,
+    MODE_NORMAL,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
+)
 
 from .markup import (
     BACKDROP,
     BULLET_SPANS,
     EMPH,
+    GUTTER,
+    GUTTER_CURSOR,
     HEADER_SPANS,
     LINK,
     MARKED,
@@ -24,12 +33,26 @@ from .markup import (
     SEARCH_MATCH,
     SELECTED,
     TARGET,
+    YANKED,
 )
 
 THEME_NAME = "todooit-note"
 
 # How far a heading's color is faded towards the note's background, behind it
 HEADER_WASH = 0.82
+
+# How far the gutter's line numbers are faded towards it
+GUTTER_FADE = 0.5
+
+# Each mode's color, as lualine paints LazyVim's: the mode chip, the frame's
+# border and the mode's heading in the help pane. Names of theme colors.
+MODE_COLORS = {
+    MODE_NORMAL: "blue",
+    MODE_INSERT: "green",
+    MODE_VISUAL: "magenta",
+    MODE_VISUAL_LINE: "magenta",
+    MODE_FLASH: "orange",
+}
 
 
 def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
@@ -89,5 +112,12 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             MARKED_FIRST: Style(color=theme.background1, bgcolor=theme.cyan),
             # V-LINE's whole lines, as the selection itself looks.
             SELECTED: Style(bgcolor=theme.background3),
+            # Line numbers: the cursor's own stands out, as in LazyVim.
+            GUTTER: Style(
+                color=blend(theme.foreground1, theme.background2, GUTTER_FADE)
+            ),
+            GUTTER_CURSOR: Style(color=theme.orange, bold=True),
+            # What was just yanked, for a moment, as `vim.hl.on_yank()` does.
+            YANKED: Style(color=theme.background1, bgcolor=theme.orange),
         },
     )

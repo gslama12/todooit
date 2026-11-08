@@ -7,6 +7,7 @@ from typing import Optional, Sequence, Tuple
 from textual import on
 from textual.document._edit import Edit
 from textual.geometry import Offset
+from textual.timer import Timer
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 
@@ -21,6 +22,7 @@ from todooit.vim_engine import (
     VimEngine,
     VimFlashMatch,
     VimFlashView,
+    YankedRange,
 )
 
 from ..disp.document import FoldedDocument
@@ -31,6 +33,7 @@ from ..disp.markup import (
     SEARCH_MATCH,
     SELECTED,
     TARGET,
+    YANKED,
 )
 from ..disp.view import NoteView, Overlay, OverlaySpan
 from .buffer import NoteBuffer
@@ -48,6 +51,9 @@ __all__ = [
 
 # Rows kept in view above and below the cursor, wherever the note has them
 SCROLLOFF = 4
+
+# How long what was just yanked stays lit, as LazyVim's `vim.hl.on_yank()`
+YANK_FLASH = 0.15
 
 
 class ModalEditor(NoteView):
@@ -82,6 +88,10 @@ class ModalEditor(NoteView):
 
         # Whether the mouse, not a key, last had a hand in the selection
         self.mouse_selecting = False
+
+        # What a yank just took, lit until the timer or the next key
+        self._yank_spans: Sequence[OverlaySpan] = ()
+        self._yank_timer: Optional[Timer] = None
 
     @property
     def host(self) -> EditorHost:
@@ -345,18 +355,64 @@ class ModalEditor(NoteView):
             self._shown_search = search
             self.show_overlay(self.overlay)
 
+    def show_yank(self) -> None:
+        """Light up what the engine just yanked, if it did, for `YANK_FLASH`."""
+
+        yanked = self.engine.yanked
+
+        if yanked is None:
+            return
+
+        self._yank_spans = self._yank_spans_of(yanked)
+        self._yank_timer = self.set_timer(YANK_FLASH, self.end_yank_flash)
+        self.show_overlay(self.overlay)
+
+    def end_yank_flash(self) -> None:
+        """Put out the yank flash, whether its time is up or another key came."""
+
+        if self._yank_timer is not None:
+            self._yank_timer.stop()
+            self._yank_timer = None
+
+        if self._yank_spans:
+            self._yank_spans = ()
+            self.show_overlay(self.overlay)
+
+    def _yank_spans_of(self, yanked: YankedRange) -> Sequence[OverlaySpan]:
+        """The yanked range, row by row; whole lines in full."""
+
+        (top, first), (bottom, last) = yanked.start, yanked.end
+
+        return [
+            (
+                row,
+                0 if yanked.linewise or row > top else first,
+                len(self._stored_line(row))
+                if yanked.linewise or row < bottom
+                else last,
+                YANKED,
+            )
+            for row in range(top, bottom + 1)
+        ]
+
     def standing_spans(self) -> Sequence[OverlaySpan]:
         if self._engine is None:
             return ()
 
+        line_count = self.document.line_count
         lines = [
             (row, 0, len(self._stored_line(row)), SELECTED)
             for row in self._selected_rows or ()
-            if row < self.document.line_count
+            if row < line_count
         ]
 
-        return lines + [
-            (*match, SEARCH_MATCH) for match in self._engine.search_matches
+        # Over the selection and the matches, as the last thing done
+        yanked = [span for span in self._yank_spans if span[0] < line_count]
+
+        return [
+            *lines,
+            *((*match, SEARCH_MATCH) for match in self._engine.search_matches),
+            *yanked,
         ]
 
     @on(TextArea.SelectionChanged)

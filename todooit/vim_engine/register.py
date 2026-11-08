@@ -3,7 +3,7 @@ The one register, and how it stands to the system clipboard
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,18 @@ class Register:
 
     # Whether it came off the system clipboard, so it pastes the way that does
     from_clipboard: bool = False
+
+
+@dataclass(frozen=True)
+class YankedRange:
+    """
+    What the last key yanked, from a place up to, not including, another; for
+    a host to flash. Whole lines run from the first's start to the last's end.
+    """
+
+    start: Tuple[int, int]
+    end: Tuple[int, int]
+    linewise: bool
 
 
 def _even_line_breaks(text: str) -> str:

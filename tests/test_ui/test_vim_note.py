@@ -49,6 +49,13 @@ def visual_text(editor) -> str:
     return editor.get_text_range(*span)
 
 
+def hints_on(screen: NoteScreenBase) -> None:
+    """Key hints under the note, which are off by default."""
+
+    screen.api.vars.note_hints = True
+    screen.mode_changed()
+
+
 async def note_holding(pilot, text: str) -> NoteScreen:
     """A note with `text` in it, in NORMAL, cursor on the very first character."""
 
@@ -211,6 +218,7 @@ async def test_the_note_does_not_follow_the_panes_direction_keys():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc\ndef")
         editor = screen.editor
+        hints_on(screen)
 
         pilot.app.api.keys.remap({"ö": "ß", "l": "§"})
         assert pilot.app.api.motion_keys().right == "ß"
@@ -229,7 +237,7 @@ async def test_the_hint_shows_the_notes_own_keys():
         screen = await note_holding(pilot, "abc")
 
         pilot.app.api.vim.keys.remap({"j": "+"})
-        screen.mode_changed()
+        hints_on(screen)
 
         assert "+ö/kl move" in str(screen.hint.render())
 
@@ -492,8 +500,9 @@ async def test_gf_opens_the_strip_now_that_f_jumps_to_a_character(tmp_path):
 
 
 def cell(editor, y: int, x: int) -> Style:
-    """The style of one cell of the note as it's drawn."""
+    """The style of one cell of the note as it's drawn, `x` counted from the text's first column."""
 
+    x += editor.gutter_width
     at = 0
     for segment in editor.render_line(y):
         if at <= x < at + segment.cell_length:
@@ -1288,6 +1297,7 @@ async def test_copy_cut_and_paste_work_from_normal():
 async def test_the_normal_hint_is_built_from_the_configured_keys():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc")
+        hints_on(screen)
 
         hint = str(screen.hint.render())
         for shown in (
@@ -1315,7 +1325,7 @@ async def test_the_normal_hint_leaves_out_what_has_no_key():
         screen = await note_holding(pilot, "abc")
 
         pilot.app.api.vim.keys.set("gx", VimCommand.CENTER_VIEW)
-        screen.mode_changed()
+        hints_on(screen)
 
         hint = str(screen.hint.render())
         assert "link" not in hint
@@ -2775,7 +2785,9 @@ def test_the_engine_and_the_note_agree_on_a_level_of_nesting():
 
 
 def drawn_row(editor, y: int) -> str:
-    return editor.render_line(y).text
+    """A row of the note as drawn, without its line number."""
+
+    return editor.render_line(y).text[editor.gutter_width :]
 
 
 def labelled(editor, y: int, x: int) -> bool:
@@ -3163,6 +3175,7 @@ async def test_v_shows_visual_on_the_chip_and_draws_every_selected_line_raw():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "- one\ntwo\nthree")
         editor = screen.editor
+        hints_on(screen)
         await pilot.press("ö")
         assert editor.document.raw_rows == range(1)
 
@@ -3291,16 +3304,17 @@ async def test_a_drag_enters_visual_and_a_click_leaves_it():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abcdef")
         editor = screen.editor
+        x = editor.gutter_width
 
-        await pilot.mouse_down(editor, offset=Offset(1, 0))
-        await pilot.hover(editor, offset=Offset(4, 0))
-        await pilot.mouse_up(editor, offset=Offset(4, 0))
+        await pilot.mouse_down(editor, offset=Offset(x + 1, 0))
+        await pilot.hover(editor, offset=Offset(x + 4, 0))
+        await pilot.mouse_up(editor, offset=Offset(x + 4, 0))
         await pilot.pause()
 
         assert editor.mode == MODE_VISUAL
         assert visual_text(editor) == "bcd"
 
-        await pilot.click(editor, offset=Offset(5, 0))
+        await pilot.click(editor, offset=Offset(x + 5, 0))
         await pilot.pause()
 
         assert editor.mode == MODE_NORMAL

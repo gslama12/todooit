@@ -69,6 +69,9 @@ class NoteEditor(ClipboardEditing):
             self.host.answer(event.key)
             return
 
+        # A flash from the key before doesn't outlast this one
+        self.end_yank_flash()
+
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
@@ -81,6 +84,7 @@ class NoteEditor(ClipboardEditing):
         self.show_find_view()
         self.show_search()
         self.show_vim_flash()
+        self.show_yank()
 
         if used:
             self.host.pending_changed()

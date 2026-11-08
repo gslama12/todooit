@@ -69,6 +69,7 @@ class VimCommand(Enum):
     REPLACE_MATCHES = "replace_matches"
     VISUAL = "visual"
     VISUAL_LINE = "visual_line"
+    HELP = "help"
 
 
 class VimOperator(Enum):
@@ -167,6 +168,11 @@ class VimKeymap:
             and (behind_operator or not isinstance(action, VimTextObject))
             for bound, action in self._bindings.items()
         )
+
+    def keys_for(self, action: VimAction) -> List[str]:
+        """Every key bound to `action`, in the order they were bound."""
+
+        return [key for key, bound in self._bindings.items() if bound == action]
 
     def key_for(self, action: VimAction) -> Optional[str]:
         """The first key bound to `action`, if any."""

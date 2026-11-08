@@ -150,6 +150,7 @@ async def test_vim_layout_moves_the_note_cursor():
         app = await boot(pilot)
         screen = await open_note(pilot)
         apply_layout(app.api, "qwerty_vim.py")
+        app.api.vars.note_hints = True
         editor = screen.editor
 
         await pilot.press(*"ab")

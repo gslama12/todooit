@@ -22,13 +22,26 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
-from todooit.vim_engine import VimAction, VimCommand, VimMotion, VimOperator
+from todooit.vim_engine import (
+    MODE_FLASH,
+    VimAction,
+    VimCommand,
+    VimMotion,
+    VimOperator,
+)
 
 from ...base import BaseScreen
 from ..disp.theme import THEME_NAME, build_theme
 from ..vim.editor import NoteEditor
-from ..vim.modes import MODE_INSERT, MODE_NORMAL, VISUAL_MODES
+from ..vim.modes import (
+    MODE_INSERT,
+    MODE_NORMAL,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
+    VISUAL_MODES,
+)
 from .attachments import AttachmentStrip
+from .help import NoteHelpScreen
 
 # How long the editor sits still before the note is written back
 SAVE_DEBOUNCE = 0.4
@@ -62,6 +75,15 @@ VISUAL_FIXED_HINTS = ("esc normal",)
 
 # On the editor's own bindings, so no keymap says what they are
 NORMAL_FIXED_HINTS = ("C-c copy", "esc close")
+
+
+# The frame's class in each mode but NORMAL, which colors its border and chip
+MODE_CLASSES = {
+    MODE_INSERT: "-insert",
+    MODE_VISUAL: "-visual",
+    MODE_VISUAL_LINE: "-visual",
+    MODE_FLASH: "-flash",
+}
 
 
 def key_label(key: str) -> str:
@@ -201,6 +223,7 @@ class NoteScreenBase(BaseScreen):
 
     def compose(self) -> ComposeResult:
         editor = NoteEditor(self.load_note())
+        editor.line_numbers = self.api.vars.note_line_numbers
 
         frame = NoteFrame()
         frame.border_title = self.title_text
@@ -209,7 +232,8 @@ class NoteScreenBase(BaseScreen):
             yield editor
             yield AttachmentStrip()
 
-        yield Static(self.hint_for(editor.mode), id="note-hint")
+        hints = self.hint_for(editor.mode) if self.api.vars.note_hints else ""
+        yield Static(hints, id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
@@ -281,13 +305,26 @@ class NoteScreenBase(BaseScreen):
         mode = self.editor.mode
 
         self.pending_changed()
-        self.frame.set_class(mode == MODE_INSERT, "-insert")
+
+        for name in set(MODE_CLASSES.values()):
+            self.frame.set_class(MODE_CLASSES.get(mode) == name, name)
 
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
-            self.hint.update(
-                self._prompt_line() or self.hint_for(mode, self.picking_files)
-            )
+            self.hint.update(self._prompt_line() or self._hints(mode))
+
+    def _hints(self, mode: str) -> str:
+        """The key hints for `mode`, if they're on; the line stays, empty, if not."""
+
+        if not self.api.vars.note_hints:
+            return ""
+
+        return self.hint_for(mode, self.picking_files)
+
+    def show_help(self) -> None:
+        """Every key the note knows, by mode, over the note; it comes back as it was."""
+
+        self.app.push_screen(NoteHelpScreen())
 
     def prompt_changed(self) -> None:
         """Redraw the hint line, where a search, replace or vim_flash prompt stands in for the hints."""
@@ -324,7 +361,8 @@ class NoteScreenBase(BaseScreen):
         """Redraw the mode chip, with any partial command beside it."""
 
         editor = self.editor
-        pending = escape(editor.engine.pending)
+        # A space waiting for the rest of its command (`space ?`) is shown
+        pending = escape(editor.engine.pending).replace(" ", "␣")
 
         self.frame.border_subtitle = (
             f" {editor.mode} {pending} " if pending else f" {editor.mode} "

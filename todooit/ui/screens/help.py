@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple
 
 from rich.console import Group, RenderableType
 from rich.rule import Rule
+from rich.style import Style
 from rich.table import Table
 from rich.text import Text
 from textual.app import ComposeResult, events
@@ -68,6 +69,16 @@ class TodooitKeyTable(Static):
 
         return keybind
 
+    def _groups(self) -> List[str]:
+        """The sections, in order."""
+
+        return self.keybinds.groups
+
+    def _title_style(self, group: str) -> Style:
+        """How a section's heading is drawn."""
+
+        return self.get_component_rich_style("table-title")
+
     def _render_group(self, group: str, key_width: int) -> RenderableType:
         t = Table.grid(expand=True, padding=(0, 1))
         # Fixed key column keeps arrows aligned across sections; description fills the rest
@@ -96,7 +107,7 @@ class TodooitKeyTable(Static):
         key_width = max(
             (
                 len(label)
-                for group in self.keybinds.groups
+                for group in self._groups()
                 for label, _ in self._rows(group)
             ),
             default=0,
@@ -104,13 +115,13 @@ class TodooitKeyTable(Static):
 
         renderables = []
 
-        for group in self.keybinds.groups:
+        for group in self._groups():
             # Kept tight (blank line + rule, no gap below) so the whole listing fits on screen
             if renderables:
                 renderables += [Text(""), separator]
 
             if group:
-                title = Text(group, style=self.get_component_rich_style("table-title"))
+                title = Text(group, style=self._title_style(group))
                 title.pad(1)
                 renderables.append(title)
 
@@ -144,6 +155,9 @@ class HelpScreen(BaseScreen, ModalScreen):
     # Raised by the first `g` of a `gg` and by nothing else
     _pending_g = False
 
+    # What the panel's border calls it
+    panel_title = PANEL_TITLE
+
     @property
     def panel(self) -> VerticalScroll:
         return self.query_one("#help-panel", VerticalScroll)
@@ -157,7 +171,7 @@ class HelpScreen(BaseScreen, ModalScreen):
         yield Static(hint(motions.up, motions.down), id="help-hint")
 
     def on_mount(self) -> None:
-        self.panel.border_title = PANEL_TITLE
+        self.panel.border_title = self.panel_title
 
     def scrolls(self) -> Dict[str, str]:
         motions = self.api.motion_keys()

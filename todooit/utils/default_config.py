@@ -555,6 +555,9 @@ def vim_key_setup(api: TodooitAPI, _):
     # On a selection `o` goes to its other end, `x` deletes it, `p` replaces it
     api.vim.keys.set("v", VimCommand.VISUAL)
     api.vim.keys.set("V", VimCommand.VISUAL_LINE)
+    # Every key a note knows, by mode: LazyVim's `<leader>?`, space being the
+    # leader. `?` alone is the note's search.
+    api.vim.keys.set(" ?", VimCommand.HELP)
 
 
 @subscribe(Startup)
@@ -747,6 +750,13 @@ def layout_setup(api: TodooitAPI, _):
     # back to that fixed quarter.
     api.vars.projects_pane_auto_width = True
     api.vars.projects_pane_max_width = 0.25
+
+    # A note's window as LazyVim's: hybrid line numbers in a gutter (the
+    # cursor line's own number, every other line its distance from it), and no
+    # key hints under it - Cmd+? lists them all instead. Prompts, the y/N
+    # confirm and messages still show in that line either way.
+    api.vars.note_line_numbers = True
+    api.vars.note_hints = False
 
     api.layouts.project_layout = [
         ProjectWidget.description,
