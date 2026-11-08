@@ -114,9 +114,26 @@ it says so and offers to detach it.
 
 The pinned note carries files the same way.
 
+### VISUAL and V-LINE
+
+`v` selects by character and `V` by whole line, from the cursor to wherever it
+goes next: any motion, a search, or a text object such as `iw`, `i{` or `ip`
+(`iW` and `i` + `space` take a run of non-blanks). The selected lines are shown
+raw, and the mode chip says which of the two it is.
+
+| Key | What it does |
+| --- | --- |
+| `y` / `d` / `c` | Yank / delete / change what is selected (`x` deletes too) |
+| `>` / `<` | Nest the selected lines in / out, and back to NORMAL |
+| `p` / `P` | Put the register in its place; `p` keeps what it replaced, `P` the register |
+| `o` | Go to the other end of the selection |
+| `v` / `V` | Switch between the two; the same key again leaves |
+| `escape` | Back to NORMAL, leaving the note open |
+
 ## Selecting and copying
 
-`shift` with a motion selects, `ctrl+a` selects everything, and
+`shift` with a motion, or a drag of the mouse, selects in VISUAL; `ctrl+a`
+selects everything, and
 `ctrl+c` / `ctrl+x` / `ctrl+v` behave as they do in any text field. They work
 in both modes; the two that edit take the note into INSERT. The one exception
 is a paste that is nothing but file paths, which [attaches](#attachments)

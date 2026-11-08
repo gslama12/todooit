@@ -12,7 +12,16 @@ whatever text host implements `Buffer`. Imports nothing from the UI.
 """
 
 from .buffer import Buffer
-from .engine import MODE_FLASH, MODE_INSERT, MODE_NORMAL, FindView, VimEngine
+from .engine import (
+    MODE_FLASH,
+    MODE_INSERT,
+    MODE_NORMAL,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
+    VISUAL_MODES,
+    FindView,
+    VimEngine,
+)
 from .keymap import (
     VimAction,
     VimCommand,
@@ -29,11 +38,14 @@ __all__ = [
     "MODE_FLASH",
     "MODE_INSERT",
     "MODE_NORMAL",
+    "MODE_VISUAL",
+    "MODE_VISUAL_LINE",
     "Buffer",
     "FindView",
     "Register",
     "RegisterMemory",
     "Search",
+    "VISUAL_MODES",
     "VIM_FLASH_ALPHABET",
     "SearchMemory",
     "VimAction",

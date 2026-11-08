@@ -444,7 +444,8 @@ async def test_cmd_keys_in_the_note():
 
         await pilot.press("super+a")
         await pilot.pause()
-        assert editor.selected_text == "some words"
+        span = editor.engine.selected_span
+        assert span and editor.get_text_range(*span) == "some words"
 
         set_clipboard("pasted")
         await pilot.press("super+v")

@@ -3,6 +3,7 @@ Copy, cut and paste: the clipboard speaks markdown, as the note itself does
 """
 
 from textual import events
+from textual.widgets.text_area import Selection
 
 from todooit.utils import (
     copy_text,
@@ -63,7 +64,12 @@ class ClipboardEditing(TextEditing):
         Copy the selection, or the whole note if none (overrides TextArea, which does nothing without a selection), as stored.
         """
 
-        copy_text(self.app, self.selected_text or self.text)
+        span = self.engine.selected_span
+
+        # VISUAL's cursor character is taken, which the TextArea's selection stops short of
+        text = self.get_text_range(*span) if span else self.selected_text
+
+        copy_text(self.app, text or self.text)
 
     def action_paste(self) -> None:
         """
@@ -109,8 +115,17 @@ class ClipboardEditing(TextEditing):
         Go into INSERT, as an edit from the clipboard keys does, and write the paste in.
         """
 
-        self.enter_insert()
+        self._enter_insert_over_visual()
         self.write_pasted(text)
+
+    def _enter_insert_over_visual(self) -> None:
+        """INSERT, with all that VISUAL had selected still selected, for a cut or paste to replace."""
+
+        span = self.engine.selected_span
+        self.enter_insert()
+
+        if span:
+            self.selection = Selection(*span)
 
     def write_pasted(self, text: str) -> None:
         """
@@ -174,10 +189,11 @@ class ClipboardEditing(TextEditing):
         Cut the selection to the clipboard (overrides TextArea for the same reason as `copy`); switches to INSERT like `paste`.
         """
 
+        self._enter_insert_over_visual()
+
         start, _ = self.selection
         removed = self.selected_text or self._stored_line(start[0])
 
-        self.enter_insert()
         super().action_cut()
 
         copy_text(self.app, removed)

@@ -73,6 +73,9 @@ class NoteBuffer:
 
         self._editor.move_cursor((row, column))
 
+    def select(self, anchor: Tuple[int, int], linewise: bool) -> None:
+        self._editor.show_selection(anchor, linewise)
+
     def replace(
         self, start: Tuple[int, int], end: Tuple[int, int], text: str
     ) -> None:

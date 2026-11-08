@@ -22,12 +22,12 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
-from todooit.vim_engine import VimAction, VimCommand, VimMotion
+from todooit.vim_engine import VimAction, VimCommand, VimMotion, VimOperator
 
 from ...base import BaseScreen
 from ..disp.theme import THEME_NAME, build_theme
 from ..vim.editor import NoteEditor
-from ..vim.modes import MODE_INSERT, MODE_NORMAL
+from ..vim.modes import MODE_INSERT, MODE_NORMAL, VISUAL_MODES
 from .attachments import AttachmentStrip
 
 # How long the editor sits still before the note is written back
@@ -48,6 +48,17 @@ NORMAL_HINTS: Sequence[Tuple[Sequence[Sequence[VimAction]], str]] = (
     (((VimCommand.OPEN_LINK,),), "link"),
     (((VimCommand.PICK_FILES,),), "files"),
 )
+
+# VISUAL's and V-LINE's, built the same way
+VISUAL_HINTS: Sequence[Tuple[Sequence[Sequence[VimAction]], str]] = (
+    (((VimOperator.YANK,),), "yank"),
+    (((VimOperator.DELETE,),), "delete"),
+    (((VimOperator.CHANGE,),), "change"),
+    (((VimOperator.INDENT,), (VimOperator.UNINDENT,)), "nest"),
+    (((VimCommand.PASTE_AFTER,),), "replace"),
+    (((VimCommand.OPEN_BELOW,),), "other end"),
+)
+VISUAL_FIXED_HINTS = ("esc normal",)
 
 # On the editor's own bindings, so no keymap says what they are
 NORMAL_FIXED_HINTS = ("C-c copy", "esc close")
@@ -235,15 +246,25 @@ class NoteScreenBase(BaseScreen):
             left, right, up, down = self.api.motion_keys()
             return self.FILES_HINT.replace("{move}", f"{left}{right}/{up}{down}")
 
-        return self._normal_hint() if mode == MODE_NORMAL else self.INSERT_HINT
+        if mode == MODE_NORMAL:
+            return self._keyed_hint(NORMAL_HINTS, NORMAL_FIXED_HINTS)
 
-    def _normal_hint(self) -> str:
-        """NORMAL's hints, leaving out whatever has no key."""
+        if mode in VISUAL_MODES:
+            return self._keyed_hint(VISUAL_HINTS, VISUAL_FIXED_HINTS)
+
+        return self.INSERT_HINT
+
+    def _keyed_hint(
+        self,
+        keyed: Sequence[Tuple[Sequence[Sequence[VimAction]], str]],
+        fixed: Sequence[str],
+    ) -> str:
+        """A mode's hints, leaving out whatever has no key."""
 
         key_for = self.api.vim.keys.key_for
         hints = []
 
-        for groups, meaning in NORMAL_HINTS:
+        for groups, meaning in keyed:
             keys = [[key_for(action) for action in group] for group in groups]
 
             if all(key for group in keys for key in group):
@@ -252,7 +273,7 @@ class NoteScreenBase(BaseScreen):
                 )
                 hints.append(f"{written} {meaning}")
 
-        return "   ".join([*hints, *NORMAL_FIXED_HINTS])
+        return "   ".join([*hints, *fixed])
 
     def mode_changed(self) -> None:
         """Redraw the mode chip in the border and the hint line under it."""

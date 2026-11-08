@@ -66,6 +66,8 @@ class VimCommand(Enum):
     REDO = "redo"
     SEARCH = "search"
     SEARCH_WORD = "search_word"
+    VISUAL = "visual"
+    VISUAL_LINE = "visual_line"
 
 
 class VimOperator(Enum):
@@ -114,8 +116,8 @@ class VimKeymap:
 
     An operator's key wins over a longer binding starting with it: `d` is the
     operator, and `dd` is what its keys and the next key are looked up as first.
-    A text object's keys only mean something behind an operator, so `ip` leaves
-    `i` to do what it does alone.
+    A text object's keys only mean something behind an operator or in VISUAL, so
+    `ip` leaves `i` to do what it does alone.
     """
 
     def __init__(self) -> None:

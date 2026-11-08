@@ -22,6 +22,24 @@ from .vim_flash import VIM_FLASH_ALPHABET, VimFlashMode, VimFlashView
 MODE_NORMAL = "NORMAL"
 MODE_INSERT = "INSERT"
 MODE_FLASH = "FLASH"
+MODE_VISUAL = "VISUAL"
+MODE_VISUAL_LINE = "V-LINE"
+
+# The modes with a selection, and the commands that go into each
+VISUAL_MODES = frozenset({MODE_VISUAL, MODE_VISUAL_LINE})
+VISUAL_COMMANDS = {
+    VimCommand.VISUAL: MODE_VISUAL,
+    VimCommand.VISUAL_LINE: MODE_VISUAL_LINE,
+}
+
+# What NORMAL's commands mean on a selection; any not here mean nothing there
+VISUAL_MEANINGS: Dict[VimAction, VimAction] = {
+    VimCommand.DELETE_CHAR: VimOperator.DELETE,
+}
+OTHER_END = frozenset({VimCommand.OPEN_BELOW, VimCommand.OPEN_ABOVE})
+KEPT_IN_VISUAL = frozenset(
+    {VimCommand.SEARCH, VimCommand.SEARCH_WORD, VimCommand.CENTER_VIEW}
+)
 
 # Commands that mean nothing on a host holding a single line of text
 LINE_ONLY = frozenset(
@@ -44,6 +62,7 @@ LINE_ONLY = frozenset(
         VimCommand.OPEN_ABOVE,
         VimCommand.INDENT_LINE,
         VimCommand.UNINDENT_LINE,
+        VimCommand.VISUAL_LINE,
         VimOperator.INDENT,
         VimOperator.UNINDENT,
         VimTextObject.INNER_PARAGRAPH,
@@ -197,11 +216,36 @@ class VimEngine:
         # The operator waiting on the `vim_flash` target, if one is
         self._vim_flash_operator: Optional[VimOperator] = None
 
+        # Where VISUAL's selection started, the cursor being its other end
+        self._anchor: Optional[Tuple[int, int]] = None
+
     @property
     def register(self) -> Optional[Register]:
         """What a paste puts in, unless the system clipboard has news."""
 
         return self._register_memory.register
+
+    @property
+    def selection(self) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """VISUAL's or V-LINE's ends, where it started first and the cursor second."""
+
+        if self._anchor is None:
+            return None
+
+        return self._anchor, self.buffer.cursor
+
+    @property
+    def selected_span(self) -> Optional[Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """What VISUAL or V-LINE takes, from a place up to, not including, another."""
+
+        if self._anchor is None:
+            return None
+
+        if self.mode == MODE_VISUAL_LINE:
+            top, bottom = self._selected_rows()
+            return (top, 0), (bottom, len(self.buffer.line(bottom)))
+
+        return self._selected()
 
     @property
     def search_prompt(self) -> Optional[str]:
@@ -279,6 +323,9 @@ class VimEngine:
 
         used = self._take_key(key)
 
+        if self.mode in VISUAL_MODES:
+            self._show_selection()
+
         if self.mode != MODE_INSERT:
             self._close_step()
 
@@ -306,7 +353,9 @@ class VimEngine:
             self._feed_vim_flash(self._vim_flash, key)
             return True
 
-        if self.mode != MODE_NORMAL:
+        visual = self.mode in VISUAL_MODES
+
+        if self.mode != MODE_NORMAL and not visual:
             return False
 
         if self._finding is not None:
@@ -327,7 +376,10 @@ class VimEngine:
         if self._operator is None:
             action = self.keys.action_for(self._keys)
 
-            if not isinstance(action, VimOperator) and self.keys.continues(self._keys):
+            # A selection takes text objects as an operator does
+            if not isinstance(action, VimOperator) and self.keys.continues(
+                self._keys, behind_operator=visual
+            ):
                 return True
         else:
             whole = self._operator_keys + self._keys
@@ -351,6 +403,10 @@ class VimEngine:
             self._shown_find = None
             return was_pending
 
+        if visual and not isinstance(action, VimMotion):
+            self._run_on_selection(action)
+            return True
+
         if isinstance(action, VimOperator):
             self._operator = action
             self._operator_count, self._operator_keys = self._count, self._keys
@@ -369,6 +425,10 @@ class VimEngine:
             return True
 
         if action is VimMotion.VIM_FLASH:
+            if visual:
+                self._cancel()
+                return True
+
             self._open_vim_flash()
             return True
 
@@ -397,6 +457,15 @@ class VimEngine:
         if mode == MODE_INSERT:
             self._open_step()
 
+        if mode in VISUAL_MODES and self._anchor is None:
+            self._anchor = self.buffer.cursor
+        elif mode not in VISUAL_MODES and self._anchor is not None:
+            self._anchor = None
+
+            # A change goes on to INSERT over what's selected; anything else ends it
+            if mode == MODE_NORMAL:
+                self.buffer.move_cursor(*self.buffer.cursor)
+
         self.mode = mode
         self._cancel()
         self._shown_find = None
@@ -405,6 +474,28 @@ class VimEngine:
         if mode == MODE_NORMAL:
             self._clamp()
             self._close_step()
+
+    def select_between(self, anchor: Tuple[int, int], head: Tuple[int, int]) -> None:
+        """
+        The host selected from `anchor` to `head`, both taken, by its own means:
+        a drag or a shifted key. VISUAL over that, the cursor at `head`; in
+        VISUAL or V-LINE already, the selection made that.
+        """
+
+        self._anchor = anchor
+
+        if self.mode not in VISUAL_MODES:
+            self.set_mode(MODE_VISUAL)
+
+        self.buffer.move_cursor(*head)
+        self._clamp()
+        self._show_selection()
+
+    def _show_selection(self) -> None:
+        """Have the host draw the selection as it now stands."""
+
+        assert self._anchor is not None
+        self.buffer.select(self._anchor, self.mode == MODE_VISUAL_LINE)
 
     def _extends_count(self, key: str) -> bool:
         """
@@ -519,6 +610,8 @@ class VimEngine:
                 self.buffer.prompt_changed()
             elif action is VimCommand.SEARCH_WORD:
                 self._search_word(cursor, count)
+            elif action in VISUAL_COMMANDS:
+                self.set_mode(VISUAL_COMMANDS[action])
 
             return
 
@@ -892,6 +985,160 @@ class VimEngine:
         else:
             self._operate_on_text(operator, found.start, found.end, False)
 
+    def _run_on_selection(self, action: VimAction) -> None:
+        """A key that isn't a motion, in VISUAL or V-LINE."""
+
+        counted = bool(self._count)
+        count = self._take_count()
+        action = VISUAL_MEANINGS.get(action, action)
+
+        if isinstance(action, VimOperator):
+            self._operate_on_selection(action, count)
+        elif isinstance(action, VimTextObject):
+            self._select_object(action, count)
+        elif action in VISUAL_COMMANDS:
+            # Its own key again leaves it, as in vim; the other one switches
+            mode = VISUAL_COMMANDS[action]
+            self.set_mode(MODE_NORMAL if mode == self.mode else mode)
+        elif action in OTHER_END:
+            assert self._anchor is not None
+            self._anchor, other = self.buffer.cursor, self._anchor
+            self.buffer.move_cursor(*other)
+            self._clamp()
+        elif action in (VimCommand.PASTE_AFTER, VimCommand.PASTE_BEFORE):
+            self._replace_selection(count, keep=action is VimCommand.PASTE_BEFORE)
+        elif action in KEPT_IN_VISUAL:
+            self._run(action, count, counted)
+        elif action in (VimCommand.UNDO, VimCommand.REDO):
+            # Nothing it could mean on a selection, so it's NORMAL's
+            self.set_mode(MODE_NORMAL)
+            self._run(action, count, counted)
+
+    def _selected(self) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        """
+        What VISUAL takes, from a place up to, not including, another. On an empty
+        line, that's the line break.
+        """
+
+        assert self._anchor is not None
+        buffer = self.buffer
+        start, last = sorted((self._anchor, buffer.cursor))
+        row, column = last
+
+        if column < len(buffer.line(row)):
+            return start, (row, column + 1)
+
+        if row < buffer.line_count - 1:
+            return start, (row + 1, 0)
+
+        return start, last
+
+    def _selected_rows(self) -> Tuple[int, int]:
+        """The first and last line the selection touches."""
+
+        assert self._anchor is not None
+        rows = self._anchor[0], self.buffer.cursor[0]
+        return min(rows), max(rows)
+
+    def _operate_on_selection(self, operator: VimOperator, count: int) -> None:
+        """Carry out `operator` on what's selected, which ends VISUAL."""
+
+        assert self._anchor is not None
+        top, bottom = self._selected_rows()
+
+        if operator in NESTING:
+            # As in vim: a count is that many levels
+            self._nest_lines(top, bottom, NESTING[operator] * count)
+        elif self.mode == MODE_VISUAL_LINE:
+            column = min(self._anchor, self.buffer.cursor)[1]
+            self._take_lines(operator, top, bottom, column=column)
+        else:
+            self._take_text(operator, *self._selected())
+
+        if self.mode in VISUAL_MODES:
+            self.set_mode(MODE_NORMAL)
+
+    def _select_object(self, text_object: VimTextObject, count: int) -> None:
+        """Select what `text_object` covers from the cursor; nothing leaves it be."""
+
+        buffer = self.buffer
+        found = text_objects.span(buffer, text_object, *buffer.cursor, count)
+
+        if found is None or found.empty:
+            return
+
+        if found.linewise:
+            self._anchor = found.start[0], 0
+            self.set_mode(MODE_VISUAL_LINE)
+            buffer.move_cursor(found.end[0], 0)
+            return
+
+        # The end is the first place it doesn't take: the cursor goes on the
+        # character before it, or the last one on the line above
+        row, column = found.end
+
+        if column == 0:
+            row -= 1
+            column = len(buffer.line(row))
+
+        # As in vim: characters selected from V-LINE are taken as characters
+        self._anchor = found.start
+        self.set_mode(MODE_VISUAL)
+        buffer.move_cursor(row, max(0, column - 1))
+        self._clamp()
+
+    def _replace_selection(self, count: int, *, keep: bool) -> None:
+        """
+        Put the register in place of what's selected, which ends VISUAL. What
+        was selected goes to the register, unless `keep`.
+        """
+
+        buffer = self.buffer
+        register = self._register_to_paste()
+
+        if register is None:
+            buffer.report("Nothing to paste")
+            self.set_mode(MODE_NORMAL)
+            return
+
+        span = self.selected_span
+        assert span is not None
+        start, end = span
+        removed = Register(
+            self._text_between(start, end), linewise=self.mode == MODE_VISUAL_LINE
+        )
+
+        lines_out = removed.linewise or register.linewise
+        text = register.text
+
+        if register.from_clipboard:
+            buffer.replace(start, end, "")
+            self._paste_clipboard_text(text, count, start)
+        elif lines_out:
+            pasted = "\n".join([text] * count)
+
+            # Lines in place of characters go on lines of their own
+            if not removed.linewise:
+                pasted = f"\n{pasted}\n"
+
+            buffer.replace(start, end, pasted)
+            self._to_first_non_blank(start[0] + (not removed.linewise))
+        else:
+            buffer.replace(start, end, text * count)
+
+            if "\n" in text:
+                buffer.move_cursor(*start)
+            else:
+                buffer.move_cursor(start[0], start[1] + len(text) * count - 1)
+
+        if not keep:
+            self._register_memory.register = removed
+
+        if self.mode in VISUAL_MODES:
+            self.set_mode(MODE_NORMAL)
+
+        self._clamp()
+
     def _operate_on_find(
         self,
         operator: VimOperator,
@@ -961,6 +1208,15 @@ class VimEngine:
                 return
 
             end = end[0] - 1, len(buffer.line(end[0] - 1))
+
+        self._take_text(operator, start, end)
+
+    def _take_text(
+        self, operator: VimOperator, start: Tuple[int, int], end: Tuple[int, int]
+    ) -> None:
+        """Take what's from `start` up to `end`, in order, and stand where it was."""
+
+        buffer = self.buffer
 
         if operator in NESTING:
             self._nest_lines(start[0], end[0], NESTING[operator])
@@ -1062,7 +1318,9 @@ class VimEngine:
         self._yank(self._lines_between(top, bottom), linewise=True)
         buffer.move_cursor(top, min(column, self._last_column(top)))
 
-    def _paste(self, count: int, *, before: bool) -> None:
+    def _register_to_paste(self) -> Optional[Register]:
+        """The register, unless the system clipboard has news, which then fills it."""
+
         memory = self._register_memory
         clipboard = self.buffer.clipboard_text()
 
@@ -1071,12 +1329,15 @@ class VimEngine:
             memory.register = Register(clipboard, False, from_clipboard=True)
             memory.known_clipboard = clipboard
 
-        register = memory.register
+        return memory.register
+
+    def _paste(self, count: int, *, before: bool) -> None:
+        register = self._register_to_paste()
 
         if register is None:
             self.buffer.report("Nothing to paste")
         elif register.from_clipboard:
-            self._paste_clipboard_text(register.text, count, before)
+            self._paste_clipboard_text(register.text, count, self._paste_place(before))
         elif register.linewise:
             self._paste_lines(register.text, count, before)
         else:
@@ -1107,7 +1368,9 @@ class VimEngine:
 
         self._clamp()
 
-    def _paste_clipboard_text(self, text: str, count: int, before: bool) -> None:
+    def _paste_clipboard_text(
+        self, text: str, count: int, start: Tuple[int, int]
+    ) -> None:
         """
         The host makes what it likes of this, so only it knows how long it came
         out. Goes by way of INSERT, as only that can stand past a line's last
@@ -1116,7 +1379,6 @@ class VimEngine:
 
         buffer = self.buffer
         last_insert = self._last_insert
-        start = self._paste_place(before)
 
         self._insert_at(*start)
 

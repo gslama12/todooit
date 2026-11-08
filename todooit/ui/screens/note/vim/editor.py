@@ -72,6 +72,11 @@ class NoteEditor(ClipboardEditing):
         # Resolved character, not raw key name, so motions on ö etc. match the trees.
         key = self.host.resolve_key(event)
 
+        # A shifted key or a drag just now selected without the engine; it may
+        # not know yet. From here on it's the keys that move the selection.
+        self.adopt_selection()
+        self.mouse_selecting = False
+
         used = self.engine.feed(key)
         self.show_find_view()
         self.show_search()
@@ -98,6 +103,10 @@ class NoteEditor(ClipboardEditing):
             return
 
         await super()._on_key(event)
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        # Textual goes on to the classes below by itself
+        self.mouse_selecting = True
 
     def _key_used(self, event: events.Key) -> None:
         event.stop()

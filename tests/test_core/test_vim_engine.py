@@ -17,6 +17,8 @@ from todooit.vim_engine import (
     MODE_FLASH,
     MODE_INSERT,
     MODE_NORMAL,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
     VIM_FLASH_ALPHABET,
     FindView,
     Register,
@@ -58,6 +60,8 @@ class MemoryBuffer:
         # Rows drawn differently: the text, and the stored column behind each of
         # its columns and its end
         self.drawn: Dict[int, Tuple[str, List[int]]] = {}
+        # What's shown selected: from where, to the cursor, and whether as lines
+        self.selected: Optional[Tuple[Tuple[int, int], Tuple[int, int], bool]] = None
 
     @property
     def line_count(self) -> int:
@@ -74,6 +78,10 @@ class MemoryBuffer:
 
     def move_cursor(self, row: int, column: int) -> None:
         self.cursor = (row, column)
+        self.selected = None
+
+    def select(self, anchor: Tuple[int, int], linewise: bool) -> None:
+        self.selected = (anchor, self.cursor, linewise)
 
     def replace(
         self, start: Tuple[int, int], end: Tuple[int, int], text: str
@@ -84,6 +92,7 @@ class MemoryBuffer:
         self.step_edited = True
 
     def _go_down(self, delta: int) -> None:
+        self.selected = None
         row = max(0, min(self.cursor[0] + delta, self.line_count - 1))
         self.cursor = (row, min(self.cursor[1], len(self.lines[row])))
 
@@ -4091,3 +4100,390 @@ def test_ys_yanks_up_to_the_target_and_stays_put():
     assert engine.register == Register("xa xb x", linewise=False)
     assert buffer_of(engine).cursor == (0, 0)
     assert engine.mode == MODE_NORMAL
+
+
+# VISUAL and V-LINE
+
+
+def visual_keys() -> VimKeymap:
+    keys = text_object_keys()
+    for key, action in yank_keys()._bindings.items():
+        keys.set(key, action)
+    keys.set(">", VimOperator.INDENT)
+    keys.set("<", VimOperator.UNINDENT)
+    keys.set("v", VimCommand.VISUAL)
+    keys.set("V", VimCommand.VISUAL_LINE)
+    keys.set("o", VimCommand.OPEN_BELOW)
+    keys.set("s", VimMotion.VIM_FLASH)
+    return keys
+
+
+def visual_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), visual_keys(), **options)
+
+
+def test_v_and_shift_v_enter_visual_and_v_line_and_tell_the_host():
+    engine = visual_on("abc\ndef", (0, 1))
+
+    feed(engine, "v")
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 1), (0, 1))
+    assert buffer_of(engine).selected == ((0, 1), (0, 1), False)
+
+    feed(engine, "V")
+    assert engine.mode == MODE_VISUAL_LINE
+    assert buffer_of(engine).selected == ((0, 1), (0, 1), True)
+
+    feed(engine, "v")
+    assert engine.mode == MODE_VISUAL
+    assert buffer_of(engine).modes == [MODE_VISUAL, MODE_VISUAL_LINE, MODE_VISUAL]
+
+
+@pytest.mark.parametrize("key", ["v", "V"])
+def test_the_same_key_again_leaves_for_normal(key):
+    engine = visual_on("abc\ndef", (0, 1))
+
+    feed(engine, key + "l" + key)
+
+    assert engine.mode == MODE_NORMAL
+    assert engine.selection is None
+    assert buffer_of(engine).selected is None
+    assert buffer_of(engine).cursor == (1, 1)
+
+
+def test_escape_leaves_visual_and_is_used():
+    engine = visual_on("abc", (0, 1))
+
+    feed(engine, "vö")
+
+    assert engine.feed("escape")
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).selected is None
+    assert buffer_of(engine).cursor == (0, 2)
+
+    # With nothing left to leave, it's the host's again
+    assert not engine.feed("escape")
+
+
+def test_escape_cancels_a_half_typed_object_before_visual():
+    engine = visual_on("abc", (0, 1))
+
+    feed(engine, "vi")
+    assert engine.pending == "i"
+
+    engine.feed("escape")
+    assert engine.mode == MODE_VISUAL
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, selection",
+    [
+        ("abc def", (0, 0), "vw", ((0, 0), (0, 4))),
+        ("abc def", (0, 0), "v_", ((0, 0), (0, 6))),
+        ("abc def", (0, 5), "vb", ((0, 5), (0, 4))),
+        ("abc\ndef", (0, 1), "vl", ((0, 1), (1, 1))),
+        ("abc def", (0, 0), "vf ", ((0, 0), (0, 3))),
+        ("abc def", (0, 0), "v2ö", ((0, 0), (0, 2))),
+        # The cursor never goes past the last character
+        ("abc", (0, 0), "v9ö", ((0, 0), (0, 2))),
+        ("abc\nd", (0, 2), "vl", ((0, 2), (1, 0))),
+    ],
+)
+def test_motions_extend_the_selection(text, start, keys, selection):
+    engine = visual_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == selection
+    assert buffer_of(engine).selected == (*selection, False)
+    assert buffer_of(engine).text == text
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, mode, selection",
+    [
+        ("a { b c } d", (0, 5), "vi{", MODE_VISUAL, ((0, 3), (0, 7))),
+        ("a { b c } d", (0, 5), "va{", MODE_VISUAL, ((0, 2), (0, 8))),
+        ('say "hi there" ok', (0, 6), 'va"', MODE_VISUAL, ((0, 4), (0, 14))),
+        ("foo bar baz", (0, 5), "viw", MODE_VISUAL, ((0, 4), (0, 6))),
+        ("a foo.bar(x) b", (0, 4), "viW", MODE_VISUAL, ((0, 2), (0, 11))),
+        ("a foo.bar(x) b", (0, 4), "vi ", MODE_VISUAL, ((0, 2), (0, 11))),
+        ("one\ntwo\n\nthree", (0, 1), "vip", MODE_VISUAL_LINE, ((0, 0), (1, 0))),
+        # Contents on lines of their own are taken as lines, as in vim
+        ("f {\n  a\n  b\n}", (1, 2), "vi{", MODE_VISUAL_LINE, ((1, 0), (2, 0))),
+    ],
+)
+def test_text_objects_select_what_they_cover(text, start, keys, mode, selection):
+    engine = visual_on(text, start)
+
+    feed(engine, keys)
+
+    assert engine.mode == mode
+    assert engine.selection == selection
+    assert buffer_of(engine).selected == (*selection, mode == MODE_VISUAL_LINE)
+    assert buffer_of(engine).text == text
+
+
+def test_a_character_object_in_v_line_selects_characters():
+    engine = visual_on("foo bar", (0, 5))
+
+    feed(engine, "Viw")
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 4), (0, 6))
+
+
+def test_an_object_with_nothing_inside_leaves_the_selection_be():
+    engine = visual_on("f() x", (0, 1))
+
+    feed(engine, "vi(")
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 1), (0, 1))
+
+
+def test_i_and_a_wait_for_an_object_instead_of_inserting():
+    engine = visual_on("abc", (0, 1))
+
+    feed(engine, "vi")
+    assert engine.mode == MODE_VISUAL
+    feed(engine, "a")
+    assert engine.mode == MODE_VISUAL
+    assert buffer_of(engine).text == "abc"
+
+
+def test_o_goes_to_the_other_end():
+    engine = visual_on("abc def", (0, 1))
+
+    feed(engine, "vwo")
+
+    assert engine.selection == ((0, 4), (0, 1))
+    assert buffer_of(engine).cursor == (0, 1)
+
+    feed(engine, "o")
+    assert engine.selection == ((0, 1), (0, 4))
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        # Both ends are taken, whichever way it was made
+        ("abc def", (0, 1), "vöd", "a def", (0, 1), "bc"),
+        ("abc def", (0, 2), "vjd", "a def", (0, 1), "bc"),
+        ("abc def", (0, 1), "vöx", "a def", (0, 1), "bc"),
+        ("abc\ndef", (0, 1), "vld", "af", (0, 1), "bc\nde"),
+        # The last character, and from an empty line its line break
+        ("abc", (0, 1), "v_d", "a", (0, 0), "bc"),
+        ("a\n\nb", (0, 0), "vld", "b", (0, 0), "a\n\n"),
+        ("abc\ndef\nghi", (1, 1), "Vd", "abc\nghi", (1, 1), "def"),
+        ("abc\ndef\nghi", (0, 1), "Vld", "ghi", (0, 1), "abc\ndef"),
+        ("abc\ndef\nghi", (2, 1), "Vkd", "abc", (0, 1), "def\nghi"),
+    ],
+)
+def test_delete_takes_the_selection(text, start, keys, after, cursor, register):
+    engine = visual_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).selected is None
+    assert engine.register is not None
+    assert engine.register.text == register
+    assert engine.register.linewise == keys.startswith("V")
+
+
+@pytest.mark.parametrize(
+    "start, keys, register, linewise, cursor",
+    [
+        ((0, 3), "vby", "abc ", False, (0, 0)),
+        ((0, 0), "viwy", "abc", False, (0, 0)),
+        ((1, 2), "Vky", "abc def\nxyz", True, (0, 2)),
+    ],
+)
+def test_yank_copies_the_selection_and_goes_to_its_start(
+    start, keys, register, linewise, cursor
+):
+    engine = visual_on("abc def\nxyz", start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == "abc def\nxyz"
+    assert engine.register == Register(register, linewise)
+    assert buffer_of(engine).clipboard == register
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+
+
+def test_change_takes_the_selection_and_types_in_its_place():
+    engine = visual_on("abc def", (0, 4))
+
+    feed(engine, "viwc")
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == "abc "
+    assert buffer_of(engine).cursor == (0, 4)
+    assert engine.register == Register("def", False)
+
+
+def test_change_on_lines_keeps_the_first_ones_marker():
+    engine = visual_on("- one\n- two\nthree", (0, 3))
+
+    feed(engine, "Vlc")
+
+    assert engine.mode == MODE_INSERT
+    assert buffer_of(engine).text == "- \nthree"
+    assert buffer_of(engine).cursor == (0, 2)
+
+
+@pytest.mark.parametrize(
+    "keys, after",
+    [
+        ("Vl>", "    a\n    b\nc"),
+        ("vl>", "    a\n    b\nc"),
+        ("Vl2>", "      a\n      b\nc"),
+        ("Vl<", "a\nb\nc"),
+    ],
+)
+def test_indenting_the_selection_returns_to_normal(keys, after):
+    engine = visual_on("  a\n  b\nc", (0, 2))
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).selected is None
+
+
+def test_every_selection_edit_is_one_undo_step():
+    engine = visual_on("abc def\nxyz", (0, 0))
+
+    feed(engine, "vwld")
+    assert buffer_of(engine).text == ""
+
+    feed(engine, "u")
+    assert buffer_of(engine).text == "abc def\nxyz"
+
+
+@pytest.mark.parametrize(
+    "text, start, yank, keys, after, cursor, register",
+    [
+        # Characters over characters, the selection going to the register
+        ("ab cd", (0, 0), "yiw", "wviwp", "ab ab", (0, 4), "cd"),
+        # `P` keeps the register as it was
+        ("ab cd", (0, 0), "yiw", "wviwP", "ab ab", (0, 4), "ab"),
+        # Lines over lines
+        ("ab\ncd\nef", (0, 0), "yy", "lVlp", "ab\nab", (1, 0), "cd\nef"),
+        # Lines over characters go on lines of their own
+        ("ab\ncd", (0, 0), "yy", "lvp", "ab\n\nab\nd", (2, 0), "c"),
+        # Characters over lines take their place
+        ("ab\ncd", (0, 0), "yiw", "lVp", "ab\nab", (1, 0), "cd"),
+        # A count puts in that many
+        ("ab cd", (0, 0), "yiw", "wviw2p", "ab abab", (0, 6), "cd"),
+    ],
+)
+def test_p_replaces_the_selection(text, start, yank, keys, after, cursor, register):
+    engine = visual_on(text, start)
+
+    feed(engine, yank)
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.mode == MODE_NORMAL
+    assert engine.register is not None
+    assert engine.register.text == register
+
+
+def test_p_over_a_selection_pastes_a_new_clipboard_the_hosts_way():
+    engine = visual_on("ab cd", (0, 3))
+    buffer_of(engine).clipboard = "XY"
+
+    feed(engine, "viwp")
+
+    assert buffer_of(engine).text == "ab XY"
+    assert buffer_of(engine).clipboard_pastes == ["XY"]
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).cursor == (0, 4)
+
+
+def test_p_with_nothing_to_paste_says_so_and_leaves_visual():
+    engine = visual_on("ab", (0, 0))
+
+    feed(engine, "vp")
+
+    assert buffer_of(engine).text == "ab"
+    assert buffer_of(engine).reports == ["Nothing to paste"]
+    assert engine.mode == MODE_NORMAL
+
+
+def test_commands_with_no_meaning_on_a_selection_do_nothing():
+    engine = visual_on("abc", (0, 0))
+
+    feed(engine, "vöIAsr")
+
+    assert engine.mode == MODE_VISUAL
+    assert buffer_of(engine).text == "abc"
+    assert engine.selection == ((0, 0), (0, 1))
+
+
+def test_a_search_extends_the_selection():
+    engine = visual_on("abc def abc", (0, 0))
+
+    feed(engine, "v?def")
+    assert engine.selection == ((0, 0), (0, 4))
+    engine.feed("enter")
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 0), (0, 4))
+    assert buffer_of(engine).selected == ((0, 0), (0, 4), False)
+
+
+def test_a_host_selection_enters_visual_and_carries_on():
+    engine = visual_on("abc def", (0, 0))
+    buffer = buffer_of(engine)
+
+    # As a drag can leave it: its end past the last character
+    engine.select_between((0, 2), (0, 7))
+
+    assert engine.mode == MODE_VISUAL
+    assert engine.selection == ((0, 2), (0, 6))
+    assert buffer.selected == ((0, 2), (0, 6), False)
+
+    engine.select_between((0, 2), (0, 4))
+    assert engine.selection == ((0, 2), (0, 4))
+
+    feed(engine, "d")
+    assert buffer.text == "abef"
+
+
+def test_a_host_selection_in_v_line_stays_lines():
+    engine = visual_on("abc\ndef", (0, 1))
+
+    feed(engine, "V")
+    engine.select_between((0, 1), (1, 1))
+
+    assert engine.mode == MODE_VISUAL_LINE
+    assert buffer_of(engine).selected == ((0, 1), (1, 1), True)
+
+
+def test_undo_in_visual_leaves_it_and_undoes():
+    engine = visual_on("abc", (0, 0))
+
+    feed(engine, "x")
+    feed(engine, "vu")
+
+    assert engine.mode == MODE_NORMAL
+    assert buffer_of(engine).text == "abc"
+
+
+def test_a_host_on_one_line_has_no_v_line():
+    engine = visual_on("abc", (0, 0), multiline=False)
+
+    assert not engine.feed("V")
+    assert engine.mode == MODE_NORMAL
+
+    feed(engine, "vöd")
+    assert buffer_of(engine).text == "c"

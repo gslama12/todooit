@@ -550,6 +550,9 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("<ctrl+r>", VimCommand.REDO)
     api.vim.keys.set("?", VimCommand.SEARCH)
     api.vim.keys.set("*", VimCommand.SEARCH_WORD)
+    # On a selection `o` goes to its other end, `x` deletes it, `p` replaces it
+    api.vim.keys.set("v", VimCommand.VISUAL)
+    api.vim.keys.set("V", VimCommand.VISUAL_LINE)
 
 
 @subscribe(Startup)

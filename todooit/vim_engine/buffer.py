@@ -30,7 +30,14 @@ class Buffer(Protocol):
         """Where the cursor is."""
 
     def move_cursor(self, row: int, column: int) -> None:
-        """Put the cursor at this place, which the engine has checked."""
+        """Put the cursor at this place, which the engine has checked. Ends any selection."""
+
+    def select(self, anchor: Tuple[int, int], linewise: bool) -> None:
+        """
+        Show what VISUAL has selected: from `anchor` to the cursor, the characters
+        at both ends taken, or with `linewise` every whole line from one to the
+        other. Asked again after each key in VISUAL; moving the cursor ends it.
+        """
 
     def replace(
         self, start: Tuple[int, int], end: Tuple[int, int], text: str

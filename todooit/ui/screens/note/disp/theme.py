@@ -22,6 +22,7 @@ from .markup import (
     QUOTE_ITEM,
     RULE_SPAN,
     SEARCH_MATCH,
+    SELECTED,
     TARGET,
 )
 
@@ -86,5 +87,7 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             SEARCH_MATCH: Style(color=theme.background1, bgcolor=theme.yellow),
             MARKED: Style(color=theme.background1, bgcolor=theme.blue),
             MARKED_FIRST: Style(color=theme.background1, bgcolor=theme.cyan),
+            # V-LINE's whole lines, as the selection itself looks.
+            SELECTED: Style(bgcolor=theme.background3),
         },
     )

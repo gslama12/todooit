@@ -28,11 +28,25 @@ from todooit.ui.screens.note.disp.markup import (
     MARKED,
     MARKED_FIRST,
     SEARCH_MATCH,
+    SELECTED,
     TARGET,
 )
-from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
+from todooit.ui.screens.note.vim.modes import (
+    MODE_INSERT,
+    MODE_NORMAL,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
+)
 from todooit.vim_engine import MODE_FLASH, VIM_FLASH_ALPHABET, VimCommand, VimMotion
 from todooit.vim_engine.engine import NESTING_LEVEL
+
+
+def visual_text(editor) -> str:
+    """What VISUAL takes, which the TextArea's own selection stops one short of."""
+
+    span = editor.engine.selected_span
+    assert span is not None
+    return editor.get_text_range(*span)
 
 
 async def note_holding(pilot, text: str) -> NoteScreen:
@@ -288,14 +302,17 @@ async def test_a_click_past_the_end_of_a_line_lands_on_its_last_character():
         assert screen.editor.cursor_location == (0, 2)
 
 
-async def test_a_selection_may_still_reach_the_end_of_the_line():
+async def test_a_selection_to_the_end_of_the_line_stops_on_its_last_character():
     async with run_pilot() as pilot:
         screen = await note_holding(pilot, "abc")
         editor = screen.editor
 
         await pilot.press("shift+end")
+        await pilot.pause()
 
-        assert editor.selection == Selection((0, 0), (0, 3))
+        assert editor.mode == MODE_VISUAL
+        assert editor.cursor_location == (0, 2)
+        assert visual_text(editor) == "abc"
 
 
 async def test_escape_goes_to_normal_from_insert_then_closes_from_normal():
@@ -1235,12 +1252,12 @@ async def test_ctrl_a_and_shift_selection_work_in_normal():
 
         await pilot.press("shift+right", "shift+right")
         await pilot.pause()
-        assert editor.selected_text == "ab"
+        assert visual_text(editor) == "ab"
 
         await pilot.press("ctrl+a")
         await pilot.pause()
-        assert editor.selected_text == "abc\ndef"
-        assert editor.mode == MODE_NORMAL
+        assert visual_text(editor) == "abc\ndef"
+        assert editor.mode == MODE_VISUAL
 
 
 async def test_copy_cut_and_paste_work_from_normal():
@@ -3033,3 +3050,158 @@ async def test_ci_quote_changes_inside_the_quotes_in_a_note():
 
         assert screen.editor.text == 'say "yo" now'
         assert screen.editor.mode == MODE_INSERT
+
+
+# VISUAL and V-LINE in the window
+
+
+def selected_spans(editor) -> list:
+    return [span for span in editor.standing_spans() if span[3] == SELECTED]
+
+
+async def test_v_shows_visual_on_the_chip_and_draws_every_selected_line_raw():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "- one\ntwo\nthree")
+        editor = screen.editor
+        await pilot.press("ö")
+        assert editor.document.raw_rows == range(1)
+
+        await pilot.press("v", "l", "l")
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL
+        assert screen.frame.border_subtitle == " VISUAL "
+        assert editor.document.raw_rows == range(3)
+        assert editor.cursor_location == (2, 1)
+        assert visual_text(editor) == " one\n- two\n- "
+
+        # The hint line says what a selection takes
+        assert "yank" in str(screen.hint.render())
+
+        await pilot.press("k")
+        await pilot.pause()
+        assert editor.document.raw_rows == range(2)
+
+
+async def test_v_line_shows_on_the_chip_and_draws_its_lines_whole():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "- one\ntwo\nthree")
+        editor = screen.editor
+        await pilot.press("ö", "ö")
+
+        await pilot.press("V", "l")
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL_LINE
+        assert screen.frame.border_subtitle == " V-LINE "
+        assert editor.document.raw_rows == range(2)
+        assert selected_spans(editor) == [(0, 0, 5, SELECTED), (1, 0, 5, SELECTED)]
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert selected_spans(editor) == []
+        assert editor.selection.is_empty
+
+
+async def test_escape_leaves_visual_and_keeps_the_note_open():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc")
+        editor = screen.editor
+
+        await pilot.press("v", "ö", "escape")
+        await pilot.pause()
+
+        assert pilot.app.screen is screen
+        assert editor.mode == MODE_NORMAL
+        assert editor.selection.is_empty
+        assert screen.frame.border_subtitle == " NORMAL "
+
+
+async def test_y_d_and_c_act_on_the_selection_in_the_window():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "one two\nthree")
+        editor = screen.editor
+
+        await pilot.press("v", "i", "w", "y")
+        await pilot.pause()
+        assert pilot.app.clipboard == "one"
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("V", "l", ">")
+        await pilot.pause()
+        assert editor.text == f"{NESTING_LEVEL}one two\n{NESTING_LEVEL}three"
+        assert editor.mode == MODE_NORMAL
+
+        await pilot.press("v", "e", "d")
+        await pilot.pause()
+        assert editor.text == f"{NESTING_LEVEL} two\n{NESTING_LEVEL}three"
+
+        await pilot.press("v", "e", "c", "X")
+        await pilot.pause()
+        assert editor.mode == MODE_INSERT
+        assert editor.text == f"{NESTING_LEVEL}X\n{NESTING_LEVEL}three"
+
+
+async def test_p_replaces_the_selection_in_the_window():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "ab cd")
+        editor = screen.editor
+
+        # Nothing newer on the clipboard than the yank, whatever ran before
+        set_clipboard("")
+
+        await pilot.press("y", "i", "w", "w", "v", "i", "w", "p")
+        await pilot.pause()
+
+        assert editor.text == "ab ab"
+        assert editor.mode == MODE_NORMAL
+
+
+async def test_shift_selection_from_normal_enters_visual():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc\ndef")
+        editor = screen.editor
+
+        await pilot.press("shift+down")
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL
+        assert screen.frame.border_subtitle == " VISUAL "
+        assert editor.document.raw_rows == range(2)
+        assert visual_text(editor) == "abc\nd"
+
+        # The vim keys carry it on from there
+        await pilot.press("ö", "d")
+        await pilot.pause()
+        assert editor.text == "f"
+
+
+async def test_ctrl_c_in_visual_takes_the_cursors_character_too():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc def")
+
+        await pilot.press("v", "e", "ctrl+c")
+        await pilot.pause()
+
+        assert pilot.app.clipboard == "abc"
+        assert screen.editor.mode == MODE_VISUAL
+
+
+async def test_a_drag_enters_visual_and_a_click_leaves_it():
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abcdef")
+        editor = screen.editor
+
+        await pilot.mouse_down(editor, offset=Offset(1, 0))
+        await pilot.hover(editor, offset=Offset(4, 0))
+        await pilot.mouse_up(editor, offset=Offset(4, 0))
+        await pilot.pause()
+
+        assert editor.mode == MODE_VISUAL
+        assert visual_text(editor) == "bcd"
+
+        await pilot.click(editor, offset=Offset(5, 0))
+        await pilot.pause()
+
+        assert editor.mode == MODE_NORMAL
+        assert editor.selection.is_empty
