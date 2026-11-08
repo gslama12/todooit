@@ -525,6 +525,22 @@ def vim_key_setup(api: TodooitAPI, _):
     api.vim.keys.set("<<", VimCommand.UNINDENT_LINE)
     api.vim.keys.set("ip", VimTextObject.INNER_PARAGRAPH)
     api.vim.keys.set("ap", VimTextObject.AROUND_PARAGRAPH)
+    api.vim.keys.set("iw", VimTextObject.INNER_WORD)
+    api.vim.keys.set("aw", VimTextObject.AROUND_WORD)
+    api.vim.keys.set(["iW", "i "], VimTextObject.INNER_BIG_WORD)
+    api.vim.keys.set("aW", VimTextObject.AROUND_BIG_WORD)
+    # Either half of a pair names it
+    for inner, around, pair in (
+        (VimTextObject.INNER_PARENS, VimTextObject.AROUND_PARENS, "()"),
+        (VimTextObject.INNER_BRACKETS, VimTextObject.AROUND_BRACKETS, "[]"),
+        (VimTextObject.INNER_BRACES, VimTextObject.AROUND_BRACES, "{}"),
+        (VimTextObject.INNER_ANGLES, VimTextObject.AROUND_ANGLES, "<>"),
+        (VimTextObject.INNER_DOUBLE_QUOTES, VimTextObject.AROUND_DOUBLE_QUOTES, '"'),
+        (VimTextObject.INNER_SINGLE_QUOTES, VimTextObject.AROUND_SINGLE_QUOTES, "'"),
+        (VimTextObject.INNER_BACKTICKS, VimTextObject.AROUND_BACKTICKS, "`"),
+    ):
+        api.vim.keys.set([f"i{char}" for char in pair], inner)
+        api.vim.keys.set([f"a{char}" for char in pair], around)
     api.vim.keys.set("r", VimCommand.REPLACE_CHAR)
     api.vim.keys.set("y", VimOperator.YANK)
     api.vim.keys.set("yy", VimCommand.YANK_LINE)

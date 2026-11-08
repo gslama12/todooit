@@ -82,6 +82,24 @@ class VimTextObject(Enum):
 
     INNER_PARAGRAPH = "inner_paragraph"
     AROUND_PARAGRAPH = "around_paragraph"
+    INNER_WORD = "inner_word"
+    AROUND_WORD = "around_word"
+    INNER_BIG_WORD = "inner_big_word"
+    AROUND_BIG_WORD = "around_big_word"
+    INNER_PARENS = "inner_parens"
+    AROUND_PARENS = "around_parens"
+    INNER_BRACKETS = "inner_brackets"
+    AROUND_BRACKETS = "around_brackets"
+    INNER_BRACES = "inner_braces"
+    AROUND_BRACES = "around_braces"
+    INNER_ANGLES = "inner_angles"
+    AROUND_ANGLES = "around_angles"
+    INNER_DOUBLE_QUOTES = "inner_double_quotes"
+    AROUND_DOUBLE_QUOTES = "around_double_quotes"
+    INNER_SINGLE_QUOTES = "inner_single_quotes"
+    AROUND_SINGLE_QUOTES = "around_single_quotes"
+    INNER_BACKTICKS = "inner_backticks"
+    AROUND_BACKTICKS = "around_backticks"
 
 
 VimAction = Union[VimMotion, VimCommand, VimOperator, VimTextObject]

@@ -15,24 +15,24 @@ Place = Tuple[int, int]
 # One step of a motion that can be repeated: from a place, to the next
 Step = Callable[[Buffer, int, int], Place]
 
-_BLANK, _WORD, _PUNCTUATION = range(3)
+BLANK, WORD, PUNCTUATION = range(3)
 
 
-def _kind(char: str) -> int:
+def char_kind(char: str) -> int:
     if char.isspace():
-        return _BLANK
+        return BLANK
 
     # A combining mark is the rest of a letter: an umlaut can be stored as two
     is_word = char.isalnum() or char == "_" or unicodedata.combining(char)
 
-    return _WORD if is_word else _PUNCTUATION
+    return WORD if is_word else PUNCTUATION
 
 
 def is_whole_word(text: str, start: int, end: int) -> bool:
     """Whether what's between these columns has no word running on from either end."""
 
-    return (start == 0 or _kind(text[start - 1]) != _WORD) and (
-        end == len(text) or _kind(text[end]) != _WORD
+    return (start == 0 or char_kind(text[start - 1]) != WORD) and (
+        end == len(text) or char_kind(text[end]) != WORD
     )
 
 
@@ -41,7 +41,7 @@ def word_at(text: str, column: int) -> Optional[Tuple[int, int]]:
 
     start = column
 
-    while start < len(text) and _kind(text[start]) != _WORD:
+    while start < len(text) and char_kind(text[start]) != WORD:
         start += 1
 
     if start == len(text):
@@ -49,10 +49,10 @@ def word_at(text: str, column: int) -> Optional[Tuple[int, int]]:
 
     end = start
 
-    while end < len(text) and _kind(text[end]) == _WORD:
+    while end < len(text) and char_kind(text[end]) == WORD:
         end += 1
 
-    while start > 0 and _kind(text[start - 1]) == _WORD:
+    while start > 0 and char_kind(text[start - 1]) == WORD:
         start -= 1
 
     return start, end
@@ -63,12 +63,12 @@ def next_word_start(buffer: Buffer, row: int, column: int) -> Place:
 
     text = buffer.line(row)
 
-    if column < len(text) and (kind := _kind(text[column])) != _BLANK:
-        while column < len(text) and _kind(text[column]) == kind:
+    if column < len(text) and (kind := char_kind(text[column])) != BLANK:
+        while column < len(text) and char_kind(text[column]) == kind:
             column += 1
 
     while True:
-        while column < len(text) and _kind(text[column]) == _BLANK:
+        while column < len(text) and char_kind(text[column]) == BLANK:
             column += 1
 
         if column < len(text):
@@ -96,10 +96,10 @@ def word_operand_end(buffer: Buffer, row: int, column: int) -> Place:
     if not text:
         return (row + 1, 0) if row < buffer.line_count - 1 else (row, 0)
 
-    if column < len(text) and _kind(text[column]) != _BLANK:
+    if column < len(text) and char_kind(text[column]) != BLANK:
         _, column = word_change_end(buffer, row, column)
 
-    while column < len(text) and _kind(text[column]) == _BLANK:
+    while column < len(text) and char_kind(text[column]) == BLANK:
         column += 1
 
     return row, column
@@ -111,9 +111,9 @@ def word_change_end(buffer: Buffer, row: int, column: int) -> Place:
     text = buffer.line(row)
 
     if column < len(text):
-        kind = _kind(text[column])
+        kind = char_kind(text[column])
 
-        while column < len(text) and _kind(text[column]) == kind:
+        while column < len(text) and char_kind(text[column]) == kind:
             column += 1
 
     return row, column
@@ -125,7 +125,7 @@ def previous_word_start(buffer: Buffer, row: int, column: int) -> Place:
     text = buffer.line(row)
     column -= 1
 
-    while column < 0 or _kind(text[column]) == _BLANK:
+    while column < 0 or char_kind(text[column]) == BLANK:
         if column >= 0:
             column -= 1
             continue
@@ -141,9 +141,9 @@ def previous_word_start(buffer: Buffer, row: int, column: int) -> Place:
 
         column = len(text) - 1
 
-    kind = _kind(text[column])
+    kind = char_kind(text[column])
 
-    while column > 0 and _kind(text[column - 1]) == kind:
+    while column > 0 and char_kind(text[column - 1]) == kind:
         column -= 1
 
     return row, column
@@ -155,7 +155,7 @@ def next_word_end(buffer: Buffer, row: int, column: int) -> Place:
     text = buffer.line(row)
     column += 1
 
-    while column >= len(text) or _kind(text[column]) == _BLANK:
+    while column >= len(text) or char_kind(text[column]) == BLANK:
         if column < len(text):
             column += 1
             continue
@@ -166,9 +166,9 @@ def next_word_end(buffer: Buffer, row: int, column: int) -> Place:
         row, column = row + 1, 0
         text = buffer.line(row)
 
-    kind = _kind(text[column])
+    kind = char_kind(text[column])
 
-    while column + 1 < len(text) and _kind(text[column + 1]) == kind:
+    while column + 1 < len(text) and char_kind(text[column + 1]) == kind:
         column += 1
 
     return row, column

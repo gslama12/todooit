@@ -3766,6 +3766,289 @@ def test_a_single_line_host_has_no_paragraphs():
     assert engine.pending == ""
 
 
+def text_object_keys() -> VimKeymap:
+    keys = paragraph_keys()
+    keys.set("y", VimOperator.YANK)
+    keys.set("iw", VimTextObject.INNER_WORD)
+    keys.set("aw", VimTextObject.AROUND_WORD)
+    keys.set(["iW", "i "], VimTextObject.INNER_BIG_WORD)
+    keys.set("aW", VimTextObject.AROUND_BIG_WORD)
+    keys.set(["i(", "i)"], VimTextObject.INNER_PARENS)
+    keys.set(["a(", "a)"], VimTextObject.AROUND_PARENS)
+    keys.set(["i[", "i]"], VimTextObject.INNER_BRACKETS)
+    keys.set(["a[", "a]"], VimTextObject.AROUND_BRACKETS)
+    keys.set(["i{", "i}"], VimTextObject.INNER_BRACES)
+    keys.set(["a{", "a}"], VimTextObject.AROUND_BRACES)
+    keys.set(["i<", "i>"], VimTextObject.INNER_ANGLES)
+    keys.set(["a<", "a>"], VimTextObject.AROUND_ANGLES)
+    keys.set('i"', VimTextObject.INNER_DOUBLE_QUOTES)
+    keys.set('a"', VimTextObject.AROUND_DOUBLE_QUOTES)
+    keys.set("i'", VimTextObject.INNER_SINGLE_QUOTES)
+    keys.set("a'", VimTextObject.AROUND_SINGLE_QUOTES)
+    keys.set("i`", VimTextObject.INNER_BACKTICKS)
+    keys.set("a`", VimTextObject.AROUND_BACKTICKS)
+    return keys
+
+
+def objects_on(text: str, cursor: Tuple[int, int] = (0, 0), **options) -> VimEngine:
+    return VimEngine(MemoryBuffer(text, cursor), text_object_keys(), **options)
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        # The word under the cursor, from anywhere in it
+        ("foo bar baz", (0, 5), "diw", "foo  baz", (0, 4), "bar"),
+        ("foo bar baz", (0, 4), "diw", "foo  baz", (0, 4), "bar"),
+        # `aw` takes the blanks after it, as in vim
+        ("foo bar baz", (0, 5), "daw", "foo baz", (0, 4), "bar "),
+        # or with none after it, those before it
+        ("foo bar", (0, 5), "daw", "foo", (0, 2), " bar"),
+        # Punctuation is a word of its own, as for `w`
+        ("foo.bar", (0, 4), "diw", "foo.", (0, 3), "bar"),
+        ("foo.bar", (0, 3), "diw", "foobar", (0, 3), "."),
+        # On blanks, `iw` takes them and `aw` takes the word after them too
+        ("foo   bar", (0, 4), "diw", "foobar", (0, 3), "   "),
+        ("foo   bar baz", (0, 4), "daw", "foo baz", (0, 3), "   bar"),
+        # A count takes the runs in turn: blanks count as one on their own
+        ("foo bar baz", (0, 0), "d3iw", " baz", (0, 0), "foo bar"),
+        ("foo bar baz qux", (0, 0), "d2aw", "baz qux", (0, 0), "foo bar "),
+        # Never past the line
+        ("foo\nbar", (0, 1), "d5iw", "\nbar", (0, 0), "foo"),
+        # Umlauts are letters
+        ("für dich", (0, 1), "diw", " dich", (0, 0), "für"),
+        # A WORD is anything but blanks
+        ("foo a.b-c bar", (0, 6), "diW", "foo  bar", (0, 4), "a.b-c"),
+        ("foo a.b-c bar", (0, 6), "daW", "foo bar", (0, 4), "a.b-c "),
+        ("foo a.b-c bar", (0, 6), "di ", "foo  bar", (0, 4), "a.b-c"),
+        ("foo a.b-c", (0, 6), "daW", "foo", (0, 2), " a.b-c"),
+        # Only blanks count as the ones after it: punctuation stays
+        ("(foo bar)", (0, 6), "daw", "(foo)", (0, 4), " bar"),
+        ("foo bar.", (0, 5), "daw", "foo.", (0, 3), " bar"),
+        ("foo, bar", (0, 1), "daw", ", bar", (0, 0), "foo"),
+        # and a line's indent is never the blanks before it
+        ("  foo", (0, 3), "daw", "  ", (0, 1), "foo"),
+        ("x\n  foo", (1, 2), "daw", "x\n  ", (1, 1), "foo"),
+        ("foo bar baz", (0, 5), "d2aW", "foo", (0, 2), " bar baz"),
+    ],
+)
+def test_the_word_objects(text, start, keys, after, cursor, register):
+    engine = objects_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register == Register(register, linewise=False)
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+def test_changing_a_word_leaves_insert_where_it_was():
+    engine = objects_on("foo bar baz", (0, 5))
+
+    feed(engine, "ciw")
+
+    assert buffer_of(engine).text == "foo  baz"
+    assert buffer_of(engine).cursor == (0, 4)
+    assert engine.mode == MODE_INSERT
+    assert engine.register == Register("bar", linewise=False)
+
+
+def test_yanking_a_word_goes_to_its_start_and_changes_nothing():
+    engine = objects_on("foo bar baz", (0, 6))
+
+    feed(engine, "yiw")
+
+    assert buffer_of(engine).text == "foo bar baz"
+    assert buffer_of(engine).cursor == (0, 4)
+    assert engine.register == Register("bar", linewise=False)
+    assert buffer_of(engine).clipboard == "bar"
+
+
+def test_an_empty_line_has_no_word_to_take():
+    engine = objects_on("a\n\nb", (1, 0))
+
+    feed(engine, "diw")
+
+    assert buffer_of(engine).text == "a\n\nb"
+    assert engine.register is None
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        # Inside the pair, and either of its keys
+        ("f(a, b)", (0, 3), "di(", "f()", (0, 2), "a, b"),
+        ("f(a, b)", (0, 3), "di)", "f()", (0, 2), "a, b"),
+        ("x [a] y", (0, 3), "da[", "x  y", (0, 2), "[a]"),
+        ("x {a} y", (0, 3), "di}", "x {} y", (0, 3), "a"),
+        ("x <a> y", (0, 3), "da>", "x  y", (0, 2), "<a>"),
+        # Standing on the pair itself
+        ("f(a)", (0, 1), "di(", "f()", (0, 2), "a"),
+        ("f(a)", (0, 3), "da(", "f", (0, 0), "(a)"),
+        # The pair around the cursor, nested ones passed over; a count goes out
+        ("(a (b) c)", (0, 1), "di(", "()", (0, 1), "a (b) c"),
+        ("(a (b) c)", (0, 4), "di(", "(a () c)", (0, 4), "b"),
+        ("(a (b) c)", (0, 4), "d2i(", "()", (0, 1), "a (b) c"),
+        # Across lines
+        ("f(a,\n  b)", (1, 2), "di(", "f()", (0, 2), "a,\n  b"),
+        ("f(a,\n  b) z", (0, 2), "da(", "f z", (0, 1), "(a,\n  b)"),
+        # Outside a pair: the next one in the note
+        ("foo (bar) (baz)", (0, 0), "di(", "foo () (baz)", (0, 5), "bar"),
+        ("(a) foo (bar)", (0, 4), "di(", "(a) foo ()", (0, 9), "bar"),
+        ("foo\nx [bar]", (0, 1), "da[", "foo\nx ", (1, 1), "[bar]"),
+        # passing over an opening that never closes
+        ("x ( y (a)", (0, 0), "di(", "x ( y ()", (0, 7), "a"),
+    ],
+)
+def test_the_bracket_objects(text, start, keys, after, cursor, register):
+    engine = objects_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register == Register(register, linewise=False)
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+BLOCK = "if {\n  foo\n  bar\n}\nend"
+
+
+def test_inside_a_block_on_lines_of_its_own_takes_those_lines():
+    engine = objects_on(BLOCK, (1, 3))
+
+    feed(engine, "di{")
+
+    assert buffer_of(engine).text == "if {\n}\nend"
+    assert buffer_of(engine).cursor == (1, 0)
+    assert engine.register == Register("  foo\n  bar", linewise=True)
+
+
+def test_changing_inside_a_block_leaves_one_indented_line_to_type_on():
+    engine = objects_on(BLOCK, (2, 0))
+
+    feed(engine, "ci{")
+
+    assert buffer_of(engine).text == "if {\n  \n}\nend"
+    assert buffer_of(engine).cursor == (1, 2)
+    assert engine.mode == MODE_INSERT
+
+
+def test_changing_inside_a_bracket_pair_types_between_them():
+    engine = objects_on("f(a, b) + 1", (0, 4))
+
+    feed(engine, "ci(")
+
+    assert buffer_of(engine).text == "f() + 1"
+    assert buffer_of(engine).cursor == (0, 2)
+    assert engine.mode == MODE_INSERT
+
+
+def test_changing_inside_an_empty_pair_still_goes_into_insert():
+    engine = objects_on("f()", (0, 1))
+
+    feed(engine, "ci(")
+
+    assert buffer_of(engine).text == "f()"
+    assert buffer_of(engine).cursor == (0, 2)
+    assert engine.mode == MODE_INSERT
+
+
+@pytest.mark.parametrize(
+    "text, start, keys",
+    [
+        # No pair here or after
+        ("(a) foo", (0, 5), "di("),
+        ("f(a", (0, 2), "di("),
+        ("f(a", (0, 2), "ci("),
+        # A count goes out further than there are pairs
+        ("(a)", (0, 1), "d2i("),
+        # Nothing between them to take
+        ("f()", (0, 1), "di("),
+    ],
+)
+def test_with_no_bracket_pair_to_take_nothing_happens(text, start, keys):
+    engine = objects_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == start
+    assert engine.register is None
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+@pytest.mark.parametrize(
+    "text, start, keys, after, cursor, register",
+    [
+        ('say "hi there" now', (0, 7), 'di"', 'say "" now', (0, 5), "hi there"),
+        # `a` takes the blanks after it, or with none, those before it
+        ('say "hi" now', (0, 5), 'da"', "say now", (0, 4), '"hi" '),
+        ('say "hi"', (0, 5), 'da"', "say", (0, 2), ' "hi"'),
+        # Standing on either quote: they pair up from the line's start
+        ('"a" "b"', (0, 4), 'di"', '"a" ""', (0, 5), "b"),
+        ('"a" "b"', (0, 2), 'di"', '"" "b"', (0, 1), "a"),
+        # Between two pairs, the quotes either side, as in vim
+        ('"a" x "b"', (0, 4), 'di"', '"a""b"', (0, 3), " x "),
+        # Before any quote: the next pair on the line
+        ('x "a" "b"', (0, 0), 'di"', 'x "" "b"', (0, 3), "a"),
+        # A quote after a backslash is part of the text
+        ('"a \\"b\\" c"', (0, 1), 'di"', '""', (0, 1), 'a \\"b\\" c'),
+        # The other quotes, and backticks
+        ("it is 'ok'", (0, 7), "di'", "it is ''", (0, 7), "ok"),
+        ("run `ls -a` now", (0, 6), "da`", "run now", (0, 4), "`ls -a` "),
+    ],
+)
+def test_the_quote_objects(text, start, keys, after, cursor, register):
+    engine = objects_on(text, start)
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+    assert engine.register == Register(register, linewise=False)
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+
+def test_changing_inside_quotes_types_between_them():
+    engine = objects_on('say "hi there" now', (0, 7))
+
+    feed(engine, 'ci"')
+
+    assert buffer_of(engine).text == 'say "" now'
+    assert buffer_of(engine).cursor == (0, 5)
+    assert engine.mode == MODE_INSERT
+
+
+@pytest.mark.parametrize(
+    "text, start",
+    [
+        # Past the last pair on the line
+        ('"a" x', (0, 4)),
+        # A pair only ever on one line, even with the next quote below
+        ('x "a\nb" y', (0, 0)),
+        ('"a\nb"', (1, 0)),
+        # One quote alone
+        ('x "a', (0, 0)),
+    ],
+)
+def test_with_no_quote_pair_on_the_line_nothing_happens(text, start):
+    engine = objects_on(text, start)
+
+    feed(engine, 'di"')
+
+    assert buffer_of(engine).text == text
+    assert buffer_of(engine).cursor == start
+    assert engine.register is None
+    assert engine.pending == ""
+
+
 def test_the_default_alphabet_is_the_vim_flash_one():
     assert VIM_FLASH_ALPHABET == "asdfghjklöqwertzuiopyxcvbnm"
 

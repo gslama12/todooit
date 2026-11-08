@@ -3001,3 +3001,35 @@ async def test_ds_deletes_from_the_cursor_through_the_target_in_a_note():
         assert editor.mode == MODE_NORMAL
         assert editor.text == ""
         assert "NORMAL" in str(screen.frame.border_subtitle)
+
+
+@pytest.mark.parametrize(
+    "text, at, keys, after",
+    [
+        ("foo bar baz", (0, 5), "daw", "foo baz"),
+        ("foo a.b-c bar", (0, 6), "di ", "foo  bar"),
+        ("f(a, b) z", (0, 3), "di(", "f() z"),
+        ("x [a] y", (0, 3), "da[", "x  y"),
+        ("if {\n  foo\n}", (1, 2), "di{", "if {\n}"),
+        ('say "hi" now', (0, 0), 'di"', 'say "" now'),
+        ("x 'a' `b`", (0, 0), "di`", "x 'a' ``"),
+    ],
+)
+async def test_the_default_config_has_the_text_objects(text, at, keys, after):
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, text, at)
+
+        await pilot.press(*keys)
+
+        assert screen.editor.text == after
+        assert screen.editor.mode == MODE_NORMAL
+
+
+async def test_ci_quote_changes_inside_the_quotes_in_a_note():
+    async with run_pilot() as pilot:
+        screen = await note_of(pilot, 'say "hi" now', (0, 6))
+
+        await pilot.press("c", "i", '"', "y", "o")
+
+        assert screen.editor.text == 'say "yo" now'
+        assert screen.editor.mode == MODE_INSERT

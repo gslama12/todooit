@@ -5,7 +5,7 @@ The engine: takes keys one at a time and acts on a buffer
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Tuple
 
-from . import motions
+from . import motions, text_objects
 from .buffer import Buffer
 from .keymap import (
     VimAction,
@@ -379,7 +379,7 @@ class VimEngine:
         if operator is not None and isinstance(action, VimMotion):
             self._operate(operator, action, count, counted)
         elif operator is not None and isinstance(action, VimTextObject):
-            self._operate_on_paragraph(operator, action, count)
+            self._operate_on_object(operator, action, count)
         else:
             self._run(action, count, counted)
 
@@ -872,19 +872,23 @@ class VimEngine:
 
             self._operate_on_text(operator, origin, target, inclusive)
 
-    def _operate_on_paragraph(
+    def _operate_on_object(
         self, operator: VimOperator, text_object: VimTextObject, count: int
     ) -> None:
         self._shown_find = None
 
-        row = self.buffer.cursor[0]
+        found = text_objects.span(self.buffer, text_object, *self.buffer.cursor, count)
 
-        if text_object is VimTextObject.AROUND_PARAGRAPH:
-            top, bottom = motions.around_paragraph_lines(self.buffer, row, count)
+        # Nothing to take is nothing to do, but a change can still type there
+        if found is None or (
+            found.empty and operator is not VimOperator.CHANGE
+        ):
+            return
+
+        if found.linewise:
+            self._take_lines(operator, found.start[0], found.end[0])
         else:
-            top, bottom = motions.paragraph_lines(self.buffer, row, count)
-
-        self._take_lines(operator, top, bottom)
+            self._operate_on_text(operator, found.start, found.end, False)
 
     def _operate_on_find(
         self,
