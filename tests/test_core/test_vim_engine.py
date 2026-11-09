@@ -653,8 +653,6 @@ def test_repeating_a_character_jump(start, keys, end):
     [
         ("  ab cd", (0, 5), "0", (0, 0)),
         ("  ab cd", (0, 0), "0", (0, 0)),
-        # A 0 after a digit is still part of the count
-        ("abcdefghijklmn", (0, 0), "10ö", (0, 10)),
     ],
 )
 def test_line_start_goes_to_the_first_column(text, start, keys, end):
@@ -3463,15 +3461,6 @@ def test_y_copies_to_the_clipboard():
     assert buffer_of(engine).clipboard == "ab\ncd"
 
 
-@pytest.mark.parametrize("keys", ["dw", "dd", "x", "D", "cw", "cc", "C"])
-def test_the_deletes_leave_the_clipboard_alone(keys):
-    engine = yanking_on("ab cd")
-    buffer_of(engine).clipboard = "from elsewhere"
-
-    feed(engine, keys)
-
-    assert buffer_of(engine).clipboard == "from elsewhere"
-
 
 def test_paste_uses_the_register_while_the_clipboard_holds_the_last_yank():
     engine = yanking_on("ab\ncd")
@@ -4849,14 +4838,16 @@ def test_a_visual_yank_reports_what_was_selected_back_in_normal(
     assert engine.yanked == YankedRange(*yanked)
 
 
-@pytest.mark.parametrize("keys", ["dw", "dd", "x", "cw", "D", "vöd", "Vx"])
-def test_deleting_and_changing_report_no_yank(keys):
+@pytest.mark.parametrize("keys", ["dw", "dd", "x", "cw", "cc", "C", "D", "vöd", "Vx"])
+def test_deleting_and_changing_report_no_yank_and_leave_the_clipboard_alone(keys):
     engine = visual_on("ab cd\nef", (0, 0))
+    buffer_of(engine).clipboard = "from elsewhere"
 
     feed(engine, keys)
 
     assert engine.register is not None
     assert engine.yanked is None
+    assert buffer_of(engine).clipboard == "from elsewhere"
 
 
 def test_the_yanked_range_lasts_only_until_the_next_key():

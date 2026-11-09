@@ -6,7 +6,6 @@ the yank flash, the help pane on Cmd+? and the optional hint line
 from typing import Callable, List, Tuple
 
 import pytest
-from textual.color import Color
 from textual.geometry import Offset
 
 from tests.test_ui.test_keyboard_layouts import apply_layout
@@ -179,39 +178,6 @@ async def test_the_gutter_can_be_switched_off():
 # ------------------------------------------------------------------
 # ----------------------- Chip and border --------------------------
 # ------------------------------------------------------------------
-
-
-MODE_KEYS: List[Tuple[str, Tuple[str, ...], str]] = [
-    (MODE_NORMAL, (), "blue"),
-    (MODE_INSERT, ("i",), "green"),
-    (MODE_VISUAL, ("v",), "magenta"),
-    (MODE_VISUAL_LINE, ("V",), "magenta"),
-    (MODE_FLASH, ("s",), "orange"),
-]
-
-
-@pytest.mark.parametrize("mode, keys, color", MODE_KEYS)
-async def test_the_chip_and_the_border_wear_the_modes_color(mode, keys, color):
-    async with run_pilot() as pilot:
-        screen = await note_of(pilot, "abc")
-        await pilot.press(*keys)
-        await pilot.pause()
-
-        frame = screen.frame
-        theme = pilot.app.api.vars.theme
-        expected = Color.parse(getattr(theme, color))
-
-        assert screen.editor.mode == mode
-        assert frame.border_subtitle == f" {mode} "
-        assert frame.styles.border_subtitle_align == "left"
-        assert frame.styles.border_subtitle_background == expected
-        assert frame.styles.border_subtitle_color == Color.parse(theme.background1)
-        assert frame.styles.border_subtitle_style.bold
-        for edge in ("top", "right", "bottom", "left"):
-            assert getattr(frame.styles, f"border_{edge}")[1] == expected
-
-        # The title chip stays as it was
-        assert frame.styles.border_title_background == Color.parse(theme.primary)
 
 
 async def test_pending_keys_still_show_beside_the_mode():

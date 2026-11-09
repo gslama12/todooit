@@ -37,7 +37,14 @@ from todooit.ui.screens.note.vim.modes import (
     MODE_VISUAL,
     MODE_VISUAL_LINE,
 )
-from todooit.vim_engine import MODE_FLASH, VIM_FLASH_ALPHABET, VimCommand, VimMotion
+from todooit.vim_engine import (
+    MODE_FLASH,
+    VIM_FLASH_ALPHABET,
+    VimCommand,
+    VimMotion,
+    VimOperator,
+    VimTextObject,
+)
 from todooit.vim_engine.engine import NESTING_LEVEL
 
 
@@ -148,32 +155,44 @@ async def test_j_ö_k_l_move_the_cursor():
         assert editor.text == "abc\ndef"
 
 
-async def test_left_and_right_stay_on_their_line():
+# What the keys do is the engine's, tested in test_core/test_vim_engine.py on
+# keymaps of its own. What is left to check here is that the default config
+# puts each of those actions on the key the note is meant to have it on.
+DEFAULT_NOTE_BINDINGS = [
+    ("w", VimMotion.WORD_FORWARD),
+    ("b", VimMotion.WORD_BACKWARD),
+    ("e", VimMotion.WORD_END),
+    ("_", VimMotion.LAST_CHARACTER),
+    ("i", VimCommand.INSERT),
+    ("a", VimCommand.INSERT_AFTER),
+    ("I", VimCommand.INSERT_FIRST_NON_BLANK),
+    ("A", VimCommand.INSERT_LINE_END),
+    ("o", VimCommand.OPEN_BELOW),
+    ("O", VimCommand.OPEN_ABOVE),
+    ("d", VimOperator.DELETE),
+    ("dd", VimCommand.DELETE_LINE),
+    ("D", VimCommand.DELETE_TO_LINE_END),
+    ("x", VimCommand.DELETE_CHAR),
+    ("c", VimOperator.CHANGE),
+    ("cc", VimCommand.CHANGE_LINE),
+    ("C", VimCommand.CHANGE_TO_LINE_END),
+    ("aw", VimTextObject.AROUND_WORD),
+    ("i ", VimTextObject.INNER_BIG_WORD),
+    ("i(", VimTextObject.INNER_PARENS),
+    ("a[", VimTextObject.AROUND_BRACKETS),
+    ("i{", VimTextObject.INNER_BRACES),
+    ('i"', VimTextObject.INNER_DOUBLE_QUOTES),
+    ("i`", VimTextObject.INNER_BACKTICKS),
+]
+
+
+async def test_the_default_config_binds_what_the_engine_is_tested_with():
     async with run_pilot() as pilot:
-        screen = await note_holding(pilot, "abc\ndef")
-        editor = screen.editor
+        app = await boot(pilot)
+        keys = app.api.vim.keys
 
-        editor.move_cursor((1, 0))
-        await pilot.press("j")
-        assert editor.cursor_location == (1, 0)
-
-        editor.move_cursor((0, 2))
-        await pilot.press("ö")
-        assert editor.cursor_location == (0, 2)
-
-
-async def test_up_and_down_stay_put_at_the_ends_of_the_note():
-    async with run_pilot() as pilot:
-        screen = await note_holding(pilot, "abc\ndef")
-        editor = screen.editor
-
-        editor.move_cursor((0, 1))
-        await pilot.press("k")
-        assert editor.cursor_location == (0, 1)
-
-        editor.move_cursor((1, 1))
-        await pilot.press("l")
-        assert editor.cursor_location == (1, 1)
+        for key, action in DEFAULT_NOTE_BINDINGS:
+            assert keys.action_for(key) == action, key
 
 
 async def test_up_and_down_remember_the_column_across_a_short_line():
@@ -350,21 +369,6 @@ async def test_a_key_between_two_gs_cancels_the_gg_without_moving():
 
         assert editor.cursor_location == (1, 1)
         assert editor.engine.pending == "g"
-
-
-async def test_word_motions_and_counts_move_the_cursor():
-    async with run_pilot() as pilot:
-        screen = await note_holding(pilot, "one größe three four")
-        editor = screen.editor
-
-        await pilot.press("w")
-        assert editor.cursor_location == (0, 4)
-        await pilot.press("e")
-        assert editor.cursor_location == (0, 8)
-        await pilot.press("b")
-        assert editor.cursor_location == (0, 4)
-        await pilot.press("2", "w")
-        assert editor.cursor_location == (0, 16)
 
 
 async def test_the_default_config_has_the_line_and_character_motions():
@@ -1397,12 +1401,7 @@ async def test_a_delete_goes_all_the_way_to_the_todo():
     "keys, text",
     [
         (("2", "d", "3", "w"), "g h"),
-        (("d", "e"), " c d e f g h"),
-        (("x",), " b c d e f g h"),
-        (("D",), ""),
-        (("d", "_"), ""),
         (("d", "t", "c"), "c d e f g h"),
-        (("d", "d"), ""),
     ],
 )
 async def test_deletes_through_the_real_keymap(keys, text):
@@ -1413,16 +1412,6 @@ async def test_deletes_through_the_real_keymap(keys, text):
 
         assert screen.editor.text == text
         assert screen.editor.mode == MODE_NORMAL
-
-
-async def test_three_dd_deletes_three_lines():
-    async with run_pilot() as pilot:
-        screen = await note_of(pilot, "a\nb\nc\nd\ne", (1, 0))
-
-        await pilot.press("3", "d", "d")
-
-        assert screen.editor.text == "a\ne"
-        assert screen.editor.cursor_location == (1, 0)
 
 
 async def test_the_partial_command_shows_beside_the_chip_and_escape_cancels_it():
@@ -1597,37 +1586,16 @@ async def test_the_attachment_strip_keeps_its_own_x():
 @pytest.mark.parametrize(
     "text, at, keys, typed, after",
     [
-        ("abc", (0, 1), ("i",), "X", "aXbc"),
-        ("abc", (0, 1), ("a",), "X", "abXc"),
-        ("abc", (0, 2), ("a",), "X", "abcX"),
-        ("  abc", (0, 4), ("I",), "X", "  Xabc"),
-        ("  abc", (0, 0), ("A",), "X", "  abcX"),
-        ("foo\nbar", (0, 1), ("o",), "X", "foo\nX\nbar"),
-        ("foo\nbar", (1, 1), ("O",), "X", "foo\nX\nbar"),
-        ("- foo", (0, 0), ("o",), "X", "- foo\n- X"),
-        ("- foo", (0, 0), ("O",), "X", "- X\n- foo"),
-        ("> - foo", (0, 0), ("o",), "X", "> - foo\n> - X"),
-        # A numbered list is counted again, with the cursor still on the new item
+        # Where the cursor goes and what `c` takes is the engine's, tested there.
+        # Counting a numbered list again is the note's own, so it is tested here.
         ("3. foo", (0, 0), ("o",), "X", "3. foo\n4. X"),
         ("1. a\n2. b", (0, 0), ("o",), "X", "1. a\n2. X\n3. b"),
         ("1. a\n2. b", (1, 0), ("O",), "X", "1. a\n2. X\n3. b"),
         ("1. a\n2. b", (0, 0), ("O",), "X", "1. X\n2. a\n3. b"),
         ("9. a", (0, 0), ("o",), "X", "9. a\n10. X"),
-        # `c`, with the rest of the line kept
-        ("foo bar", (0, 0), ("c", "w"), "X", "X bar"),
-        ("foo bar", (0, 1), ("c", "w"), "X", "fX bar"),
-        ("foo bar", (0, 4), ("c", "w"), "X", "foo X"),
-        ("foo, bar", (0, 0), ("c", "t", ","), "X", "X, bar"),
-        ("foo bar", (0, 4), ("C",), "X", "foo X"),
-        ("- foo", (0, 3), ("c", "c"), "X", "- X"),
-        ("  - foo", (0, 5), ("c", "c"), "X", "  - X"),
         ("1. a\n2. foo", (1, 4), ("c", "c"), "X", "1. a\n2. X"),
-        ("> foo", (0, 3), ("c", "c"), "X", "> X"),
-        ("- a\n- b\n- c", (0, 0), ("2", "c", "c"), "X", "- X\n- c"),
         ("1. a\n2. b\n3. c", (0, 0), ("2", "c", "c"), "X", "1. X\n2. c"),
         ("1. a\n2. b", (0, 0), ("c", "l"), "X", "1. X"),
-        # At a line's end, where NORMAL couldn't have put the cursor
-        ("abc", (0, 2), ("c", "ö"), "X", "abX"),
     ],
 )
 async def test_entering_insert_and_typing(text, at, keys, typed, after):
@@ -3135,13 +3103,8 @@ async def test_ds_deletes_from_the_cursor_through_the_target_in_a_note():
 @pytest.mark.parametrize(
     "text, at, keys, after",
     [
-        ("foo bar baz", (0, 5), "daw", "foo baz"),
-        ("foo a.b-c bar", (0, 6), "di ", "foo  bar"),
+        # One case for the keys reaching the note; the rest are the engine's
         ("f(a, b) z", (0, 3), "di(", "f() z"),
-        ("x [a] y", (0, 3), "da[", "x  y"),
-        ("if {\n  foo\n}", (1, 2), "di{", "if {\n}"),
-        ('say "hi" now', (0, 0), 'di"', 'say "" now'),
-        ("x 'a' `b`", (0, 0), "di`", "x 'a' ``"),
     ],
 )
 async def test_the_default_config_has_the_text_objects(text, at, keys, after):
