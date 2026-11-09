@@ -1,38 +1,47 @@
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Callable, Iterator, List, Optional
-from todooit.ui.api.events import BarNotification, NotificationType
-from todooit.ui.api.plug import ConfigManager
+from traceback import format_exc
+from typing import TYPE_CHECKING, Callable, Iterator, List, Optional, Union
+
 from todooit.api import (
     BIN,
     COMPLETED,
     TODAY,
     UPCOMING,
     History,
+    Project,
+    Todo,
+    TodoSortModeType,
     binned_tasks,
+    completed_tasks,
     empty_bin,
+    empty_completed,
 )
-from .events import (
-    TodooitEvent,
-    GotoFixedProject,
-    HistoryStep,
-    ShowConfirm,
-    SpawnHelp,
-    SpawnQuickAdd,
-    SpawnSearch,
-    QuitApp,
-)
+from todooit.ui.api.events import BarNotification, NotificationType
+from todooit.ui.api.plug import ConfigManager
 from todooit.ui.widgets import ModelTree
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
 from todooit.utils import CssManager, first_link, link_label, open_url
 
 from .api_components import (
+    BarManager,
+    Formatter,
     KeyManager,
     KeyMatchType,
     KeyScopeType,
     LayoutManager,
-    Formatter,
-    BarManager,
+    MotionKeys,
     VarManager,
+    VimManager,
+)
+from .events import (
+    GotoFixedProject,
+    HistoryStep,
+    QuitApp,
+    ShowConfirm,
+    SpawnHelp,
+    SpawnQuickAdd,
+    SpawnSearch,
+    TodooitEvent,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -65,6 +74,7 @@ class TodooitAPI:
         self.formatter = Formatter(self)
         self.bar = BarManager(self)
         self.vars = VarManager(self)
+        self.vim = VimManager()
         self.history = History()
 
         self.css.refresh_css()
@@ -94,7 +104,6 @@ class TodooitAPI:
 
     def no_op(self):
         """<NOP>"""
-        pass
 
     def quit(self):
         """Quit todooit"""
@@ -120,7 +129,36 @@ class TodooitAPI:
 
         return None
 
+    def motion_keys(self) -> MotionKeys:
+        """
+        The direction keys, read off the panes' own bindings so the overlays
+        always steer with whatever the panes move with. A direction with no
+        single-key binding falls back to its arrow key.
+        """
+
+        keys = self.keys
+
+        return MotionKeys(
+            left=keys.key_for(self.focus_projects) or "left",
+            right=keys.key_for(self.focus_todos) or "right",
+            up=keys.key_for(self.move_up) or "up",
+            down=keys.key_for(self.move_down) or "down",
+        )
+
     def handle_key(self, key: str) -> None:
+        # While flash labels are up every key is a label (or the way out), so
+        # none of them reaches the keybindings
+        focused = self.app.focused
+        if isinstance(focused, ModelTree) and focused.is_flashing:
+            focused.handle_flash_key(key)
+            return
+
+        # Mid-edit every key is the field's, whatever mode the bar shows: a
+        # description's vim NORMAL is not the panes' NORMAL
+        if isinstance(focused, ModelTree) and focused.is_editing:
+            focused.handle_keypress(key)
+            return
+
         keymatch = self.keys.register_key(key)
 
         if keymatch.match_type == KeyMatchType.NoMatchFound:
@@ -135,7 +173,7 @@ class TodooitAPI:
             keymatch.function.callback()
         except Exception as e:
             self.app.bar_switcher.switch_to_notification(
-                BarNotification(str(e), "error")
+                BarNotification(str(e), "error", details=format_exc())
             )
 
     def trigger_event(self, event: TodooitEvent):
@@ -239,17 +277,15 @@ class TodooitAPI:
 
         self.focused.shift_down()
 
-    def indent_todo(self):
-        """Make the highlighted task a step of the task above it"""
+    def indent(self):
+        """File the highlighted task or project under the one above it"""
 
-        if isinstance(self.focused, TodosTree):
-            self.focused.indent_node()
+        self.focused.indent_node()
 
-    def unindent_todo(self):
-        """Take the highlighted task out of the task it is a step of"""
+    def unindent(self):
+        """Take the highlighted task or project out of the one it is under"""
 
-        if isinstance(self.focused, TodosTree):
-            self.focused.unindent_node()
+        self.focused.unindent_node()
 
     def move_todo(self):
         """File the highlighted task under another project"""
@@ -265,6 +301,11 @@ class TodooitAPI:
         """Move the cursor to the bottom of the list"""
         self.focused.action_last()
 
+    def flash_jump(self):
+        """Label the rows on screen and jump to the one whose label is typed"""
+
+        self.focused.start_flash()
+
     def edit(self, property: str):
         """Start editing a property of the focused item"""
         self.focused.start_edit(property)
@@ -272,6 +313,11 @@ class TodooitAPI:
     def edit_description(self):
         """Start editing the description of the focused item"""
         return self.edit("description")
+
+    def edit_description_vim(self):
+        """Edit the description with the note's vim keys"""
+
+        self.focused.start_vim_edit("description")
 
     def edit_due(self):
         """Start editing the due date of the todo"""
@@ -306,6 +352,16 @@ class TodooitAPI:
         """Toggle the expansion of the parent of the highlighted item"""
         self.focused.toggle_expand_parent()
 
+    def is_expanded(self, model: Union[Project, Todo]) -> bool:
+        """Whether the panes draw `model` open, with its children on the rows below it"""
+
+        if isinstance(model, Project):
+            always = self.vars.always_expand_projects
+        else:
+            always = self.vars.always_expand_todos
+
+        return always or model.expanded
+
     def add_child_node(self):
         """Add a child to the highlighted item"""
         self.focused.add_child_node()
@@ -322,40 +378,93 @@ class TodooitAPI:
         """Restore the highlighted item out of the Bin"""
         self.focused.restore_node()
 
-    def empty_bin(self):
-        """Delete everything in the Bin for good (asks first)"""
+    def empty_pane(self):
+        """Empty the Bin or Completed, whichever is open (asks first)"""
 
         if self.app.bar_switcher.is_focused:
             return
 
-        tasks = len(binned_tasks())
+        tree = self.vars.todos_tree
+        model = tree.model if tree is not None else None
 
-        # Notify rather than confirm on an empty Bin, so there's nothing to
+        if model is BIN:
+            self.empty_bin()
+        elif model is COMPLETED:
+            self.empty_completed()
+        else:
+            # Far too much to lose to a chord typed in the wrong pane, so it
+            # only works where what it empties is right there on screen.
+            self.notify(
+                "[b]YY[/b] only empties the Bin ([b]gb[/b]) or Completed ([b]gc[/b])",
+                "warning",
+            )
+
+    def empty_bin(self):
+        """Delete everything in the Bin for good (asks first)"""
+
+        self._empty(
+            count=len(binned_tasks()),
+            where="in the Bin",
+            already="The Bin is already empty",
+            done="Bin emptied",
+            cancelled="Bin left as it was",
+            empty=self._empty_bin,
+        )
+
+    def empty_completed(self):
+        """Delete every completed task for good (asks first)"""
+
+        self._empty(
+            count=len(completed_tasks()),
+            where="in Completed",
+            already="Completed is already empty",
+            done="Completed emptied",
+            cancelled="Completed left as it was",
+            empty=self._empty_completed,
+        )
+
+    def _empty(
+        self,
+        count: int,
+        where: str,
+        already: str,
+        done: str,
+        cancelled: str,
+        empty: Callable[[], None],
+    ) -> None:
+        """Asks before emptying a fixed pane, counting what is about to go"""
+
+        if self.app.bar_switcher.is_focused:
+            return
+
+        # Notify rather than confirm on an empty pane, so there's nothing to
         # dismiss for no reason.
-        if not tasks:
-            self.notify("The Bin is already empty")
+        if not count:
+            self.notify(already)
             return
 
         # Unlike other deletes, this isn't tied to the cursor's row, so the
         # confirmation counts what's about to go instead of pointing at it.
-        label = "task" if tasks == 1 else "tasks"
-        message = rf"Delete {tasks} {label} in the Bin for good? \[y/N]"
-        confirmed = f"Bin emptied — {tasks} {label} deleted"
-        cancelled = "Bin left as it was"
+        label = "task" if count == 1 else "tasks"
+        message = rf"Delete {count} {label} {where} for good? \[y/N]"
+        confirmed = f"{done} — {count} {label} deleted"
 
         if not self.vars.show_confirm:
-            self._empty_bin()
+            empty()
             self.notify(confirmed, "warning")
             return
 
-        self.app.screen.post_message(
-            ShowConfirm(self._empty_bin, message, confirmed, cancelled)
-        )
+        self.app.screen.post_message(ShowConfirm(empty, message, confirmed, cancelled))
 
     def _empty_bin(self) -> None:
         """Empties the Bin; the panes drop the deleted rows from the change signal."""
 
         empty_bin()
+
+    def _empty_completed(self) -> None:
+        """Empties Completed; the panes drop the deleted rows from the change signal."""
+
+        empty_completed()
 
     def undo(self):
         """Take back the last change made in the panes"""
@@ -399,17 +508,12 @@ class TodooitAPI:
         if isinstance(self.focused, TodosTree):
             self.focused.set_priority(priority)
 
-    def toggle_agent(self):
-        """Mark the todo as handed to an AI, or take the mark back off"""
-        if isinstance(self.focused, TodosTree):
-            self.focused.toggle_agent()
-
     def set_project_color(self, color: int):
         """Color the project (the same key again takes the color back off)"""
         if isinstance(self.focused, ProjectsTree):
             self.focused.set_color(color)
 
-    def sort_todos(self, mode: str):
+    def sort_todos(self, mode: TodoSortModeType):
         """Order the todos of a project by priority, due date or scheduled date"""
 
         tree = self.vars.todos_tree

@@ -22,7 +22,7 @@ Needs **JetBrainsMono Nerd Font Mono** installed, like the screenshots do.
 """
 
 import asyncio
-import os
+import io
 import shutil
 import sys
 from pathlib import Path
@@ -53,7 +53,6 @@ PADDING = 12
 sys.path.insert(0, str(SCRIPTS))
 
 import screenshots as shots  # noqa: E402
-
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 from rich.cells import cell_len  # noqa: E402
 from rich.color import blend_rgb  # noqa: E402
@@ -61,11 +60,9 @@ from rich.console import Console  # noqa: E402
 from rich.segment import Segment  # noqa: E402
 from rich.style import Style  # noqa: E402
 from rich.terminal_theme import SVG_EXPORT_THEME as THEME  # noqa: E402
-
 from textual.pilot import Pilot  # noqa: E402
 
-from todooit.ui.tui import Dooit  # noqa: E402
-
+from todooit.ui.tui import Todooit  # noqa: E402
 
 # --------------------------------------------------------------------------
 # The workflow being demonstrated
@@ -94,15 +91,23 @@ def type_(text: str, ms: int = TYPE_MS) -> List[Step]:
     return [(character, ms) for character in text]
 
 
-# Markdown as it is written, since that is the only way a note is formatted
+# Markdown as it is written, since that is the only way a note is formatted.
+# A note opens in NORMAL, so `i` first; it ends back in NORMAL.
 NOTE = (
-    type_("- Changelog from the commit log")
+    press("i", ms=TYPE_MS)
+    + type_("# Release")
+    + press("enter", ms=TYPE_MS)
+    + type_("- Changelog from the commit log")
     + press("enter", ms=TYPE_MS)
     + press("tab", ms=TYPE_MS)
     + type_("Check the migration notes")
     + press("enter", ms=TYPE_MS)
     + press("shift+tab", ms=TYPE_MS)
-    + type_("*Nothing ships on a friday*")
+    + type_("Announce it")
+    + press("enter", ms=TYPE_MS)
+    + press("enter", ms=TYPE_MS)
+    + type_("> Nothing ships on a friday")
+    + press("escape", ms=TYPE_MS)
 )
 
 # The cursor starts on Today, which is where the app opens.
@@ -117,6 +122,10 @@ SCRIPT: Sequence[Step] = (
 )
 
 # Where the second half starts from: the projects pane, standing on Home.
+#
+# The flash labels go out top to bottom over the rows on screen, one key each
+# while the alphabet is enough, so in Work (sorted by priority) `s` is "Ship the
+# 1.1 release" and `r` "Team standup".
 SCRIPT_FROM_HOME: Sequence[Step] = (
     press("j") + hold(600)
     # --- projects nest, and the pane walks into them -----------------------
@@ -130,13 +139,22 @@ SCRIPT_FROM_HOME: Sequence[Step] = (
     # --- tasks nest too, and fold away ------------------------------------
     + press("h") + hold(1000)
     + press("h") + hold(800)
+    # --- flash: a label on every row, typing one jumps there ---------------
+    + press("f") + hold(1400)
+    + press("r") + hold(900)
+    # --- a recurrence on the last working day of the month ----------------
+    + press("r") + hold(300)
+    + type_("eom") + hold(700)
+    + press("enter") + hold(1500)
     # --- every task carries a note, written as markdown is written --------
+    + press("f") + hold(700)
+    + press("s") + hold(600)
     + press(" ") + hold(600)
-    + NOTE + hold(1500)
-    + press("escape") + hold(250)
+    + NOTE + hold(1800)
     + press("escape") + hold(700)
-    # --- and a project is read in whatever order suits --------------------
-    + press("S", "D") + hold(1900)
+    # --- `?` lists every key ------------------------------------------------
+    + press("?") + hold(2200)
+    + press("escape") + hold(400)
     + press("g", "t") + hold(2200)
 )
 
@@ -146,7 +164,7 @@ SCRIPT_FROM_HOME: Sequence[Step] = (
 # --------------------------------------------------------------------------
 
 
-def screen_segments(app: Dooit) -> List[Segment]:
+def screen_segments(app: Todooit) -> List[Segment]:
     """
     What `App.export_screenshot` hands to Rich's SVG writer, taken before it
     is turned into markup
@@ -155,7 +173,7 @@ def screen_segments(app: Dooit) -> List[Segment]:
     console = Console(
         width=app.size.width,
         height=app.size.height,
-        file=open(os.devnull, "w"),
+        file=io.StringIO(),
         force_terminal=True,
         color_system="truecolor",
         record=True,
@@ -310,7 +328,7 @@ async def run(frames: Frames) -> Tuple[List[Image.Image], List[int]]:
             durations.append(ms)
 
     db_path = shots._INSTANCE / "demo.db"
-    app = Dooit(db_path=str(db_path))
+    app = Todooit(db_path=str(db_path))
     projects = shots.seed()
 
     async with app.run_test(size=(COLUMNS, ROWS)) as pilot:

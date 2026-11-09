@@ -1,13 +1,17 @@
 from typing import TYPE_CHECKING, List, Optional
+
+from rich.measure import Measurement
 from textual import on
+from textual.message import Message
 from textual.widgets.option_list import Option
 
 from todooit.api import Project, fixed_projects, move_project_to_bin
 from todooit.ui.api.events import ProjectSelected
-from .model_tree import ColumnRule, ModelTree
+from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
+
 from ._decorators import reject_fixed_node, require_highlighted_node
 from ._render_dict import ProjectRenderDict
-
+from .model_tree import ColumnRule, ModelTree
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters.model_formatters import (
@@ -21,6 +25,10 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     show_header = True
     CHILDREN_ATTR = "projects"
 
+    # What I and U say when there is nowhere to move the project
+    NOTHING_ABOVE = "No project above this to put it under"
+    NOT_NESTED = "This project is not under another one"
+
     # A project's description is just what it's called
     COLUMN_TITLES = {"description": "Name"}
 
@@ -30,6 +38,12 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     BOTTOM_RULE_ID = "todooit-bottom-projects-rule"
 
     FIXED_MESSAGE = "[b]{}[/b] is a fixed project and can't be changed"
+
+    # Far wider than any terminal, so a measured row never wraps
+    MEASURE_WIDTH = 1000
+
+    class Remeasure(Message):
+        """The rows may have changed width: whoever sizes the pane should look again"""
 
     def __init__(self, model: Project) -> None:
         render_dict = ProjectRenderDict(self)
@@ -96,9 +110,62 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
             self._bottom_gap = gap
             self.refresh_options()
 
+            # Lines are otherwise only recounted at the next paint; recount now so
+            # the pane's height (and with it the scrollbar) is settled before then
+            self._update_lines()
+
     def _force_refresh(self) -> None:
+        # The rows are laid out with no gap first and the gap then fills what is
+        # left. Laid out against the old gap, rows just unfolded would overflow
+        # the pane for a moment and put the scrollbar up -- and with the pane
+        # exactly as wide as its widest row, the column the scrollbar takes
+        # wraps that row, which keeps it overflowing and the scrollbar up.
+        self._bottom_gap = 0
         super()._force_refresh()
         self._sync_bottom_gap()
+        self.post_message(self.Remeasure())
+
+    def _fully_expanded_rows(self) -> List[PaneRow]:
+        """Every row the pane could ever draw: the whole tree opened up, plus the fixed projects"""
+
+        rows = tree_rows(
+            self.visible_children(self.model), self.visible_children, lambda _: True
+        )
+
+        return rows + [plain_row(project.uuid) for project in fixed_projects()]
+
+    def content_width(self) -> int:
+        """
+        Cells the widest row needs with every project expanded, whatever is
+        expanded right now, so folding never changes it. Rows are measured as
+        drawn, edge padding on both sides included, and the column titles too.
+        """
+
+        # Before the config has laid out the columns a row is an empty table,
+        # which can't be measured; the refresh that follows the layout will be
+        if not self.render_layout:
+            return 0
+
+        console = self.app.console
+        options = console.options.update_width(self.MEASURE_WIDTH)
+
+        renderables = [self.render_row(row) for row in self._fully_expanded_rows()]
+        renderables.append(self.make_header())
+
+        return max(
+            Measurement.get(console, options, renderable).maximum
+            for renderable in renderables
+        )
+
+    def outer_width(self) -> int:
+        """content_width plus the pane's own border/padding, and the scrollbar when one is up"""
+
+        width = self.content_width() + self.styles.gutter.width
+
+        if self.show_vertical_scrollbar:
+            width += self.styles.scrollbar_size_vertical
+
+        return width
 
     def _remeasure_bottom_gap(self) -> None:
         """Re-measures a frame later, since layout from a resizing event settles after this call runs."""
@@ -117,6 +184,11 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
 
     def on_resize(self, _) -> None:
         self._sync_bottom_gap()
+
+    def watch_show_vertical_scrollbar(self, _: bool) -> None:
+        # The scrollbar takes a column of its own, so the split has to make
+        # room for it -- and give it back once the rows fit again
+        self.post_message(self.Remeasure())
 
     def _stored_indices(self) -> List[int]:
         """
@@ -173,8 +245,8 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     def _get_parent(self, id: str) -> Optional[Project]:
         return Project.from_id(id).parent_project
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return super().is_node_expaned(_id) or self.api.vars.always_expand_projects
+    def is_node_expanded(self, model) -> bool:
+        return super().is_node_expanded(model) or self.api.vars.always_expand_projects
 
     @property
     def formatter(self) -> "ProjectFormatter":
@@ -204,10 +276,25 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
         project = self.current_model
 
         self._renderers.pop(project.uuid, None)
-        self.expanded_nodes.pop(project.uuid, None)
 
         move_project_to_bin(project)
         return True
+
+    def _discard_node(self) -> None:
+        """
+        Also drops the discarded project's tasks pane, which the change signal
+        never names as gone (the row didn't outlive the edit). Left mounted, it
+        would be picked up again by the next new project: SQLite hands the
+        discarded row's id straight back out, and panes are found by that id.
+        """
+
+        from todooit.ui.screens.index import MainScreen
+
+        uuid = self.current_model.uuid
+        super()._discard_node()
+
+        if isinstance(self.screen, MainScreen):
+            self.screen.drop_project_pane(uuid)
 
     def _binned_message(self, subject: str) -> str:
         """Points at the Bin (its tasks, not the dropped project itself) when there were tasks to move."""
@@ -225,6 +312,11 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def start_edit(self, property: str) -> bool:
         return super().start_edit(property)
+
+    def stop_edit(self, cancel: bool = False):
+        # A committed name can widen (or narrow) the pane; typing alone never does
+        super().stop_edit(cancel)
+        self.post_message(self.Remeasure())
 
     @reject_fixed_node(FIXED_MESSAGE)
     def add_child_node(self):
@@ -245,6 +337,14 @@ class ProjectsTree(ModelTree[Project, ProjectRenderDict]):
     @reject_fixed_node(FIXED_MESSAGE)
     def shift_down(self):
         return super().shift_down()
+
+    @reject_fixed_node(FIXED_MESSAGE)
+    def indent_node(self) -> None:
+        return super().indent_node()
+
+    @reject_fixed_node(FIXED_MESSAGE)
+    def unindent_node(self) -> None:
+        return super().unindent_node()
 
     def _new_sibling(self) -> Optional[Project]:
         """A fixed project has no siblings, so a new sibling there goes to the top level instead."""

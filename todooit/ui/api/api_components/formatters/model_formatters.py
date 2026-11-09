@@ -1,5 +1,6 @@
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree
+
 from ._model_formatter_base import ModelFormatterBase
-from todooit.ui.widgets.trees import TodosTree, ProjectsTree
 
 
 class TodoFormatter(ModelFormatterBase):
@@ -9,7 +10,6 @@ class TodoFormatter(ModelFormatterBase):
         self.scheduled = self.get_formatter_store()
         self.completed = self.get_formatter_store()
         self.binned = self.get_formatter_store()
-        self.agent = self.get_formatter_store()
         self.recurrence = self.get_formatter_store()
         self.priority = self.get_formatter_store()
         self.status = self.get_formatter_store()
@@ -23,7 +23,6 @@ class TodoFormatter(ModelFormatterBase):
 class ProjectFormatter(ModelFormatterBase):
     def setup_formatters(self):
         self.description = self.get_formatter_store()
-        self.tasks = self.get_formatter_store()
 
     def trigger(self) -> None:
         for widget in self.api.app.screen.query(ProjectsTree):

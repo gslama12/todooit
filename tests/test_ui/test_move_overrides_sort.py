@@ -18,7 +18,7 @@ screen moving.
 
 from datetime import datetime
 
-from todooit.api import Todo
+from tests.test_ui.test_sort import seed_unsorted, visible_descriptions
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -27,7 +27,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
     tree_options,
 )
-from tests.test_ui.test_sort import seed_unsorted, visible_descriptions
+from todooit.api import Todo
 
 
 async def move_to_row(pilot, tree, description: str) -> None:

@@ -5,9 +5,6 @@ redraws from the rows that key left different, whatever code made the change
 
 from datetime import datetime
 
-from todooit.api import Project, Todo
-from todooit.ui.tui import Todooit
-from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
     boot,
     descriptions,
@@ -16,6 +13,9 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
+from todooit.api import Project, Todo
+from todooit.ui.tui import Todooit
+from todooit.ui.widgets.trees.model_tree import ModelTree
 
 
 def weekly_review(app: Todooit) -> Todo:
@@ -151,7 +151,7 @@ async def test_undo_flashes_the_rows_it_put_back():
         await press_writing(pilot, parent.drop)
         assert descriptions(home) == []
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
 
         assert descriptions(home)[0] == "Weekly review"

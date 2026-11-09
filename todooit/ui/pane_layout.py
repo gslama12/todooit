@@ -30,7 +30,8 @@ HEADING = "heading"
 CONTEXT = "context"
 MODEL = "model"
 
-Expanded = Callable[[str], bool]
+# Whether a model is drawn open, its children on the rows below
+Expanded = Callable[[Any], bool]
 Children = Callable[[Any], List[Any]]
 
 
@@ -88,8 +89,8 @@ def context_id(block: int, todo: Todo) -> str:
 def drawn_children(model: Union[Project, Todo], sort_mode: Optional[str]) -> List[Todo]:
     """
     The todos a pane draws under a project or a row: those living where their
-    parent does (see placement), in the pane's order. A completed step stays
-    under its open parent; a step binned on its own leaves for the Bin.
+    parent does (see placement), in the pane's order. A step completed or
+    binned on its own leaves for Completed or the Bin.
     """
 
     home = model if isinstance(model, Project) else home_of(model)
@@ -144,7 +145,7 @@ class _Node:
 def _family(model: Any, children: Children, expanded: Expanded) -> _Node:
     """A row with whatever of its own family it is expanded to show"""
 
-    under = children(model) if expanded(model.uuid) else []
+    under = children(model) if expanded(model) else []
     return _Node(model, under=[_family(child, children, expanded) for child in under])
 
 
@@ -162,7 +163,7 @@ def _picked(rows: List[TodoRow], children: Children, expanded: Expanded) -> List
             nodes.append(_family(row.todo, children, expanded))
             continue
 
-        shown = row.is_context or expanded(row.todo.uuid)
+        shown = row.is_context or expanded(row.todo)
         under = _picked(row.under, children, expanded) if shown else []
         nodes.append(_Node(row.todo, row.is_context, under))
 

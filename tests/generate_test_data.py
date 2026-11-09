@@ -1,8 +1,9 @@
-import faker
 from random import randint
-from todooit.api import Cadence, Todo, Project
-from todooit.utils.database import delete_all_data
 
+import faker
+
+from todooit.api import Cadence, Project, Todo
+from todooit.utils.database import delete_all_data
 
 f = faker.Faker()
 
@@ -17,14 +18,13 @@ def gen_todo(parent):
     due = f.date_between(start_date="-1y", end_date="+1y")
     priority = randint(1, 3) if randint(0, 10) == 5 else 0
 
-    recurrence = Cadence(randint(1, 30, "days")) if randint(0, 10) == 5 else None
+    recurrence = Cadence(randint(1, 30), "days") if randint(0, 10) == 5 else None
     todo = Todo(
         description=description,
         due=due,
         priority=priority,
         pending=randint(1, 3) == 3 if recurrence is None else True,
         recurrence=recurrence,
-        agent=randint(0, 3) == 3,
     )
 
     if isinstance(parent, Todo):

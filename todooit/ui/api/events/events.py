@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Any, Callable, Literal, Optional, Union
+
 from textual.message import Message
 
 from todooit.api import FixedProject, Project, Todo
@@ -7,7 +8,7 @@ from todooit.api import FixedProject, Project, Todo
 # A pane can show a stored project or a fixed one; events carry whichever it is.
 ProjectType = Union[Project, FixedProject]
 
-ModeType = Literal["NORMAL", "INSERT", "CONFIRM"]
+ModeType = Literal["NORMAL", "INSERT", "CONFIRM", "FLASH"]
 NotificationType = Literal["info", "warning", "error"]
 
 
@@ -83,11 +84,18 @@ class SpawnCalendar(TodooitEvent):
 
 
 class ModeChanged(TodooitEvent):
-    """Emitted when there is a change in the `status`."""
+    """
+    Emitted when there is a change in the `status`.
 
-    def __init__(self, mode: ModeType) -> None:
+    `vim` marks a mode of the vim editor inside a description, which the bar
+    paints as the note paints its own; `pending` is its partial command so far.
+    """
+
+    def __init__(self, mode: ModeType, *, vim: bool = False, pending: str = "") -> None:
         super().__init__()
         self.mode: ModeType = mode
+        self.vim = vim
+        self.pending = pending
 
 
 class SpawnSearch(TodooitEvent):
@@ -147,12 +155,19 @@ class BarNotification(TodooitEvent):
     """Emitted when a notification is to be displayed."""
 
     def __init__(
-        self, message: str, level: NotificationType, auto_exit: bool = True
+        self,
+        message: str,
+        level: NotificationType,
+        auto_exit: bool = True,
+        details: Optional[str] = None,
     ) -> None:
         super().__init__()
         self.message = message
         self.level: NotificationType = level
         self.auto_exit = auto_exit
+        # Extra text an error carries onto the clipboard but not onto the
+        # screen, e.g. the traceback of the exception behind it
+        self.details = details
 
 
 class StartFieldEdit(TodooitEvent):

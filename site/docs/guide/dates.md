@@ -28,7 +28,7 @@ dates cascade nowhere — see
 | `next month`, `next year` | the 1st of it |
 | `weekend` | the coming saturday |
 | `weekday` | the next working day |
-| `end of month`, `eom` | the last day of this month |
+| `end of month`, `eom` | the last working day of this month (no weekend, no Austrian holiday); next month's once that has passed |
 | `someday` | two months out |
 | `mid july` | the 15th |
 | `3d`, `2w`, `1mo`, `1y`, `+5d` | an offset from today |
@@ -41,19 +41,22 @@ dates cascade nowhere — see
 | `none`, `never`, `no date`, `-` | clear the date |
 
 ::: warning Watch out for two things
-`m` is **minutes**, not months — months are `mo`, to agree with the recurrence
-field. And `1600` is not a time: write `16:00`, or `16h` means sixteen hours
+In a date field `m` is **minutes**, not months — months are `mo`. (The
+[recurrence](#recurrence) field has no minutes, so there `m` *is* a month.)
+And `1600` is not a time: write `16:00`, or `16h` means sixteen hours
 from now.
 :::
 
 ## How dates are drawn
 
-`Sa, 19.09.26`, with the time in parentheses when it is not midnight. A date
-that falls today shows a bold red **Today** instead.
+`Sa, 19.09.`, with the time in parentheses when it is not midnight. The year
+is left off to keep the columns tight; it is still stored, and editing the
+date shows it in full. A date that falls today shows a bold red **Today**
+instead.
 
 The color is the lead time: green when the task is done, red today or overdue,
-yellow within five working days, plain white beyond that. A calendar icon sits
-in front, and a different one once the date has passed.
+yellow within five working days, plain white beyond that. The calendar icon
+sits in the `Scheduled` and `Due` headers, not on each row.
 
 ## The calendar picker
 
@@ -70,14 +73,35 @@ Type `cal` into either date field and a month opens over the app.
 | `enter` | Pick the day |
 | `escape` | Close the month, leaving the field mid-edit |
 
+The direction keys are whatever the panes move with, so a
+[vim layout](/guide/keybindings#vim-layouts) turns these into `h` `j` `k` `l`
+and `H` / `L`.
+
 Weeks start on Monday, the names are Austrian German, and the thirteen
 Austrian public holidays are drawn in red. A time the task already carried is
 kept.
 
 ## Recurrence
 
-`r` sets an interval: `30m`, `2h`, `3d`, `4w` — a number and one of
-`m`/`h`/`d`/`w`.
+`r` sets an interval: a number and a unit.
+
+| Typed | Repeats |
+| --- | --- |
+| `2h` | every two hours |
+| `3d` | every three days |
+| `2w` | every two weeks |
+| `1m`, `1mo` | every month, on the same day of the month |
+| `1y` | every year |
+| `eom` | on the last working day of every month |
+
+`eom` is the smart one: it lands on the **last working day** of the month, so
+a monthly report is never due on a Sunday or a public holiday.
+
+There are no minutes, so `m` is a month. Months and years are calendar steps:
+a monthly task on the 31st lands on the last day of a shorter month (28 Feb,
+30 Apr) and goes back to the 31st where the month has one. `eom` skips
+weekends and Austrian public holidays, so it is the last day anything can
+actually be done that month.
 
 A recurring task repeats on its **scheduled** date, not its due date. Setting a
 recurrence on a task that had a due date moves that date over to become the

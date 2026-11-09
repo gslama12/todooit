@@ -17,13 +17,17 @@ from sqlalchemy import select
 
 from ..utils.day_names import day_label
 from .manager import manager
-from .placement import project_of
+from .placement import completed_row_of, project_of
 from .project import Project
 from .todo import Todo, priority_key
 
 FIXED_ID_PREFIX = "FixedProject"
 
-PATH_SEPARATOR = " › "
+# Between the steps of a project path, written the way it is typed (`work/api`)
+PATH_SEPARATOR = "/"
+
+# What paths were written with before; Bin entries from back then still carry it
+LEGACY_PATH_SEPARATOR = " › "
 
 
 @dataclass
@@ -151,6 +155,16 @@ def project_path(project: Project) -> str:
     return PATH_SEPARATOR.join(reversed(parts))
 
 
+def split_path(path: str) -> List[str]:
+    """
+    The names in a stored project path, whichever separator it was written with
+    """
+
+    path = path.replace(LEGACY_PATH_SEPARATOR, PATH_SEPARATOR)
+
+    return [name.strip() for name in path.split(PATH_SEPARATOR) if name.strip()]
+
+
 def _project_order() -> Dict[int, int]:
     """
     Each project's position in the tree read top to bottom
@@ -235,10 +249,6 @@ class FixedProject:
     def todos(self) -> List[Todo]:
         return [todo for group in self.todo_groups for todo in group.todos]
 
-    @property
-    def total_todos(self) -> int:
-        return len(self.todos)
-
     # Nothing to reorder: a fixed project is its own only sibling
     def is_first_sibling(self) -> bool:
         return True
@@ -263,6 +273,24 @@ def binned_tasks() -> List[Todo]:
         todo
         for todo in todos
         if todo.parent_todo is None or not todo.parent_todo.is_binned
+    ]
+
+
+def completed_tasks() -> List[Todo]:
+    """
+    Completed todos not drawn in a completed parent's row (one row per
+    task in Completed); binned ones belong to the Bin instead
+    """
+
+    query = select(Todo).where(
+        Todo.pending == False,
+        Todo.binned_at.is_(None),
+    )
+
+    return [
+        todo
+        for todo in manager.session.execute(query).scalars().all()
+        if completed_row_of(todo) is todo
     ]
 
 
@@ -358,10 +386,11 @@ class UpcomingProject(FixedProject):
 
 class CompletedProject(FixedProject):
     """
-    Log of completed top-level tasks, most recently finished first
+    Log of completed todos, most recently finished first
 
-    A child todo only appears here inside its parent once the parent is
-    completed. Unticking a row sends the whole task back to its project.
+    A step finished under an open parent is a row of its own, like any task;
+    a completed parent carries its steps under it. Unticking a row sends it
+    back to its project, reopening whatever it is nested under.
     """
 
     key = "completed"
@@ -378,13 +407,8 @@ class CompletedProject(FixedProject):
 
     @property
     def todo_groups(self) -> List[TodoGroup]:
-        query = select(Todo).where(
-            Todo.pending == False,
-            Todo.binned_at.is_(None),
-            Todo.parent_todo_id.is_(None),
-        )
         todos = sorted(
-            manager.session.execute(query).scalars().all(),
+            completed_tasks(),
             key=lambda todo: todo.completed_at or datetime.min,
             reverse=True,
         )

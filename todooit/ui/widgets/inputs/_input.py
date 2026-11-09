@@ -1,9 +1,12 @@
-from typing import Optional, Tuple
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from rich.style import Style
 from rich.text import Text
 
 from todooit.utils.clipboard import copy_text, paste_text, running_app
+
+if TYPE_CHECKING:  # pragma: no cover
+    from todooit.api.lifecycle import Outcome
 
 # Keys that discard the selection instead of editing it (`ctrl+l` excluded: it always clears the whole buffer).
 SELECTION_DELETE_KEYS = frozenset(
@@ -39,11 +42,6 @@ class Input:
     # Inputs that only show a derived value refuse to be edited
     editable: bool = True
 
-    def asks_for_calendar(self) -> bool:
-        """Whether the typed text is a request to open the calendar (date fields only)."""
-
-        return False
-
     def __init__(self, value="") -> None:
         self._value = value
         self._cursor_position = len(self._value)
@@ -56,6 +54,12 @@ class Input:
     @property
     def cursor_position(self) -> int:
         return self._cursor_position
+
+    def move_cursor(self, position: int) -> None:
+        """Put the cursor at `position`, which ends any selection."""
+
+        self._cursor_position = max(0, min(position, len(self._value)))
+        self._selection_anchor = None
 
     def replace(self, start: int, end: int, text: str) -> None:
         """Swap a span of the buffer for `text`, cursor left after it (used by completion)."""
@@ -97,6 +101,7 @@ class Input:
 
         # Buffer, not `value`, and unstripped: leading/trailing spaces are live content while editing.
         text = Text(self._value + CURSOR_REST)
+        self.editing_marks(text, theme)
 
         span = self.selection
 
@@ -106,7 +111,7 @@ class Input:
         else:
             # Style the character under the cursor instead of inserting a glyph, so columns don't shift.
             text.stylize(
-                self.cursor_style(theme),
+                self.editing_cursor_style(theme),
                 self._cursor_position,
                 self._cursor_position + 1,
             )
@@ -125,6 +130,14 @@ class Input:
 
         return Style(color=theme.background1, bgcolor=theme.primary)
 
+    def editing_marks(self, text: Text, theme) -> None:
+        """Anything to show on the buffer beneath the cursor; nothing, for a plain field."""
+
+    def editing_cursor_style(self, theme) -> Style:
+        """The cursor as it's drawn right now, which a mode of its own may change."""
+
+        return self.cursor_style(theme)
+
     def start_edit(self) -> None:
         self.is_editing = True
 
@@ -132,9 +145,10 @@ class Input:
         self._cursor_position = len(self._value)
         self._selection_anchor = 0
 
-    def stop_edit(self, cancel: bool = False) -> None:
+    def stop_edit(self, cancel: bool = False) -> Optional["Outcome"]:
         self.is_editing = False
         self._selection_anchor = None
+        return None
 
     def _is_text_key(self, key: str) -> bool:
         """Whether this keypress puts something into the buffer."""

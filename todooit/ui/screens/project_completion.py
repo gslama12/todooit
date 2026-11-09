@@ -14,7 +14,6 @@ from rich.table import Table
 from rich.text import Text
 
 from todooit.api import Project
-from todooit.api.fixed_projects import PATH_SEPARATOR as PATH_DISPLAY
 from todooit.utils.project_complete import (
     Candidate,
     Token,
@@ -124,7 +123,7 @@ def project_steps(project: Project) -> Tuple[str, ...]:
 def project_display(name: str) -> str:
     """A typed project name written the way the app writes a project path"""
 
-    return PATH_DISPLAY.join(split_path(name))
+    return PATH_SEPARATOR.join(split_path(name))
 
 
 class ProjectCompletion:
@@ -339,7 +338,7 @@ class ProjectCompletion:
         for offset, candidate in enumerate(window, start=self._offset):
             table.add_row(
                 PROJECT_ICON,
-                PATH_DISPLAY.join(candidate.steps),
+                PATH_SEPARATOR.join(candidate.steps),
                 style=self._match_style(offset),
             )
 

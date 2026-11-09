@@ -1,4 +1,5 @@
 from typing import Callable, Type
+
 from todooit.ui.api.events import TodooitEvent
 
 TODOOIT_EVENT_ATTR = "__todooit_event"

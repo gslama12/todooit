@@ -23,7 +23,6 @@ from todooit.api.fixed_projects import project_path
 from todooit.api.placement import home_of, project_of
 from todooit.ui.widgets.trees.model_tree import GroupHeading
 from todooit.utils import blend, day_label
-from todooit.utils.links import drawn_column, fold_links
 
 from .panel import DATE_ICON, FADE, PROJECT_ICON, PanelScreen
 
@@ -65,10 +64,6 @@ EMPTY_QUERY = f"Type to find a task, {NOTE_PREFIX} for notes"
 NO_MATCHES = "No task matches"
 EMPTY_NOTE_QUERY = "Type to find in notes"
 NO_NOTE_MATCHES = "No note matches"
-
-# Markup a note line opens with (bullet, numbered item, quote, heading) --
-# stripped here since the note itself draws these as glyphs
-LINE_MARKER = re.compile(r"^\s*(?:(?:[-*+]|\d+[.)]|>+|#+)\s+)*")
 
 # Draw order of match blocks: pending tasks first and unheaded (what the
 # finder is for), then completed/binned, each headed by its pane's name
@@ -291,25 +286,14 @@ def search_notes(
 
 
 def snippet(line: str, column: int, lead: int = SNIPPET_LEAD) -> str:
-    """A note line as shown under its task: leading markup dropped, links folded
-    to their names, and cut in front of a match too far along to fit.
+    """A note line as shown under its task: the markdown as stored, cut in front
+    of a match too far along to fit.
     """
 
-    marker = LINE_MARKER.match(line)
-    skipped = marker.end() if marker else 0
-
-    text = line[skipped:]
-    column = max(0, column - skipped)
-
-    # Folding shortens what comes before the match, so the column is carried
-    # across the way the note carries its cursor
-    folded, _ = fold_links(text)
-    column = drawn_column(text, column)
-
     if column > lead:
-        folded = "…" + folded[column - lead :].lstrip()
+        return "…" + line[column - lead :].lstrip()
 
-    return folded
+    return line
 
 
 def picked_out(text: Text, terms: Sequence[str], style: Style) -> Text:

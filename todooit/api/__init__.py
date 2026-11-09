@@ -1,5 +1,34 @@
-from .model import TodooitModel, BaseModel
+from . import lifecycle
 from .cadence import Cadence
+from .fixed_projects import (
+    BIN,
+    COMPLETED,
+    TODAY,
+    UPCOMING,
+    FixedProject,
+    TodoGroup,
+    TodoRow,
+    binned_tasks,
+    completed_tasks,
+    fixed_project_from_id,
+    fixed_project_from_key,
+    fixed_projects,
+)
+from .history import ChangedRows, History
+from .hooks import fix_hooks, validation_hooks
+from .manager import manager
+from .model import BaseModel, TodooitModel
+from .pinned_note import PINNED_NOTE_ID, PinnedNote
+from .project import Project
+from .recycle import (
+    REVIVED_PREFIX,
+    empty_bin,
+    empty_completed,
+    move_project_to_bin,
+    move_todo_to_bin,
+    restore_todo,
+    revive_home,
+)
 from .todo import (
     SORT_KEYS,
     Todo,
@@ -7,33 +36,6 @@ from .todo import (
     freeze_sort_order,
     sort_todos,
 )
-from .project import Project
-from .pinned_note import PINNED_NOTE_ID, PinnedNote
-from .fixed_projects import (
-    FixedProject,
-    TodoGroup,
-    TodoRow,
-    TODAY,
-    UPCOMING,
-    COMPLETED,
-    BIN,
-    fixed_project_from_id,
-    fixed_project_from_key,
-    fixed_projects,
-    binned_tasks,
-)
-from .recycle import (
-    REVIVED_PREFIX,
-    empty_bin,
-    move_project_to_bin,
-    move_todo_to_bin,
-    restore_todo,
-    revive_home,
-)
-from .history import ChangedRows, History
-from . import lifecycle
-from .manager import manager
-from .hooks import fix_hooks, validation_hooks
 
 
 def drop_blank_models() -> None:
@@ -74,6 +76,7 @@ __all__ = [
     "BIN",
     "REVIVED_PREFIX",
     "empty_bin",
+    "empty_completed",
     "move_project_to_bin",
     "move_todo_to_bin",
     "restore_todo",
@@ -82,6 +85,7 @@ __all__ = [
     "fixed_project_from_key",
     "fixed_projects",
     "binned_tasks",
+    "completed_tasks",
     "ChangedRows",
     "History",
     "manager",

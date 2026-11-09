@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Generic, List, TypeVar, Union
+
 from rich._wrap import divide_line
 from rich.cells import cell_len
 from rich.console import Console, ConsoleOptions, RenderableType, RenderResult
@@ -7,9 +8,11 @@ from rich.segment import Segment
 from rich.style import Style
 from rich.table import Table
 from rich.text import Text
-from todooit.api import Todo, Project
+
+from todooit.api import Project, Todo
 from todooit.ui.pane_layout import GUIDE_DROP, GUIDE_VERTICAL, PaneRow
 from todooit.utils import blend
+
 from ..inputs.simple_input import SimpleInput
 
 ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
@@ -323,9 +326,13 @@ class BaseRenderer(Generic[ModelType]):
 
             # Only a row with children hangs its description in (leaving a
             # column for the guide line down to them); others wrap flush.
-            if attr == "description" and index == 0 and connector:
-                if isinstance(rendered, Text):
-                    rendered = HangingText(rendered, len(GUIDE_VERTICAL))
+            if (
+                attr == "description"
+                and index == 0
+                and connector
+                and isinstance(rendered, Text)
+            ):
+                rendered = HangingText(rendered, len(GUIDE_VERTICAL))
 
             if attr == "description":
                 table.add_column(attr, ratio=1, overflow=DESCRIPTION_OVERFLOW)

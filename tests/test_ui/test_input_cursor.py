@@ -9,15 +9,14 @@ width from the first keystroke to the last.
 
 from typing import Optional, Tuple
 
-from todooit.api.theme import TodooitThemeBase
-from todooit.ui.widgets.inputs._input import Input
-
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
     create_and_move_to_todo,
     run_pilot,
 )
+from todooit.api.theme import TodooitThemeBase
+from todooit.ui.widgets.inputs._input import Input
 
 THEME = TodooitThemeBase
 

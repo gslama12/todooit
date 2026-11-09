@@ -1,8 +1,7 @@
 from datetime import datetime
 
-from todooit.api import Cadence
-
 from tests.test_core.core_base import *  # noqa
+from todooit.api import Cadence
 
 # Completing, reopening and advancing are tested against the lifecycle
 # module in test_lifecycle.py, as are scheduled dates. What stays here are

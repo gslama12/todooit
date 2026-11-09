@@ -7,6 +7,7 @@ and the headings and context rows of a block.
 
 from datetime import datetime, time, timedelta
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import TODAY, UPCOMING, Project, Todo, TodoGroup, move_todo_to_bin
 from todooit.ui.pane_layout import (
     CONTEXT,
@@ -22,16 +23,15 @@ from todooit.ui.pane_layout import (
     todo_rows,
     tree_rows,
 )
-from tests.test_core.core_base import *  # noqa
 
 
-def everything(_uuid: str) -> bool:
+def everything(_model) -> bool:
     return True
 
 
 def all_but(*collapsed):
     ids = {model.uuid for model in collapsed}
-    return lambda uuid: uuid not in ids
+    return lambda model: model.uuid not in ids
 
 
 def project_pane(project, expanded=everything, sort_mode=None):
@@ -184,9 +184,9 @@ def test_sub_projects_are_blocks_under_their_path(create_project):
     headings = [row for row in rows if row.kind == HEADING]
 
     # The empty sub-project has no block, so draws no heading
-    assert [row.label for row in headings] == ["sub", "sub › deeper"]
+    assert [row.label for row in headings] == ["sub", "sub/deeper"]
     assert [row.id for row in headings] == [heading_id(1), heading_id(2)]
-    assert named(rows) == ["own", "sub", "in sub", "sub › deeper", "in deeper"]
+    assert named(rows) == ["own", "sub", "in sub", "sub/deeper", "in deeper"]
 
 
 def test_a_block_without_a_label_has_no_heading(create_project):

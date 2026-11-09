@@ -6,7 +6,8 @@ arrows, and so on), and WezTerm turns each chord into what a terminal program
 can read. These tests start from the bytes WezTerm sends while todooit is in
 front (see the WezTerm config in the installation guide), run them through
 Textual's own parser, and check that every layer key does in a text field
-and in the note editor what it does in any other Mac app.
+and in the note editor what it does in any other Mac app. The exception is
+Esc+x (^U), which does nothing in a note's INSERT: lines go with `dd` there.
 
 The one that needs care is Esc+u: at a zsh prompt WezTerm sends it as ^A,
 but in todooit ^A is `ctrl+a`, the same key as `cmd+a`: select all. So in
@@ -19,15 +20,14 @@ import pytest
 from textual._xterm_parser import XTermParser
 from textual.pilot import Pilot
 
-from todooit.ui.screens.note.editor import NoteEditor
-from todooit.ui.widgets.inputs._input import Input
-
 from tests.test_ui.test_note_ui import open_note
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     run_pilot,
 )
+from todooit.ui.screens.note.vim.editor import NoteEditor
+from todooit.ui.widgets.inputs._input import Input
 
 # What WezTerm sends into todooit for each Esc-layer key
 WEZTERM = {
@@ -100,7 +100,9 @@ async def editing_field(pilot: Pilot, cursor: int) -> Input:
     await pilot.press("n")
     await commit_line(pilot, TEXT)
 
-    await pilot.press("i")
+    # The plain field, as every column but a description always has it
+    tree.api.vim.descriptions = False
+    await pilot.press("e")
     await pilot.pause()
 
     field = tree.current._get_component(tree.current.editing)
@@ -144,7 +146,7 @@ NOTE_CASES = [
     ("c", 13, ("above\none two \nbelow", (1, 8), "")),
     ("backspace", 13, ("above\none two \nbelow", (1, 8), "")),
     ("v", 4, ("above\none  three\nbelow", (1, 4), "")),
-    ("x", 6, ("above\n\nbelow", (1, 0), "")),
+    ("x", 6, (LINE, (1, 6), "")),
     ("g", 0, ("above\nne two three\nbelow", (1, 0), "")),
     ("h", 13, ("above\none two thre\nbelow", (1, 12), "")),
     ("d", 13, (LINE, (1, 12), "e")),
@@ -163,7 +165,7 @@ async def test_the_esc_layer_in_the_note_editor(layer_key, column, after):
         await open_note(pilot)
         editor = pilot.app.screen.query_one(NoteEditor)
 
-        # an empty note opens in INSERT, where the layer keys edit
+        # `open_note` leaves it in INSERT, where the layer keys edit
         editor.insert(LINE)
         editor.move_cursor((1, column))
         await pilot.pause()
@@ -171,6 +173,25 @@ async def test_the_esc_layer_in_the_note_editor(layer_key, column, after):
         await type_layer_key(pilot, layer_key)
 
         assert (editor.text, editor.cursor_location, editor.selected_text) == after
+
+
+async def test_the_esc_layers_ctrl_u_is_half_a_page_in_normal():
+    # cmd+backspace reaches the note as ^U, which NORMAL takes as vim does
+    async with run_pilot() as pilot:
+        await open_note(pilot)
+        editor = pilot.app.screen.query_one(NoteEditor)
+
+        text = "\n".join(f"line {row}" for row in range(100))
+        editor.load_text(text)
+        await pilot.press("escape")
+        editor.move_cursor((50, 0))
+        await pilot.pause()
+        scrolled = editor.scroll_offset.y
+
+        await type_layer_key(pilot, "x")
+
+        assert editor.text == text
+        assert editor.scroll_offset.y == scrolled - editor.half_page()
 
 
 async def test_the_esc_layer_jumps_to_the_top_and_bottom_of_a_list():

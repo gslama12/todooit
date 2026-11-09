@@ -1,5 +1,7 @@
+from contextlib import suppress
 from datetime import date
 from functools import cache
+from traceback import format_exc
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -12,44 +14,55 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
 )
-from textual import events, on
-from textual.app import ComposeResult
+
 from rich.cells import cell_len
-from rich.markup import escape
 from rich.console import Console, ConsoleOptions, Group, RenderableType, RenderResult
+from rich.markup import escape
 from rich.measure import Measurement
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
+from textual import events, on
+from textual.app import ComposeResult
 from textual.color import Color
+from textual.geometry import Offset
 from textual.strip import Strip
 from textual.style import Style
 from textual.timer import Timer
 from textual.widgets import Label
 from textual.widgets.option_list import Option, OptionDoesNotExist
-from todooit.api import Todo, Project
-from todooit.api.lifecycle import Outcome, Refusal
-from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
+
+from todooit.api import Project, Todo
+from todooit.api.expansion import is_expanded, set_expanded
+from todooit.api.lifecycle import Refusal
+from todooit.api.model import Tellable
 from todooit.ui.api.events import (
-    ModeChanged,
-    SpawnCalendar,
     BarNotification,
+    ModeChanged,
+    ModeType,
+    SpawnCalendar,
 )
+from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
+from todooit.ui.slim_cursor import slim_cursor
+from todooit.ui.widgets.inputs.model_inputs import DateInput
+from todooit.ui.widgets.inputs.vim_input import SLIM_CURSOR, VimDescription
 from todooit.ui.widgets.renderers import (
-    BaseRenderer,
     COLUMN_PADDING,
     DESCRIPTION_OVERFLOW,
+    BaseRenderer,
 )
 from todooit.utils import copy_text, paste_text
-from .base_tree import BaseTree
-from ._render_dict import RenderDict
+
 from ._decorators import (
     fix_highlight,
     refresh_tree,
-    require_highlighted_node,
     require_confirmation,
+    require_highlighted_node,
 )
+from ._render_dict import RenderDict
+from .flash_jump import FlashJump
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.api_components.formatters._model_formatter_base import (
@@ -135,7 +148,7 @@ ModelType = TypeVar("ModelType", bound=Union[Todo, Project])
 RenderDictType = TypeVar("RenderDictType", bound=RenderDict)
 
 
-class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
+class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
     DEFAULT_CSS = """
     ModelTree {
         height: 1fr;
@@ -156,6 +169,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     # What a row is called when the bar has to refer to one with no name
     NODE_NOUN: str = "item"
+
+    # What I and U say when there is nowhere to move the row
+    NOTHING_ABOVE: str = "Nothing above this to put it under"
+    NOT_NESTED: str = "This is not under anything"
 
     # Rounded caps either side of the border title, matching the pane's rounded border
     TITLE_CAP_LEFT = "\ue0b6"
@@ -207,8 +224,8 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.flash_row(_id)
         return True
 
-    def tell_outcome(self, outcome: Optional[Outcome]) -> None:
-        """Says in the status bar what a lifecycle change did, if anything worth telling."""
+    def tell_outcome(self, outcome: Optional[Tellable]) -> None:
+        """Says in the status bar what a lifecycle change or a move between levels did, if anything worth telling."""
 
         if outcome:
             self.post_message(BarNotification(outcome.summary(), "info"))
@@ -247,7 +264,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         return super()._get_option_render(option, style)
 
-    @cache
+    @cache  # noqa: B019 -- cleared by hand whenever the rows change
     def get_column_width(self, attr: str) -> int:
         width = max(i._get_attr_width(attr) for i in self._renderers.values())
 
@@ -314,6 +331,14 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     def render_row(self, row: PaneRow) -> RenderableType:
         return self._renderers[row.uuid].make_renderable(row)
+
+    def flash_label_column(self, index: int) -> int:
+        """Past the row's edge padding and guides: over its checkbox or icon."""
+
+        row = self._rows.get(self._options[index].id or "")
+        guides = row.guides if row else ""
+
+        return COLUMN_PADDING + cell_len(guides)
 
     def row_mark(self, model: ModelType) -> Text:
         """Marker drawn before a row's description; empty by default, overridden by panes that flag specific rows."""
@@ -437,21 +462,23 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self._force_refresh()
         self.get_column_width.cache_clear()
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return self.expanded_nodes[_id]
+    def is_node_expanded(self, model: Any) -> bool:
+        """Whether `model` is drawn open; stored on the model, so it survives a relaunch"""
+
+        return getattr(model, "expanded", True)
 
     def visible_children(self, model: Any) -> List:
         """The children of a model this pane draws a row for (all of them, by default)."""
 
         return getattr(model, self.CHILDREN_ATTR)
 
-    def layout(self) -> List[PaneRow]:
+    def pane_rows(self) -> List[PaneRow]:
         """The rows this pane draws, finished (see pane_layout). Overridden by panes that draw blocks."""
 
         return tree_rows(
             self.visible_children(self.model),
             self.visible_children,
-            self.is_node_expaned,
+            self.is_node_expanded,
         )
 
     def option_for(self, row: PaneRow) -> Option:
@@ -462,7 +489,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
     def _body_options(self) -> List[Option]:
         """Every row of the pane except the column titles."""
 
-        rows = self.layout()
+        rows = self.pane_rows()
 
         for row in rows:
             self._rows[row.id] = row
@@ -503,6 +530,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         self.highlighted = first if not self._options[first].disabled else None
 
     def _force_refresh(self) -> None:
+        # The rows are rebuilt, so flash labels would point at the wrong ones
+        self.cancel_flash()
+
         highlighted = self.highlighted
         self.clear_options()
         self._static_rows.clear()
@@ -568,9 +598,55 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         res = self.current.start_edit(property)
         self.update_current_prompt()
         if res:
+            self._show_mode("INSERT")
             self.app.post_message(ModeChanged("INSERT"))
             self.update_current_prompt()
         return res
+
+    def start_vim_edit(self, property: str) -> bool:
+        """
+        Starts editing `property` with the note's vim keys, where the field has
+        them and `api.vim.descriptions` is on; anywhere else, `start_edit`.
+        """
+
+        if not self.start_edit(property):
+            return False
+
+        component = self.current._get_component(property)
+
+        if self.api.vim.descriptions and isinstance(component, VimDescription):
+            component.start_vim(
+                self.api.vim, announce=self._announce_vim_mode, report=self._report
+            )
+            self.update_current_prompt()
+
+        return True
+
+    def _announce_vim_mode(self, mode: str, pending: str) -> None:
+        if mode == "INSERT":
+            slim_cursor(self.app).show(self.api.vars.theme.primary)
+        else:
+            slim_cursor(self.app).hide()
+
+        self._show_mode(mode)
+
+        # Only NORMAL and INSERT get this far: the rest are switched off
+        self.app.post_message(
+            ModeChanged(cast(ModeType, mode), vim=True, pending=pending)
+        )
+
+    def _show_mode(self, mode: Optional[str]) -> None:
+        """
+        The highlighted row takes the color of the edit's mode: the panes' own
+        NORMAL (`None`) keeps the plain highlight, a vim edit's NORMAL goes
+        blue, INSERT green, as the note's frame does.
+        """
+
+        self.set_class(mode == "NORMAL", "-mode-normal")
+        self.set_class(mode == "INSERT", "-mode-insert")
+
+    def _report(self, message: str) -> None:
+        self.post_message(BarNotification(message, "info"))
 
     def stop_edit(self, cancel: bool = False):
         """
@@ -586,11 +662,13 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             # A rule, not a crash: the change was not made
             self.post_message(BarNotification(str(refusal), "warning"))
         except Exception as e:  # pragma: no cover
-            self.post_message(BarNotification(str(e), "error"))
+            self.post_message(BarNotification(str(e), "error", details=format_exc()))
         else:
             # What a lifecycle column's change did to other todos
             self.tell_outcome(outcome)
 
+        slim_cursor(self.app).hide()
+        self._show_mode(None)
         self.app.post_message(ModeChanged("NORMAL"))
         self.get_column_width.cache_clear()
 
@@ -618,7 +696,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         column = self.current.editing
         component = self.current._get_component(column)
 
-        if not component.asks_for_calendar():
+        if not isinstance(component, DateInput) or not component.asks_for_calendar():
             return
 
         component.take_back_word()
@@ -636,14 +714,52 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         if not self.is_editing or self.current.editing != column:
             return False  # pragma: no cover
 
-        self.current._get_component(column).set_day(day)
+        component = self.current._get_component(column)
+
+        if not isinstance(component, DateInput):
+            return False  # pragma: no cover
+
+        component.set_day(day)
         self.update_current_prompt()
 
         return True
 
+    def render_line(self, y: int) -> Strip:
+        strip = super().render_line(y)
+
+        if self.is_editing and slim_cursor(self.app).shown:
+            self._place_slim_cursor(strip, y)
+
+        return strip
+
+    def _place_slim_cursor(self, strip: Strip, y: int) -> None:
+        """
+        Where the field marked INSERT's cursor, as it came out in the row:
+        only drawing it says how far in the column and the guides put it.
+        """
+
+        x = 0
+
+        for segment in strip:
+            style = segment.style
+
+            if style is not None and style.meta.get(SLIM_CURSOR):
+                region = self.content_region
+                self.app.cursor_position = Offset(region.x + x, region.y + y)
+                return
+
+            x += segment.cell_length
+
     def handle_keypress(self, key: str) -> bool:
         if self.is_editing:
-            if key in ["escape", "enter"]:
+            component = self.current._get_component(self.current.editing)
+
+            if isinstance(component, VimDescription) and component.engine is not None:
+                # A vim edit has no key that throws it away: escape leaves
+                # NORMAL by keeping the text, which the panes' `u` takes back
+                if component.vim_keypress(key):
+                    self.stop_edit()
+            elif key in ["escape", "enter"]:
                 # enter keeps the typed text; escape reverts the field
                 self.stop_edit(cancel=key == "escape")
             else:
@@ -681,7 +797,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @refresh_tree
     def _expand_node(self, _id: str) -> None:
-        self.expanded_nodes[_id] = True
+        set_expanded(_id, True)
 
     def expand_node(self) -> None:
         if self.highlighted is not None and self.node.id:
@@ -689,11 +805,10 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
     @refresh_tree
     def _collapse_node(self, _id: str) -> None:
-        self.expanded_nodes[_id] = False
+        set_expanded(_id, False)
 
     def _toggle_expand_node(self, _id: str) -> None:
-        expanded = self.expanded_nodes[_id]
-        if expanded:
+        if is_expanded(_id):
             self._collapse_node(_id)
         else:
             self._expand_node(_id)
@@ -726,7 +841,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         self.expand_node()
         self.highlight_id(node.uuid)
-        self.start_edit("description")
+
+        # Empty, so INSERT; escape goes on to NORMAL rather than throwing it away
+        self.start_vim_edit("description")
 
     def _create_sibling_node(self) -> ModelType:
         return self.current_model.add_sibling()
@@ -779,7 +896,9 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             return
 
         self.highlight_id(node.uuid)
-        self.start_edit("description")
+
+        # Empty, so INSERT; escape goes on to NORMAL rather than throwing it away
+        self.start_vim_edit("description")
 
     def _describe_node(self, node: ModelType, description: str) -> None:
         node.description = description
@@ -813,12 +932,11 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         model = self.current_model
 
         self._renderers.pop(model.uuid)
-        self.expanded_nodes.pop(model.uuid)
         model.drop()
 
     def forget_rows(self, ids: Iterable[str]) -> None:
         """
-        Drops renderers/expansion state for models gone for good. The pane keeps a
+        Drops renderers for models gone for good. The pane keeps a
         renderer for every model it's ever drawn (even ones since moved elsewhere),
         and column-width measurement walks all of them — a leftover renderer for a
         deleted model would look the model up and fail.
@@ -833,14 +951,11 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
 
         for _id in ids:
             self._renderers.pop(_id, None)
-            self.expanded_nodes.pop(_id, None)
 
             # A pane waiting to redraw (hidden) still holds this option; drop it too,
             # since its renderer (looked up by model) is now gone
-            try:
+            with suppress(OptionDoesNotExist):
                 self.remove_option(_id)
-            except OptionDoesNotExist:
-                pass
 
     def quoted_name(self) -> str:
         """The highlighted row's description, truncated for the bar; blank if it never got a name."""
@@ -922,7 +1037,7 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
         """
         Deletes the highlighted item outright, with everything under it — the one
         path that permanently leaves the database, so it's the one that asks first.
-        Ctrl+z still reaches it until the app is quit.
+        `u` still reaches it until the app is quit.
         """
 
         self._remove_node()
@@ -956,6 +1071,37 @@ class ModelTree(BaseTree, Generic[ModelType, RenderDictType]):
             return None
 
         return drawn[index]
+
+    @require_highlighted_node
+    def indent_node(self) -> None:
+        """Files the highlighted row under the row drawn above it, expanding that parent so the row stays visible."""
+
+        model = self.current_model
+        parent = self.row_beside(model, -1)
+
+        if parent is None:
+            self.post_message(BarNotification(self.NOTHING_ABOVE, "warning"))
+            return
+
+        outcome = model.indent(parent)
+
+        # Expanding refreshes the pane, placing the row where it now belongs
+        self._expand_node(parent.uuid)
+
+        # Fitted to its new parent rather than refused: say what gave way
+        self.tell_outcome(outcome)
+
+    @require_highlighted_node
+    def unindent_node(self) -> None:
+        """Takes the highlighted row out of the one it is filed under."""
+
+        outcome = self.current_model.unindent()
+
+        if outcome is None:
+            self.post_message(BarNotification(self.NOT_NESTED, "warning"))
+            return
+
+        self.tell_outcome(outcome)
 
     def _shift(self, offset: int) -> bool:
         """Swaps the highlighted row with the one drawn beside it (by drawn position, not filing order)."""

@@ -8,15 +8,14 @@ them, so none of this waits on a timer or an event going round the app.
 from datetime import datetime
 from types import SimpleNamespace
 
-from rich.style import Style
 from rich.console import Console
+from rich.style import Style
 from rich.text import Text
 
+from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
 from todooit.ui.api.events import Startup
 from todooit.ui.widgets.bars import StatusBarWidget
-from tests.test_ui.ui_base import boot, run_pilot
-
 
 CONSOLE = Console()
 
@@ -110,6 +109,7 @@ async def test_the_config_bar_is_built_from_these_widgets():
         app = await boot(pilot)
         rendered = [widget.render().plain for widget in app.bar.bar_widgets]
 
-        assert any("NORMAL" in plain for plain in rendered)
+        # The panes' NORMAL, named apart from a description's vim NORMAL
+        assert any("NAV" in plain for plain in rendered)
         # The project the app opens on, named by `current_project`
         assert any("Today" in plain for plain in rendered)

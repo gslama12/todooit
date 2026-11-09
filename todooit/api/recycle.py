@@ -10,7 +10,7 @@ project if one of them is restored later.
 from datetime import datetime
 from typing import List, Optional
 
-from .fixed_projects import PATH_SEPARATOR, binned_tasks, project_path
+from .fixed_projects import binned_tasks, completed_tasks, project_path, split_path
 from .manager import manager
 from .placement import bin_row_of
 from .project import Project
@@ -83,7 +83,7 @@ def _project_from_path(path: str, created: List[Project]) -> Project:
     The project a path names, creating whatever part of it is missing
     """
 
-    names = [name.strip() for name in path.split(PATH_SEPARATOR) if name.strip()]
+    names = split_path(path)
     parent = Project._get_or_create_root()
 
     for name in names or [UNKNOWN_PROJECT]:
@@ -143,7 +143,25 @@ def empty_bin() -> List[str]:
     Permanently delete everything in the Bin; returns the uuids of all deleted rows
     """
 
-    tasks = binned_tasks()
+    return _delete_tasks(binned_tasks())
+
+
+def empty_completed() -> List[str]:
+    """
+    Permanently delete every task in Completed; returns the uuids of all deleted rows
+
+    A step finished under a parent that is still open goes on its own; the
+    parent stays in its project.
+    """
+
+    return _delete_tasks(completed_tasks())
+
+
+def _delete_tasks(tasks: List[Todo]) -> List[str]:
+    """
+    Delete tasks for good, steps and all; returns the uuids of all deleted rows
+    """
+
     gone = [node.uuid for todo in tasks for node in todo.family]
 
     # Deleting the task cascades to its children

@@ -1,5 +1,6 @@
 import pytest
 from textual import events
+
 from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.screens import MainScreen
 from todooit.ui.screens.base import cmd_as_ctrl

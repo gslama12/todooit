@@ -1,4 +1,5 @@
 from typing import List
+
 from rich.console import RenderableType
 from rich.table import Table
 

@@ -1,17 +1,21 @@
 from pathlib import Path
 from typing import Optional
+
 from textual import on
 from textual.app import App
 from textual.widgets import ContentSwitcher
-from todooit.ui.api.events import ModeChanged, TodooitEvent, ModeType, Startup, QuitApp
+
+from todooit.ui.api.events import ModeChanged, ModeType, QuitApp, Startup, TodooitEvent
 from todooit.ui.api.events.events import ShutDown
+from todooit.ui.screens import MainScreen
+from todooit.ui.slim_cursor import slim_cursor
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
-from todooit.ui.screens import MainScreen
 from todooit.utils import CssManager
+
+from ..api import drop_blank_models, manager
 from .api import TodooitAPI
-from ..api import manager, drop_blank_models
 
 
 class Todooit(App):
@@ -33,7 +37,7 @@ class Todooit(App):
         self.api = TodooitAPI(self)
 
         # Start history after sweeping blank rows, so a row left by a mid-edit
-        # quit isn't the first thing ctrl+z offers back.
+        # quit isn't the first thing `u` offers back.
         self.api.history.start()
         self.api.config_manager.scan()
         self.post_message(Startup())
@@ -42,6 +46,9 @@ class Todooit(App):
 
     def on_mount(self):
         self.base_setup()
+
+    def on_unmount(self) -> None:
+        slim_cursor(self).restore()
 
     async def action_quit(self) -> None:
         drop_blank_models()

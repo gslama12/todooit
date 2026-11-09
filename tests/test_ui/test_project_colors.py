@@ -3,14 +3,6 @@ Colors a project can be given, and the "c" that means two different things
 depending on which pane it is pressed over
 """
 
-from todooit.api import Project
-from todooit.utils.default_config import (
-    PROJECT_COLOR_NAMES,
-    project_color,
-    project_palette,
-)
-from todooit.api.theme import TodooitThemeBase, TokyoNight
-from todooit.ui.tui import Todooit
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -18,6 +10,14 @@ from tests.test_ui.ui_base import (
     new_project,
     new_todo,
     run_pilot,
+)
+from todooit.api import Project
+from todooit.api.theme import TodooitThemeBase, TokyoNight
+from todooit.ui.tui import Todooit
+from todooit.utils.default_config import (
+    PROJECT_COLOR_NAMES,
+    project_color,
+    project_palette,
 )
 
 
@@ -190,29 +190,6 @@ def test_a_slot_outside_the_palette_reads_as_no_color():
     assert project_color(Stray(), api) is None
 
 
-async def test_the_digit_colors_the_sub_projects_too():
-    """
-    The color is the tree's and not the row's: everything filed under the
-    project the digit was typed over is repainted with it
-    """
-
-    async with run_pilot() as pilot:
-        await boot(pilot)
-        project = await new_project(pilot, "painted")
-
-        child = project.add_project()
-        child.description = "under it"
-        child.save()
-
-        grandchild = child.add_project()
-        grandchild.description = "further under it"
-        grandchild.save()
-
-        await pilot.press("c", "4")
-        await pilot.pause()
-
-        assert [p.color for p in (project, child, grandchild)] == [4, 4, 4]
-
 
 async def test_the_digit_over_a_sub_project_colors_the_whole_tree():
     """
@@ -245,20 +222,3 @@ async def test_the_digit_over_a_sub_project_colors_the_whole_tree():
 
         assert child.color is None
         assert project.color is None
-
-
-async def test_a_sub_project_made_after_the_color_arrives_wearing_it():
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-        await new_project(pilot, "painted")
-
-        await pilot.press("c", "8")
-        await pilot.pause()
-
-        await pilot.press("N")
-        await commit_line(pilot, "under it")
-
-        child = app.project_tree.current_model
-        assert isinstance(child, Project)
-
-        assert child.color == 8

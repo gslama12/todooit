@@ -4,11 +4,13 @@ from typing import Any, Optional
 from rich.style import Style
 from rich.text import Text
 
-from .simple_input import SimpleInput
-from todooit.api import Cadence, Todo, Project, lifecycle
+from todooit.api import Cadence, Project, Todo, lifecycle
 from todooit.api.lifecycle import Outcome
 from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
+
+from .simple_input import SimpleInput
+from .vim_input import VimDescription
 
 # Typed into a date field, opens the calendar instead of being parsed as a
 # date (no date expression starts with "cal"). A plain word rather than a
@@ -16,36 +18,16 @@ from todooit.utils import parse
 CALENDAR_WORD = "cal"
 
 
-class TodoDescription(SimpleInput[Todo, str]):
+class TodoDescription(VimDescription[Todo]):
     @property
     def _property(self) -> str:
         return "description"
 
 
-class ProjectDescription(SimpleInput[Project, str]):
+class ProjectDescription(VimDescription[Project]):
     @property
     def _property(self) -> str:
         return "description"
-
-
-class ProjectTasks(SimpleInput[Project, int]):
-    """How many todos are nested under the project; derived, so never editable."""
-
-    editable = False
-
-    @property
-    def _property(self) -> str:
-        return "total_todos"
-
-    @property
-    def value(self) -> str:
-        # Recounted each render since todos come and go.
-        count = self.model_value
-
-        if not count:
-            return ""
-
-        return str(count)
 
 
 class Note(SimpleInput[Todo, str]):
@@ -68,6 +50,8 @@ class DateInput(SimpleInput[Todo, datetime]):
     EDIT_FORMAT = "%d.%m.%Y"
 
     def asks_for_calendar(self) -> bool:
+        """Whether the typed text is a request to open the calendar."""
+
         return self.value.strip().lower() == CALENDAR_WORD
 
     def take_back_word(self) -> None:
@@ -207,18 +191,6 @@ class Priority(SimpleInput[Todo, int]):
         return int(value)
 
 
-class Agent(SimpleInput[Todo, bool]):
-    """
-    Whether an AI has been handed the todo. A toggled flag, never typed into,
-    so the column is read-only with an empty buffer (like Note).
-    """
-
-    editable = False
-
-    def _get_default_value(self) -> str:
-        return ""
-
-
 class Status(SimpleInput[Todo, str]):
     def _get_default_value(self) -> str:
         val = self.model_value
@@ -232,10 +204,7 @@ class Status(SimpleInput[Todo, str]):
         return "o"
 
     def _typecast_value(self, value: str) -> Any:
-        if value == "COMPLETED":
-            return False
-
-        return True
+        return value != "COMPLETED"
 
 
 class Recurrence(SimpleInput[Todo, Cadence]):

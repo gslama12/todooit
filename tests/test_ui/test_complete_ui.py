@@ -7,9 +7,6 @@ something happened) and the status bar says what the completion meant.
 
 from datetime import date, timedelta
 
-from todooit.api import Cadence, Todo, manager
-from todooit.utils import next_month_end
-from todooit.utils.default_config import todo_recurrence_formatter
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -17,6 +14,9 @@ from tests.test_ui.ui_base import (
     notification_message,
     run_pilot,
 )
+from todooit.api import Cadence, Todo, manager
+from todooit.utils import next_month_end
+from todooit.utils.default_config import todo_recurrence_formatter
 
 
 async def test_completing_a_recurring_todo_flashes_it_and_names_its_new_day():
@@ -307,7 +307,7 @@ async def test_one_undo_takes_back_an_indent_and_its_overrides():
     async with run_pilot() as pilot:
         review, stretch = await indent_stretch_under_weekly_review(pilot)
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
         await pilot.pause()
 

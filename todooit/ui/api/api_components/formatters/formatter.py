@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from .._base import ApiComponent
-from .model_formatters import TodoFormatter, ProjectFormatter
+from .model_formatters import ProjectFormatter, TodoFormatter
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.todooit_api import TodooitAPI

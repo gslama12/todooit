@@ -4,7 +4,6 @@ from typing import List
 
 class ProjectWidget(Enum):
     description = "description"
-    tasks = "tasks"
 
 
 class TodoWidget(Enum):
@@ -18,7 +17,6 @@ class TodoWidget(Enum):
     priority = "priority"
     recurrence = "recurrence"
     status = "status"
-    agent = "agent"
     note = "note"
 
 

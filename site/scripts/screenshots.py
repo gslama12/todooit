@@ -87,7 +87,7 @@ def font_dirs() -> Sequence[Path]:
 
     return roots
 
-# Dooit.CSS_PATH is evaluated in the class body, so the cache directory is
+# Todooit.CSS_PATH is evaluated in the class body, so the cache directory is
 # frozen at import time -- this has to happen before todooit is imported.
 _INSTANCE = Path(tempfile.mkdtemp(prefix="todooit-shots-"))
 os.environ["TODOOIT_HOME"] = str(_INSTANCE)
@@ -97,10 +97,11 @@ sys.path.insert(0, str(REPO_ROOT))
 from textual.pilot import Pilot  # noqa: E402
 
 from todooit.api import Project, Todo, manager  # noqa: E402
+from todooit.api.cadence import Cadence  # noqa: E402
 from todooit.api.recycle import move_todo_to_bin  # noqa: E402
-from todooit.ui.tui import Dooit  # noqa: E402
+from todooit.ui.tui import Todooit  # noqa: E402
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree  # noqa: E402
-
+from todooit.utils.files import write_attachments  # noqa: E402
 
 # --------------------------------------------------------------------------
 # The workspace every screenshot is taken against
@@ -119,7 +120,10 @@ def at(hour: int = 0, minute: int = 0, days: int = 0) -> datetime:
 # the database comes up as the raw characters and shows none of it. The two
 # notes below are therefore typed through the pilot, one key at a time, exactly
 # as a person would write them.
+# A note opens in NORMAL, so `i` comes first; it ends back in NORMAL, off the
+# last line, since the cursor's own line is drawn as the raw markdown.
 NOTE_KEYS = (
+    "i",
     *"# Release checklist", "enter",
     *"- Tag the release", "enter",
     "tab", *"Changelog from the commit log", "enter",
@@ -137,15 +141,18 @@ NOTE_KEYS = (
     # The link last on its line: a markdown one is drawn under its name with
     # the address folded away behind it, and the underline is the name's
     *"For the rest, see [the release runbook](https://github.com/gslama12/todooit)",
+    "escape", "k",
 )
 
 PINNED_KEYS = (
+    "i",
     *"# Scratchpad", "enter",
     *"- Ask about the Q3 numbers", "enter",
     *"The invoice template moved", "enter",
     *"*No task for any of this yet*", "enter",
     "enter", "enter",
-    *"> The pinned note belongs to nothing, which is the point of it.",
+    *"> The pinned note belongs to nothing, which is the point of it.", "enter",
+    "escape",
 )
 
 # Plain text, only so the Note column has something to mark those rows with
@@ -175,10 +182,11 @@ def seed() -> Dict[str, Project]:
         priority: int = 0,
         scheduled: Optional[datetime] = None,
         due: Optional[datetime] = None,
-        agent: bool = False,
-        recurrence: Optional[timedelta] = None,
+        # A timedelta, or the text typed into the field (`eom`)
+        recurrence=None,
         note: str = "",
         done: bool = False,
+        attachments: Sequence[str] = (),
     ) -> Todo:
         t = parent.add_todo()
         t.save()
@@ -186,9 +194,14 @@ def seed() -> Dict[str, Project]:
         t.priority = priority
         t.scheduled = scheduled
         t.due = due
-        t.agent = agent
+        if isinstance(recurrence, timedelta):
+            recurrence = Cadence.from_timedelta(recurrence)
+        elif isinstance(recurrence, str):
+            recurrence = Cadence.parse(recurrence)
         t.recurrence = recurrence
         t.note = note
+        if attachments:
+            t.attachments = write_attachments([Path(a) for a in attachments])
         t.save()
 
         if done:
@@ -219,30 +232,40 @@ def seed() -> Dict[str, Project]:
     )
     todo(release, "Write the changelog", priority=2, scheduled=at(9))
     todo(release, "Tag and build", priority=3, due=at(days=2))
-    todo(release, "Draft the announcement", agent=True)
+    todo(release, "Draft the announcement")
     todo(release, "Update the install docs", scheduled=at(days=1))
 
     todo(work, "Review the migration PR", priority=2, scheduled=at(11))
     todo(
         work,
-        "Hand the flaky pilot test to the agent",
+        "Fix the flaky pilot test",
         priority=3,
         scheduled=at(),
-        agent=True,
     )
     todo(work, "Team standup", scheduled=at(9, 30), recurrence=timedelta(days=1))
     todo(work, "Expenses for August", scheduled=at(days=-2), priority=2)
-    todo(work, "Quarterly report", due=at(days=6), note=SHORT_NOTE)
+    todo(
+        work,
+        "Quarterly report",
+        due=at(days=6),
+        note=SHORT_NOTE,
+        # Only the paths are kept, so they needn't exist for the strip to draw
+        attachments=(
+            "/home/me/reports/q3-figures.xlsx",
+            "/home/me/reports/q3-draft.docx",
+            "/home/me/reports/board-feedback.pdf",
+        ),
+    )
     todo(work, "Book the offsite room", scheduled=at(days=3))
     todo(work, "Interview debrief", priority=2, scheduled=at(days=1), due=at(days=1))
     todo(work, "Renew the TLS certificate", priority=1, due=at(days=5))
-    todo(work, "Write up the incident", agent=True, due=at(days=4))
+    todo(work, "Write up the incident", due=at(days=4))
     todo(work, "Plan the Q4 roadmap", scheduled=at(days=7))
     todo(work, "One-to-ones", scheduled=at(14), recurrence=timedelta(weeks=2))
     todo(work, "Clear the inbox", recurrence=timedelta(days=1))
     todo(work, "Chase the vendor contract", priority=2, due=at(days=10))
     todo(work, "Review the on-call rota", scheduled=at(days=8))
-    todo(work, "Update the runbook index", agent=True)
+    todo(work, "Update the runbook index")
     todo(work, "Sign off the design review", priority=3, due=at(days=11))
     todo(work, "Prep the board slides", scheduled=at(days=9), due=at(days=13))
     todo(work, "Close the old support tickets", priority=3)
@@ -272,6 +295,7 @@ def seed() -> Dict[str, Project]:
     todo(weekend, "Pack the boots")
 
     todo(home, "Water the plants", scheduled=at(), recurrence=timedelta(weeks=1))
+    todo(home, "Pay the rent", recurrence="eom")
     todo(home, "Call the dentist", priority=1, scheduled=at(days=-1))
     todo(home, "Book the train to Vienna", scheduled=at(days=1), due=at(days=4))
     todo(home, "Pick up the parcel", scheduled=at(days=3))
@@ -302,7 +326,7 @@ def seed() -> Dict[str, Project]:
     todo(side, "Sketch the landing page", priority=2, scheduled=at(days=1))
     todo(side, "Pick a database", priority=1, due=at(days=9))
     todo(side, "Buy the domain", scheduled=at(days=4))
-    todo(side, "Read up on Pages deploys", agent=True)
+    todo(side, "Read up on Pages deploys")
     todo(side, "Write the README", scheduled=at(days=5))
 
     # --- Health -----------------------------------------------------------
@@ -339,7 +363,7 @@ def seed() -> Dict[str, Project]:
 # --------------------------------------------------------------------------
 
 
-async def boot(pilot: Pilot) -> Dooit:
+async def boot(pilot: Pilot) -> Todooit:
     """Waits out the startup jump to the Today pane"""
 
     app = pilot.app
@@ -348,9 +372,11 @@ async def boot(pilot: Pilot) -> Dooit:
         await pilot.pause()
 
         switcher = app.screen.query_one("#todo_switcher")
-        if isinstance(switcher.visible_content, FixedTodosTree):
-            if app.focused is switcher.visible_content:
-                return app
+        if (
+            isinstance(switcher.visible_content, FixedTodosTree)
+            and app.focused is switcher.visible_content
+        ):
+            return app
 
     raise AssertionError("The app never settled on the Today pane")
 
@@ -370,6 +396,12 @@ async def reveal(pilot: Pilot, project: Project) -> None:
 # A chord is written out one key at a time -- ("g", "u"), never ("gu") -- since
 # the pilot presses a *key* and there is no key called "gu". The key manager
 # holds the halves until they match, so two presses are one chord.
+def find(text: str) -> Tuple[str, ...]:
+    """The finder walking the cursor over to a task, wherever it is filed"""
+
+    return ("/", *text, "enter")
+
+
 SCENES: Sequence[Tuple[str, Optional[str], Sequence[str]]] = (
     # --- the workspace, for the README and the docs home ------------------
     ("workspace", "Work", ("ö",)),
@@ -387,10 +419,22 @@ SCENES: Sequence[Tuple[str, Optional[str], Sequence[str]]] = (
     ("quick-add", None, ("C", *"Call the dentist #Home p1 tomorrow 09:00")),
     ("search", None, ("/", *"boo")),
     ("move", "Work", ("ö", "M", *"Sid")),
-    ("note", "Work", ("ö", " ", *NOTE_KEYS)),
+    ("note", None, (*find("Ship the 1.1"), " ", *NOTE_KEYS)),
     ("pinned-note", None, ("m", *PINNED_KEYS)),
     ("calendar", "Work", ("ö", "s", *"cal")),
     ("help", None, ("?",)),
+    # --- added with the vim work ------------------------------------------
+    # Flash: a label on every row on screen, typing one jumps there
+    ("flash", "Work", ("ö", "f")),
+    # A description edited with vim's keys: `e` lands in NORMAL, `cw` changes
+    # the word under the cursor
+    ("vim-description", "Work", ("ö", "e", "b", "c", "w", *"2.0")),
+    # Every key a note knows, with `space ?`
+    ("note-help", None, (*find("Ship the 1.1"), " ", *NOTE_KEYS, "space", "question_mark")),
+    # The finder looking in notes: a `>` first
+    ("search-notes", None, ("/", *">backup")),
+    # Files attached to a note, in the strip along its bottom
+    ("attachments", None, (*find("Quarterly report"), " ", "g", "f")),
 )
 
 
@@ -402,7 +446,7 @@ async def capture() -> None:
         if db_path.exists():
             db_path.unlink()
 
-        app = Dooit(db_path=str(db_path))
+        app = Todooit(db_path=str(db_path))
         projects = seed()
 
         async with app.run_test(size=(COLUMNS, ROWS)) as pilot:
@@ -437,13 +481,17 @@ def find_font(name: str, extra: Optional[Path]) -> Path:
     roots = [extra, *font_dirs()] if extra else list(font_dirs())
 
     for root in roots:
-        if not root or not root.exists():
-            continue
+        # Another Windows user's profile can't be looked into
+        try:
+            if not root or not root.exists():
+                continue
 
-        # Windows keeps per-user installs several levels down, so this looks
-        # rather than insisting on one layout
-        for candidate in root.rglob(name):
-            return candidate
+            # Windows keeps per-user installs several levels down, so this
+            # looks rather than insisting on one layout
+            for candidate in root.rglob(name):
+                return candidate
+        except PermissionError:
+            continue
 
     raise SystemExit(
         "Could not find {}.\n"

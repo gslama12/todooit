@@ -1,31 +1,32 @@
 from datetime import date, datetime, timedelta
 from functools import partial
 from typing import Callable, Optional, Tuple
+
 from rich.style import Style
-from todooit.api import Cadence, Todo, Project
+from rich.text import Text
+
+from todooit.api import Cadence, Project, Todo, TodoSortModeType
 from todooit.ui.api import TodooitAPI, extra_formatter, subscribe, timer
 from todooit.ui.api.bar_widgets import clock, current_project, spacer, text
+from todooit.ui.api.events import ModeChanged, Startup
 from todooit.ui.api.formatter_presets import (
-    agent_icon,
     description_highlight_link,
     due_danger_today,
     recurrence_icon,
 )
 from todooit.ui.api.todooit_api import SORT_LABELS
-from todooit.ui.api.widgets import TodoWidget, ProjectWidget
-from todooit.ui.api.events import ModeChanged, Startup
+from todooit.ui.api.widgets import ProjectWidget, TodoWidget
+from todooit.ui.screens.note.disp.theme import MODE_COLORS as NOTE_MODE_COLORS
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
-from rich.text import Text
-
+from todooit.vim_engine import VimCommand, VimMotion, VimOperator, VimTextObject
 
 # Todo formatters
 
 
-# The task tally on a project and the child count trailing a todo description
-# share one color: the accent the column headers are drawn in, pulled towards the
-# background so the numbers annotate the rows they sit on instead of competing
-# with them.
+# The child count trailing a collapsed project or todo shares one color: the
+# accent the column headers are drawn in, pulled towards the background so the
+# number annotates the row it sits on instead of competing with it.
 COUNT_FADE = 0.4
 
 
@@ -56,7 +57,7 @@ def priority_color(priority: int, api: TodooitAPI) -> str:
 # whatever is filed in here, what is the next thing to do out of it. The dates
 # are there for the stretches of work that are run off a calendar instead, and
 # hold until they are switched back — the order is the pane's, not a project's.
-SORT_MODES = ("priority", "due", "scheduled")
+SORT_MODES: Tuple[TodoSortModeType, ...] = ("priority", "due", "scheduled")
 
 
 CHECKBOX_EMPTY = "󰄱"
@@ -100,9 +101,9 @@ def _add_working_days(start: date, days: int) -> date:
 # `scheduled`, the day it is planned to be worked on. Both columns are rendered
 # by the formatters below, which differ only in the field they read.
 #
-# German date convention: weekday first, then day, dot separated, and the year
-# always spelled out as its last two digits. The time only shows up when it is
-# something other than midnight.
+# German date convention: weekday first, then day, dot separated, and no year
+# (see DATE_FORMAT). The time only shows up when it is something other than
+# midnight.
 def todo_date_formatter(value: Optional[datetime], _: Todo) -> str:
     if value is None:
         return ""
@@ -129,7 +130,8 @@ DATE_ICON_OVERDUE = " "
 
 
 # The calendar in front of a date, so a date column is recognisable as one from
-# across the row. It arrives with a status color of its own, which the color
+# across the row. Only the Completed pane's column carries it per row: the
+# scheduled and due columns have it once, in their header (TodosTree). It arrives with a status color of its own, which the color
 # formatter above it then drops in favor of one style over the whole column.
 def date_icon(field: str):
     @extra_formatter
@@ -195,30 +197,21 @@ def date_color_formatter(field: str):
     return wrapper
 
 
-# How many todos hang below this one, at any depth. Nesting is invisible while a
-# todo is collapsed, so the count rides along with the description, in the same
-# dimmed accent as the project pane's task tally.
+# How many todos hang below this one, at any depth. Only drawn while the todo is
+# collapsed: once it is open, the children are right there on the rows below.
 def todo_description_formatter(description: str, todo: Todo, api: TodooitAPI) -> str:
     count = todo.total_children
 
-    if not count:
+    if not count or api.is_expanded(todo):
         return description
 
     return f"{description} [{count_color(api)}]({count})[/]"
 
 
-# The agent column has no text of its own: the flag is either set, and the
-# hourglass below draws it, or it is not, and the column is left blank. A
-# space rather than an empty string, for the same reason the note column
-# returns one -- the formatter store turns anything falsy into a dim, centered
-# "-", which is not the same as nothing.
-def todo_agent_formatter(agent: bool, _: Todo) -> str:
-    return " "
-
-
 # A sheet of paper on the rows whose note carries anything - text, files, or
-# both - and nothing at all on the ones that do not. The column is never wider than its own header, so the icon
-# marks the row without taking any room from the description.
+# both - and nothing at all on the ones that do not. The column has no header
+# and is only as wide as the icon, so it marks the row without taking any room
+# from the description.
 NOTE_ICON = ""
 
 
@@ -310,18 +303,6 @@ def binned_date_formatter(value: str, todo: Todo, api: TodooitAPI) -> str:
 
 
 # Project formatters
-
-
-# Every todo nested under the project, counted at every level; sub projects
-# are walked into but not counted themselves. It gets a column of its own, so
-# nothing but the number is needed. The column header is drawn in the accent
-# color, and the numbers under it in a dimmer shade of the same, so the pair
-# reads as one unit without competing with the descriptions beside it.
-def project_tasks_formatter(count: int, _: Project, api: TodooitAPI) -> str:
-    if not count:
-        return ""
-
-    return f"[{count_color(api)}]{count}[/]"
 
 
 # Projects can be colored the way folders and labels are: ten slots, typed
@@ -465,15 +446,15 @@ def gray_out_muted_project(value: str, project, api: TodooitAPI):
     ).markup
 
 
-# How many projects hang below this one, at any depth. Nesting is invisible
-# while a project is collapsed, so the count rides along with the name, in the
-# same dimmed accent as the task tally beside it.
+# How many projects hang below this one, at any depth. Only drawn while the
+# project is collapsed: once it is open, the sub projects are right there on the
+# rows below.
 def project_description_formatter(
     description: str, project: Project, api: TodooitAPI
 ) -> str:
     count = project.total_projects
 
-    if not count:
+    if not count or api.is_expanded(project):
         return description
 
     return f"{description} [{count_color(api)}]({count})[/]"
@@ -491,6 +472,96 @@ def project_color_formatter(name: str, project, api: TodooitAPI) -> Optional[str
         return None
 
     return f"[{color}]{name}[/]"
+
+
+@subscribe(Startup)
+def vim_key_setup(api: TodooitAPI, _):
+    # The keys inside a note's text, apart from the panes' own. A todo's or a
+    # project's description takes the same ones under `e`, as far as one line
+    # has a use for them (`DESCRIPTION_ACTIONS`); turn that off with
+    # `api.vim.descriptions = False`, and `e` is the same as `i`.
+    api.vim.keys.set("j", VimMotion.LEFT)
+    api.vim.keys.set("ö", VimMotion.RIGHT)
+    api.vim.keys.set("k", VimMotion.UP)
+    api.vim.keys.set("l", VimMotion.DOWN)
+    api.vim.keys.set("w", VimMotion.WORD_FORWARD)
+    api.vim.keys.set("b", VimMotion.WORD_BACKWARD)
+    api.vim.keys.set("e", VimMotion.WORD_END)
+    api.vim.keys.set("=", VimMotion.FIRST_NON_BLANK)
+    api.vim.keys.set("_", VimMotion.LAST_CHARACTER)
+    api.vim.keys.set("ü", VimMotion.LINE_ABOVE)
+    api.vim.keys.set("ä", VimMotion.LINE_BELOW)
+    api.vim.keys.set("f", VimMotion.FIND_FORWARD)
+    api.vim.keys.set("F", VimMotion.FIND_BACKWARD)
+    api.vim.keys.set("t", VimMotion.TILL_FORWARD)
+    api.vim.keys.set("T", VimMotion.TILL_BACKWARD)
+    api.vim.keys.set("h", VimMotion.REPEAT_FIND)
+    api.vim.keys.set("H", VimMotion.REVERSE_FIND)
+    api.vim.keys.set("<ctrl+u>", VimMotion.HALF_PAGE_UP)
+    api.vim.keys.set("<ctrl+d>", VimMotion.HALF_PAGE_DOWN)
+    api.vim.keys.set("gg", VimMotion.TOP)
+    api.vim.keys.set("G", VimMotion.BOTTOM)
+    api.vim.keys.set("{", VimMotion.PARAGRAPH_UP)
+    api.vim.keys.set("}", VimMotion.PARAGRAPH_DOWN)
+    api.vim.keys.set("n", VimMotion.SEARCH_NEXT)
+    api.vim.keys.set("N", VimMotion.SEARCH_PREVIOUS)
+    api.vim.keys.set("s", VimMotion.VIM_FLASH)
+    api.vim.keys.set("i", VimCommand.INSERT)
+    api.vim.keys.set("a", VimCommand.INSERT_AFTER)
+    api.vim.keys.set("I", VimCommand.INSERT_FIRST_NON_BLANK)
+    api.vim.keys.set("A", VimCommand.INSERT_LINE_END)
+    api.vim.keys.set("gi", VimCommand.INSERT_AT_LAST)
+    api.vim.keys.set("o", VimCommand.OPEN_BELOW)
+    api.vim.keys.set("O", VimCommand.OPEN_ABOVE)
+    api.vim.keys.set("zz", VimCommand.CENTER_VIEW)
+    api.vim.keys.set("gx", VimCommand.OPEN_LINK)
+    api.vim.keys.set("gf", VimCommand.PICK_FILES)
+    api.vim.keys.set("d", VimOperator.DELETE)
+    api.vim.keys.set("dd", VimCommand.DELETE_LINE)
+    api.vim.keys.set("D", VimCommand.DELETE_TO_LINE_END)
+    api.vim.keys.set("x", VimCommand.DELETE_CHAR)
+    api.vim.keys.set("c", VimOperator.CHANGE)
+    api.vim.keys.set("cc", VimCommand.CHANGE_LINE)
+    api.vim.keys.set("C", VimCommand.CHANGE_TO_LINE_END)
+    api.vim.keys.set(">", VimOperator.INDENT)
+    api.vim.keys.set(">>", VimCommand.INDENT_LINE)
+    api.vim.keys.set("<", VimOperator.UNINDENT)
+    api.vim.keys.set("<<", VimCommand.UNINDENT_LINE)
+    api.vim.keys.set("ip", VimTextObject.INNER_PARAGRAPH)
+    api.vim.keys.set("ap", VimTextObject.AROUND_PARAGRAPH)
+    api.vim.keys.set("iw", VimTextObject.INNER_WORD)
+    api.vim.keys.set("aw", VimTextObject.AROUND_WORD)
+    api.vim.keys.set(["iW", "i "], VimTextObject.INNER_BIG_WORD)
+    api.vim.keys.set("aW", VimTextObject.AROUND_BIG_WORD)
+    # Either half of a pair names it
+    for inner, around, pair in (
+        (VimTextObject.INNER_PARENS, VimTextObject.AROUND_PARENS, "()"),
+        (VimTextObject.INNER_BRACKETS, VimTextObject.AROUND_BRACKETS, "[]"),
+        (VimTextObject.INNER_BRACES, VimTextObject.AROUND_BRACES, "{}"),
+        (VimTextObject.INNER_ANGLES, VimTextObject.AROUND_ANGLES, "<>"),
+        (VimTextObject.INNER_DOUBLE_QUOTES, VimTextObject.AROUND_DOUBLE_QUOTES, '"'),
+        (VimTextObject.INNER_SINGLE_QUOTES, VimTextObject.AROUND_SINGLE_QUOTES, "'"),
+        (VimTextObject.INNER_BACKTICKS, VimTextObject.AROUND_BACKTICKS, "`"),
+    ):
+        api.vim.keys.set([f"i{char}" for char in pair], inner)
+        api.vim.keys.set([f"a{char}" for char in pair], around)
+    api.vim.keys.set("r", VimCommand.REPLACE_CHAR)
+    api.vim.keys.set("y", VimOperator.YANK)
+    api.vim.keys.set("yy", VimCommand.YANK_LINE)
+    api.vim.keys.set("p", VimCommand.PASTE_AFTER)
+    api.vim.keys.set("P", VimCommand.PASTE_BEFORE)
+    api.vim.keys.set("u", VimCommand.UNDO)
+    api.vim.keys.set("<ctrl+r>", VimCommand.REDO)
+    api.vim.keys.set("?", VimCommand.SEARCH)
+    api.vim.keys.set("*", VimCommand.SEARCH_WORD)
+    # Every match of the last search in the note, with what's typed in a prompt
+    api.vim.keys.set("R", VimCommand.REPLACE_MATCHES)
+    # On a selection `o` goes to its other end, `x` deletes it, `p` replaces it
+    api.vim.keys.set("v", VimCommand.VISUAL)
+    api.vim.keys.set("V", VimCommand.VISUAL_LINE)
+    # Every key a note knows, by mode: LazyVim's `<leader>?`, space being the
+    # leader. `?` alone is the note's search.
+    api.vim.keys.set(" ?", VimCommand.HELP)
 
 
 @subscribe(Startup)
@@ -515,15 +586,35 @@ def key_setup(api: TodooitAPI, _):
     # "g" jumps because it is one -- those name the pane to go to, this one
     # lets the highlighted row name it -- and scoped to the tasks, since a
     # project row is already standing in its own pane
-    api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
+    api.keys.set(
+        "gi",
+        api.goto_item,
+        description="Jump to the task's source project (in Today or Upcoming)",
+        group=NAVIGATION,
+        scope="todos",
+    )
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
+    # Flash mode, "f" for "flash": a label on every row on screen in this pane,
+    # and typing one lands the cursor there -- the way to a row you can see
+    # without counting how far away it is
+    api.keys.set("f", api.flash_jump, group=NAVIGATION)
     # The desktop's top/bottom of a document too (a Mac's cmd+up/down,
     # passed on by the terminal); hidden, as gg/G already say it in help
     api.keys.set("<ctrl+home>", api.go_to_top, group=NAVIGATION, hidden=True)
     api.keys.set("<ctrl+end>", api.go_to_bottom, group=NAVIGATION, hidden=True)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
-    api.keys.set("i", api.edit_description, group=EDITING)
+    # With the note's vim keys, in NORMAL on the last character; with
+    # `api.vim.descriptions = False`, typing straight over all of it
+    api.keys.set(
+        "e",
+        api.edit_description_vim,
+        description=(
+            "Edit a task (vim motion subset: i = insert, "
+            "Esc = normal/save, Enter = save and exit)"
+        ),
+        group=EDITING,
+    )
     api.keys.set("d", api.edit_due, group=EDITING)
     # Lowercase, matching the other date: the sorting chords below moved up to
     # the shifted "S" to leave this one free, since a key that is the start of
@@ -535,7 +626,7 @@ def key_setup(api: TodooitAPI, _):
     # The whole task in one line, from wherever the cursor happens to be. The
     # shifted twin of the key that ticks one off, since between them they are
     # the two ends of a task's life
-    api.keys.set("C", api.quick_add, group=EDITING)
+    api.keys.set("C", api.quick_add, description="Quick add", group=EDITING)
     api.keys.set(" ", api.show_note, group=EDITING)
     # The scratchpad, next to the key that opens a todo's note: the same
     # window, for the thoughts that have no task to be written on yet
@@ -545,34 +636,28 @@ def key_setup(api: TodooitAPI, _):
     # be pressed on its own, and there is nothing in the left pane to tick off
     # anyway
     api.keys.set("c", api.toggle_complete, group=EDITING, scope="todos")
-    # The hourglass, on the key it is named after: pressed when a task goes
-    # out to an AI, and pressed again when it comes back. It says nothing
-    # about the task being done -- that is still the tick above -- only that
-    # it is somebody else's to move for the moment
-    api.keys.set("a", api.toggle_agent, group=EDITING)
     # Throwing something away costs nothing and asks nothing: it goes to the
-    # Bin, where "u" fetches it back. Getting rid of it for real is the other
+    # Bin, where "R" fetches it back. Getting rid of it for real is the other
     # chord, which is the one that stops to ask
     api.keys.set("xx", api.remove_node, group=EDITING)
     api.keys.set("yy", api.delete_node, group=EDITING)
-    api.keys.set("u", api.restore_node, group=EDITING)
+    api.keys.set("R", api.restore_node, group=EDITING)
     # The shifted twin of the chord that deletes one task for good, and the
-    # same thing over the whole Bin: it can be pressed from anywhere, and says
-    # how much is about to go before it goes. A chord rather than the single
-    # shifted key, since the whole Bin is far too much to lose to a slip of
-    # the finger — it has to be typed twice over, the way "yy" does
-    api.keys.set("YY", api.empty_bin, group=EDITING)
+    # same thing over a whole pane: in the Bin it empties the Bin, in
+    # Completed it clears out everything finished, and anywhere else it does
+    # nothing but say where it works. It says how much is about to go before
+    # it goes. A chord rather than the single shifted key, since a whole pane
+    # is far too much to lose to a slip of the finger — it has to be typed
+    # twice over, the way "yy" does
+    api.keys.set("YY", api.empty_pane, group=EDITING)
 
-    # Taking back the last thing that happened, on the keys the rest of the
-    # desktop takes things back with — the same two the note window already
-    # answers to, so that ctrl+z means one thing wherever it is pressed. Not
-    # vim's "u": that is the key which fetches a task back out of the Bin, and
-    # it was here first.
+    # Taking back the last thing that happened, on the same keys as inside a
+    # note, so that undo means one thing everywhere.
     #
     # What they walk back is every edit either pane can make, one key at a
     # time, however much of the tree that key moved.
-    api.keys.set("<ctrl+z>", api.undo, group=EDITING)
-    api.keys.set("<ctrl+y>", api.redo, group=EDITING)
+    api.keys.set("u", api.undo, group=EDITING)
+    api.keys.set("<ctrl+r>", api.redo, group=EDITING)
 
     # A scale is one thing to learn, not four, so the whole run of digits is
     # listed as the single row it reads as. The keys are still set one at a
@@ -620,16 +705,24 @@ def key_setup(api: TodooitAPI, _):
 
     api.keys.set("L", api.shift_down, group=MOVING)
     api.keys.set("K", api.shift_up, group=MOVING)
-    # A task moves sideways as well as up and down: shifted "i" files it under
-    # the task above it, shifted "u" pulls it back out. Only the tasks pane
-    # has levels to move between, so the projects pane leaves both alone
-    api.keys.set("I", api.indent_todo, group=MOVING)
-    api.keys.set("U", api.unindent_todo, group=MOVING)
+    # A row moves sideways as well as up and down: shifted "i" files it under
+    # the row above it, shifted "u" pulls it back out. Tasks and projects
+    # both nest, so the two keys work the same in either pane
+    api.keys.set("I", api.indent, description="Indent task/project", group=MOVING)
+    api.keys.set(
+        "U", api.unindent, description="Unindent task/project", group=MOVING
+    )
     # The move that crosses the whole tree rather than one step of it: the
     # other three shift a task among the rows around it, and this one takes it
     # out of the project altogether. Shifted "m", which is free over the tasks
     # — plain "m" is the pinned note, and nothing else starts with either
-    api.keys.set("M", api.move_todo, group=MOVING, scope="todos")
+    api.keys.set(
+        "M",
+        api.move_todo,
+        description="Move task to a different project",
+        group=MOVING,
+        scope="todos",
+    )
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)
@@ -638,8 +731,7 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("<ctrl+n>", api.copy_note_to_clipboard, group=MOVING)
     api.keys.set("<ctrl+v>", api.paste_as_sibling, group=MOVING)
 
-    # "o" for open, on the row and inside the note alike: the same key opens
-    # the link it is standing on wherever the link is written
+    # "o" for open: the link the row is standing on (inside a note it's `gx`)
     api.keys.set("o", api.open_link, group=VIEW)
     # "/" opens the finder over the app rather than filtering the pane in
     # front: what a search is for here is a task somewhere else in the tree,
@@ -679,9 +771,23 @@ def key_setup(api: TodooitAPI, _):
 
 @subscribe(Startup)
 def layout_setup(api: TodooitAPI, _):
+    # The projects pane takes the width its widest row needs with every project
+    # expanded, so folding never shifts the split, and the tasks pane the rest.
+    # Capped at a quarter of the screen, the most the old fixed split ever gave
+    # it: past that, long names wrap as they always have. Off, the split goes
+    # back to that fixed quarter.
+    api.vars.projects_pane_auto_width = True
+    api.vars.projects_pane_max_width = 0.25
+
+    # A note's window as LazyVim's: hybrid line numbers in a gutter (the
+    # cursor line's own number, every other line its distance from it), and no
+    # key hints under it - Cmd+? lists them all instead. Prompts, the y/N
+    # confirm and messages still show in that line either way.
+    api.vars.note_line_numbers = True
+    api.vars.note_hints = False
+
     api.layouts.project_layout = [
         ProjectWidget.description,
-        ProjectWidget.tasks,
     ]
     api.layouts.todo_layout = [
         TodoWidget.status,
@@ -691,7 +797,6 @@ def layout_setup(api: TodooitAPI, _):
         # the deadline are read as the pair they are
         TodoWidget.scheduled,
         TodoWidget.due,
-        TodoWidget.agent,
         TodoWidget.recurrence,
         # Last on the row: a note is something a todo either has or has not,
         # read in one glance and never scanned against the columns beside it
@@ -707,7 +812,6 @@ def formatter_setup(api: TodooitAPI, _):
         api.formatter.todos.description.add(gray_out(strike=True))
         api.formatter.todos.due.add(gray_out())
         api.formatter.todos.scheduled.add(gray_out())
-        api.formatter.todos.agent.add(gray_out())
         api.formatter.todos.recurrence.add(gray_out())
         api.formatter.todos.note.add(gray_out())
 
@@ -734,7 +838,11 @@ def formatter_setup(api: TodooitAPI, _):
         # instead, and on any other day it declines and lets the date through.
         column.add(due_danger_today())
         column.add(date_color_formatter(field))
-        column.add(date_icon(field))  # added last => runs first
+
+        # The scheduled and due columns carry the calendar once, in their
+        # header, rather than on every row
+        if field == "completed_at":
+            column.add(date_icon(field))  # added last => runs first
 
     # The Bin's own date column, built out of the same date formatter, read a
     # day at a time the way the completion log is, and then marked and colored
@@ -743,19 +851,14 @@ def formatter_setup(api: TodooitAPI, _):
     api.formatter.todos.binned.add(due_danger_today())
     api.formatter.todos.binned.add(binned_date_formatter)
 
-    api.formatter.todos.agent.add(todo_agent_formatter)
-    # The hourglass is the column: it goes on over the blank the formatter
-    # above hands back, and only on the rows carrying the flag
-    api.formatter.todos.agent.add(agent_icon())
     api.formatter.todos.note.add(todo_note_formatter)
     api.formatter.todos.recurrence.add(todo_recurrence_formatter)
     # Marks the repeating todos, whose interval is easy to miss as bare text
     api.formatter.todos.recurrence.add(recurrence_icon())
 
     # Added first => runs last, so the gray has the final say over the icon and
-    # the counts every formatter below hands out
+    # the count every formatter below hands out
     api.formatter.projects.description.add(gray_out_muted_project)
-    api.formatter.projects.tasks.add(gray_out_muted_project)
 
     # Added before the one below it => runs after it, so the icon ends up in
     # front of everything that formatter appends to the name, and the name is
@@ -763,7 +866,6 @@ def formatter_setup(api: TodooitAPI, _):
     api.formatter.projects.description.add(project_icon_formatter)
     api.formatter.projects.description.add(project_color_formatter)
     api.formatter.projects.description.add(project_description_formatter)
-    api.formatter.projects.tasks.add(project_tasks_formatter)
 
 
 # Status bar
@@ -784,49 +886,71 @@ def bar_background(api: TodooitAPI) -> str:
 MODE_COLORS = {
     "NORMAL": "primary",
     "INSERT": "secondary",
+    # The same red as the labels it puts up
+    "FLASH": "red",
 }
 
 
-def mode_color(api: TodooitAPI, mode: str) -> str:
+# How far the panes' own NORMAL is faded towards the bar: moving between rows,
+# not editing anything, so it stands back for a description's vim NORMAL
+NAV_FADE = 0.6
+
+
+def is_nav(event: ModeChanged) -> bool:
+    """The panes' NORMAL, as opposed to the NORMAL of a description's vim edit"""
+
+    return event.mode == "NORMAL" and not event.vim
+
+
+# A description edited with vim's keys wears the note's colors for its modes
+def mode_color(api: TodooitAPI, event: ModeChanged) -> str:
     theme = api.vars.theme
-    return getattr(theme, MODE_COLORS.get(mode, "primary"))
+
+    if is_nav(event):
+        return blend(theme.foreground1, theme.background2, NAV_FADE)
+
+    colors = NOTE_MODE_COLORS if event.vim else MODE_COLORS
+    return getattr(theme, colors.get(event.mode, "primary"))
 
 
 # The mode block takes its color from the mode itself, so the two caps around it
 # have to be repainted whenever it changes. A `text` widget is fixed at
 # startup and can't follow along, so all three pieces are built here, each one
 # its own widget listening to the same event.
-def mode_widget(render: Callable[[TodooitAPI, str], Text]) -> StatusBarWidget:
+def mode_widget(render: Callable[[TodooitAPI, ModeChanged], Text]) -> StatusBarWidget:
     @subscribe(ModeChanged)
     def wrapper(api: TodooitAPI, event: ModeChanged) -> Text:
-        return render(api, event.mode)
+        return render(api, event)
 
     return StatusBarWidget(wrapper)
 
 
 def mode_cap(glyph: str) -> StatusBarWidget:
     return mode_widget(
-        lambda api, mode: Text(
+        lambda api, event: Text(
             glyph,
-            style=Style(color=mode_color(api, mode), bgcolor=bar_background(api)),
+            style=Style(color=mode_color(api, event), bgcolor=bar_background(api)),
         )
     )
 
 
-def mode_label(api: TodooitAPI, mode: str) -> Text:
+# A vim command half typed (`d2`, `ci`) shows beside the mode, as in a note
+def mode_label(api: TodooitAPI, event: ModeChanged) -> Text:
+    name = "NAV" if is_nav(event) else event.mode
+    pending = f" {event.pending}" if event.pending else ""
+
     return Text(
-        f" {mode} ",
+        f" {name}{pending} ",
         style=Style(
             color=api.vars.theme.background1,
-            bgcolor=mode_color(api, mode),
+            bgcolor=mode_color(api, event),
             bold=True,
         ),
     )
 
 
 # Today, written the way every other date in the app is written. Read off the
-# clock rather than out of an event: nothing happens in the app when midnight
-# passes, so the widget is what has to notice the day has turned.
+# clock rather than out of an event: no event fires when midnight passes.
 DATE_TICK = 60
 
 

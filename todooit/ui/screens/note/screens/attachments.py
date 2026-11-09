@@ -17,7 +17,6 @@ from todooit.utils import (
     file_icon,
 )
 
-
 if TYPE_CHECKING:  # pragma: no cover
     from .screen import NoteScreenBase
 

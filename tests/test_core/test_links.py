@@ -3,7 +3,6 @@ The links inside a description or a note
 """
 
 from todooit.utils.links import (
-    EMPH_MARK,
     TITLE_MAX,
     drawn_column,
     find_links,
@@ -12,7 +11,7 @@ from todooit.utils.links import (
     folded_emph,
     link_label,
     link_title,
-    mark_pairs,
+    star_pairs,
     stored_range,
 )
 
@@ -255,7 +254,8 @@ def test_two_links_on_one_line_both_land_where_they_are_drawn():
 
 
 # The note's emphasis, folded by the same maps as a link's markup: a phrase
-# written between two marks worth no columns at all
+# written between two marks that take no columns on the page
+EMPH_MARK = "*"
 EMPHASISED = "ab" + EMPH_MARK + "cd" + EMPH_MARK + "ef"
 
 
@@ -264,7 +264,7 @@ def test_a_mark_is_drawn_as_nothing():
 
     assert drawn == "abcdef"
     assert folded_emph(EMPHASISED) == [(2, 4)]
-    assert mark_pairs(EMPHASISED) == [(2, 5)]
+    assert star_pairs(EMPHASISED) == [(2, 3, 5, 6)]
 
 
 def test_a_stored_column_comes_back_past_the_mark_it_is_hidden_behind():
@@ -329,14 +329,44 @@ def test_the_whole_page_of_a_line_is_the_whole_line():
     assert stored_range(text, 0, len(drawn)) == (0, len(text))
 
 
-def test_an_orphan_mark_belongs_to_what_comes_after_it():
-    """
-    Half a pair is drawn as nothing like any other mark, and goes with the
-    word behind it rather than gluing itself to the one in front
-    """
-
+def test_a_star_with_no_partner_stays_on_the_page():
     text = "ab" + EMPH_MARK + "cd"
 
-    assert fold_links(text)[0] == "abcd"
+    assert fold_links(text)[0] == text
     assert folded_emph(text) == []
     assert stored_range(text, 2, 2) == (2, 2)
+
+
+def test_double_stars_fold_like_single_ones():
+    text = "ab**cd**ef"
+
+    assert fold_links(text)[0] == "abcdef"
+    assert folded_emph(text) == [(2, 4)]
+    assert stored_range(text, 2, 4) == (2, 8)
+
+
+def test_a_raw_line_keeps_its_stars():
+    assert fold_links(EMPHASISED, True)[0] == EMPHASISED
+    assert folded_emph(EMPHASISED, True) == []
+
+
+def test_a_star_inside_a_link_pairs_nothing():
+    text = "*a [n](https://x.io/b*c) d"
+
+    assert star_pairs(text) == []
+
+
+def test_a_heading_mark_is_folded_off_the_page():
+    assert fold_links("## Title")[0] == "Title"
+    assert fold_links("## Title", True)[0] == "## Title"
+    assert drawn_column("## Title", 3) == 0
+
+
+def test_a_run_over_a_phrase_takes_exactly_its_marks():
+    # The marks hidden in front of a phrase aren't all its own
+    assert stored_range("# *x* yz", 0, 1) == (2, 5)
+
+    # And its closing stars aren't next to its words when a link's markup is
+    text = "x *[n](http://a.b)* y"
+
+    assert stored_range(text, 2, 3) == (2, len("x *[n](http://a.b)*"))

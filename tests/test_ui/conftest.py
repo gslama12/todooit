@@ -9,9 +9,9 @@ here settles the import order once, for the whole directory, and makes single
 test files runnable on their own.
 """
 
-import tests.test_ui.ui_base  # noqa: F401
-
 import pytest
+
+import tests.test_ui.ui_base  # noqa: F401
 
 # Anything a test waits out in real seconds is a race it loses the moment the
 # suite runs in parallel and a worker is starved: the notification bar removes
@@ -31,7 +31,8 @@ _KEEP_BELOW = 0.2
 def _no_wall_clock_waits(monkeypatch):
     from textual.message_pump import MessagePump
 
-    from todooit.ui.screens.note import screen as note_screen
+    from todooit.ui.screens.note.screens import screen as note_screen
+    from todooit.ui.screens.note.vim import modes as note_modes
     from todooit.ui.tui import Todooit
     from todooit.ui.widgets.trees.model_tree import ModelTree
 
@@ -55,4 +56,5 @@ def _no_wall_clock_waits(monkeypatch):
     # These hang off the note screen and the trees, not off the app
     monkeypatch.setattr(note_screen, "SAVE_DEBOUNCE", _FOREVER)
     monkeypatch.setattr(note_screen, "REPORT_TIMEOUT", _FOREVER)
+    monkeypatch.setattr(note_modes, "YANK_FLASH", _FOREVER)
     monkeypatch.setattr(ModelTree, "FLASH_INTERVAL", _FOREVER)

@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING
+
 from textual.app import events
 from textual.screen import Screen
 

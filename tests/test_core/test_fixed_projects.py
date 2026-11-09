@@ -7,12 +7,13 @@ blocks and their rows come in.
 
 from datetime import datetime, timedelta
 
+from tests.test_core.core_base import *  # noqa
 from todooit.api import (
-    lifecycle,
     BIN,
     COMPLETED,
     TODAY,
     UPCOMING,
+    lifecycle,
     move_todo_to_bin,
 )
 from todooit.api.fixed_projects import (
@@ -21,8 +22,8 @@ from todooit.api.fixed_projects import (
     fixed_project_from_key,
     fixed_projects,
     project_path,
+    split_path,
 )
-from tests.test_core.core_base import *  # noqa
 
 
 def today_at(hour: int = 10) -> datetime:
@@ -264,7 +265,6 @@ def test_a_context_row_is_not_part_of_the_days_work(create_project):
     step.save()
 
     assert TODAY.todos == [step]
-    assert TODAY.total_todos == 1
 
 
 def test_today_headings_carry_the_project_path(create_project):
@@ -654,8 +654,8 @@ def test_completed_is_a_log_of_finished_tasks(create_project):
     assert COMPLETED.todos == [last_done, first_done]
 
 
-def test_completed_shows_whole_tasks_not_steps(create_project):
-    """A finished step of an unfinished task has gone nowhere"""
+def test_completed_shows_a_step_finished_on_its_own_as_its_own_row(create_project):
+    """A finished step of an unfinished task leaves for the log like any task"""
 
     p = create_project("work")
     task = p.add_todo()
@@ -664,9 +664,10 @@ def test_completed_shows_whole_tasks_not_steps(create_project):
 
     step.toggle_complete()
 
-    assert COMPLETED.todos == []
+    assert COMPLETED.todos == [step]
+    assert task.is_pending
 
-    # Only once the task itself is ticked does it arrive, as the task
+    # Once the task itself is ticked, it carries the step in its own row
     task.toggle_complete()
 
     assert COMPLETED.todos == [task]
@@ -738,3 +739,9 @@ def test_upcoming_draws_no_step_twice(create_project):
 
     drawn = [todo.id for group in UPCOMING.todo_groups for todo in group.todos]
     assert drawn == [task.id, step.id]
+
+
+def test_split_path_reads_either_separator():
+    assert split_path("outer/inner") == ["outer", "inner"]
+    assert split_path("outer › inner") == ["outer", "inner"]
+    assert split_path(" ") == []

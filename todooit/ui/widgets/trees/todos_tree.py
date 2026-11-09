@@ -8,20 +8,15 @@ from textual import on
 from textual.widgets.option_list import Option
 
 from todooit.api import (
-    Todo,
     Project,
+    Todo,
     TodoGroup,
+    TodoSortModeType,
     freeze_sort_order,
     move_todo_to_bin,
     restore_todo,
 )
 from todooit.api.placement import home_of
-from todooit.ui.pane_layout import (
-    PaneRow,
-    drawn_children,
-    project_groups,
-    todo_rows,
-)
 from todooit.ui.api.events import (
     BarNotification,
     RevealTodo,
@@ -29,10 +24,17 @@ from todooit.ui.api.events import (
     SpawnNote,
 )
 from todooit.ui.api.events.events import TodoSelected
+from todooit.ui.pane_layout import (
+    PaneRow,
+    drawn_children,
+    project_groups,
+    todo_rows,
+)
 from todooit.utils import blend, copy_text
-from .model_tree import GroupHeading, ModelTree
+
 from ._decorators import require_highlighted_node
 from ._render_dict import TodoRenderDict
+from .model_tree import GroupHeading, ModelTree
 
 if TYPE_CHECKING:  # pragma: no cover
     from ...api.api_components.formatters.model_formatters import (
@@ -45,12 +47,29 @@ Model = Union[Todo, Project]
 # column titles, brighter than its own hairline, so it's found without being read
 HEADING_FADE = 0.25
 
+# The calendar the scheduled and due column headers are marked with
+DATE_COLUMN_ICON = "󰃰"
+
 
 class TodosTree(ModelTree[Model, TodoRenderDict]):
     BORDER_TITLE = "TASKS"
     NODE_NOUN = "task"
+
+    # What I and U say when there is nowhere to move the task
+    NOTHING_ABOVE = "Nothing above this to make it a step of"
+    NOT_NESTED = "This task is not a step of anything"
     show_header = True
     CHILDREN_ATTR = "todos"
+
+    # The checkbox and the note icon say what they are on their own, so their
+    # columns go untitled and stay only as wide as what they draw. The two date
+    # columns carry the calendar in their header instead of on every row
+    COLUMN_TITLES = {
+        "status": "",
+        "note": "",
+        "scheduled": f"{DATE_COLUMN_ICON} Scheduled",
+        "due": f"{DATE_COLUMN_ICON} Due",
+    }
 
     def __init__(self, model: Model) -> None:
         super().__init__(model, TodoRenderDict(self))
@@ -66,7 +85,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return self.api.vars.todo_sort
 
-    def sort_by(self, mode: str) -> bool:
+    def sort_by(self, mode: TodoSortModeType) -> bool:
         """
         Sets the order for every todos pane (not just this one — it's a global setting
         applied per pane), keeping the cursor on the same row. Returns False if this
@@ -136,8 +155,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
         return project_groups(self.model, self.sort_mode)
 
-    def layout(self) -> List[PaneRow]:
-        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expaned)
+    def pane_rows(self) -> List[PaneRow]:
+        return todo_rows(self.todo_groups, self.visible_children, self.is_node_expanded)
 
     def option_for(self, row: PaneRow) -> Option:
         """Headings and context rows are drawn but never land the cursor."""
@@ -153,8 +172,8 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _get_parent(self, id: str) -> Optional[Todo]:
         return Todo.from_id(id).parent_todo
 
-    def is_node_expaned(self, _id: str) -> bool:
-        return super().is_node_expaned(_id) or self.api.vars.always_expand_todos
+    def is_node_expanded(self, model) -> bool:
+        return super().is_node_expanded(model) or self.api.vars.always_expand_todos
 
     @property
     def formatter(self) -> "TodoFormatter":
@@ -186,7 +205,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def _binned_message(self, subject: str) -> str:
         """The cursor doesn't follow into the Bin, so tell the user the two keys to get there and restore."""
 
-        return f"Binned {subject} — [b]gb[/b] then [b]u[/b] puts it back"
+        return f"Binned {subject} — [b]gb[/b] then [b]R[/b] puts it back"
 
     def _already_binned(self) -> None:
         self.post_message(
@@ -229,7 +248,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
 
             # Ensure it's reachable — its own parent may also have just been rebuilt, and closed
             if parent is not None and not parent.is_root:
-                tree.expanded_nodes[parent.uuid] = True
+                parent.set_expanded(True)
 
         tree.force_refresh()
 
@@ -242,51 +261,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         self.post_message(
             BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
         )
-
-    def _row_above(self, todo: Todo) -> Optional[Todo]:
-        """The task drawn directly above this one, read off the pane's own display order, not the filing order."""
-
-        return self.row_beside(todo, -1)
-
-    @require_highlighted_node
-    def indent_node(self) -> None:
-        """Makes the highlighted task a step of the task above it, expanding that parent so the row stays visible."""
-
-        todo = self.current_model
-        assert isinstance(todo, Todo)
-
-        parent = self._row_above(todo)
-
-        if parent is None:
-            self.post_message(
-                BarNotification("Nothing above this to make it a step of", "warning")
-            )
-            return
-
-        outcome = todo.indent(parent)
-
-        # Expanding refreshes the pane, placing the row where it now belongs
-        self._expand_node(parent.uuid)
-
-        # Fitted to its new ancestors rather than refused: say what gave way
-        self.tell_outcome(outcome)
-
-    @require_highlighted_node
-    def unindent_node(self) -> None:
-        """Takes the highlighted task out of the task it's a step of."""
-
-        todo = self.current_model
-        assert isinstance(todo, Todo)
-
-        outcome = todo.unindent()
-
-        if outcome is None:
-            self.post_message(
-                BarNotification("This task is not a step of anything", "warning")
-            )
-            return
-
-        self.tell_outcome(outcome)
 
     def toggle_complete(self):
         todo = self.current_model
@@ -307,12 +281,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         assert isinstance(self.current_model, Todo)
 
         self.current_model.set_priority(priority)
-        self.update_current_prompt()
-
-    def toggle_agent(self):
-        assert isinstance(self.current_model, Todo)
-
-        self.current_model.toggle_agent()
         self.update_current_prompt()
 
     def show_note(self):

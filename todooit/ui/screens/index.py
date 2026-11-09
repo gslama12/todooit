@@ -1,37 +1,40 @@
 from datetime import date
 from functools import partial
-from typing import Optional
+from typing import Optional, Tuple
+
 from rich.markup import escape
 from textual import events, on
 from textual.containers import Container
 from textual.widgets import ContentSwitcher, Static
+
 from todooit.api import (
     TODAY,
     ChangedRows,
-    Todo,
     Project,
+    Todo,
     fixed_project_from_key,
-)
-from todooit.ui.api.events import (
-    ModeChanged,
-    ShowConfirm,
-    StartFieldEdit,
-    ProjectSelected,
-    RevealTodo,
-    GotoFixedProject,
-    HistoryStep,
-    SpawnHelp,
-    SpawnMove,
-    SpawnNote,
-    SpawnCalendar,
-    SpawnQuickAdd,
-    SpawnSearch,
-    BarNotification,
 )
 from todooit.api.fixed_projects import project_path
 from todooit.api.placement import home_of
-from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
+from todooit.ui.api.events import (
+    BarNotification,
+    GotoFixedProject,
+    HistoryStep,
+    ModeChanged,
+    ProjectSelected,
+    RevealTodo,
+    ShowConfirm,
+    SpawnCalendar,
+    SpawnHelp,
+    SpawnMove,
+    SpawnNote,
+    SpawnQuickAdd,
+    SpawnSearch,
+    StartFieldEdit,
+)
 from todooit.ui.widgets import BarSwitcher, ModelTree
+from todooit.ui.widgets.trees import ProjectsTree, TodosTree, make_todos_tree
+
 from .base import BaseScreen
 from .calendar import CalendarScreen, calendar_title
 from .help import HelpScreen
@@ -40,13 +43,21 @@ from .note import NoteScreen
 from .quick_add import QuickAdded, QuickAddScreen
 from .search import Found, SearchScreen
 
-
 # Max rows a history step flashes individually; past this, the bar's count
 # already says enough and flashing top-to-bottom adds little.
 FLASH_LIMIT = 5
 
+# How often, in seconds, the screen looks at whether the date has changed
+DAY_TICK = 60
+
 
 class DualSplit(Container):
+    # The split when the projects pane isn't sized to its rows
+    FIXED_COLUMNS = "1fr 3fr"
+
+    # What the grid was last set to, so an unchanged width costs no relayout
+    _fitted_columns: Optional[str] = None
+
     DEFAULT_CSS = """
     DualSplit {
         layout: grid;
@@ -62,6 +73,53 @@ class DualSplit(Container):
         }
     }
     """
+
+
+    def _columns(self) -> str:
+        """
+        The grid's columns: the projects pane as wide as its widest row needs
+        (every project expanded), capped to a share of the screen, and the
+        tasks pane taking the rest
+        """
+
+        tree = self.query_one(ProjectsTree)
+        vars = tree.api.vars
+
+        if not vars.projects_pane_auto_width:
+            return self.FIXED_COLUMNS
+
+        switcher = self.query_one("#project_switcher")
+
+        width = tree.outer_width() + switcher.styles.margin.width
+
+        total = self.size.width or self.app.size.width
+        cap = int(total * vars.projects_pane_max_width)
+
+        if cap > 0:
+            width = min(width, cap)
+
+        return f"{width} 1fr"
+
+    def fit_projects_pane(self) -> None:
+        """Resizes the split to the projects pane's rows; a no-op when nothing changed"""
+
+        if not self.is_mounted:
+            return
+
+        columns = self._columns()
+
+        if columns != self._fitted_columns:
+            self._fitted_columns = columns
+            self.styles.grid_columns = columns
+
+    @on(ProjectsTree.Remeasure)
+    def _remeasure(self, event: ProjectsTree.Remeasure) -> None:
+        event.stop()
+        self.fit_projects_pane()
+
+    def on_resize(self, _: events.Resize) -> None:
+        # The cap is a share of the screen, so it moves with the terminal
+        self.fit_projects_pane()
 
 
 class MainScreen(BaseScreen):
@@ -208,7 +266,19 @@ class MainScreen(BaseScreen):
 
     @on(SpawnNote)
     def spawn_note(self, event: SpawnNote) -> None:
-        self.app.push_screen(NoteScreen(event.todo))
+        self.open_note(event.todo)
+
+    def open_note(self, todo: Todo, at: Optional[Tuple[int, int]] = None) -> None:
+        self.app.push_screen(NoteScreen(todo, at=at), self.note_closed)
+
+    def note_closed(self, _: None) -> None:
+        """Redraw the rows' note icons.
+
+        Note text is left out of the undo history, so `record_change` sees no
+        change when only the text was edited and wouldn't redraw anything.
+        """
+
+        self.refresh_panes(ChangedRows())
 
     @on(SpawnQuickAdd)
     def spawn_quick_add(self, _: SpawnQuickAdd) -> None:
@@ -264,7 +334,7 @@ class MainScreen(BaseScreen):
         parent = project.parent_project
 
         while parent is not None and not parent.is_root:
-            tree.expanded_nodes[parent.uuid] = True
+            parent.set_expanded(True)
             parent = parent.parent_project
 
         tree.force_refresh()
@@ -332,7 +402,7 @@ class MainScreen(BaseScreen):
         # A hit inside a note opens that note at the matching line
         if found.hit is not None:
             hit = found.hit
-            self.app.push_screen(NoteScreen(found.todo, at=(hit.row, hit.column)))
+            self.open_note(found.todo, at=(hit.row, hit.column))
 
     @on(RevealTodo)
     async def reveal_moved_todo(self, event: RevealTodo) -> None:
@@ -359,7 +429,7 @@ class MainScreen(BaseScreen):
         parent = project.parent_project
 
         while parent is not None and not parent.is_root:
-            projects_tree.expanded_nodes[parent.uuid] = True
+            parent.set_expanded(True)
             parent = parent.parent_project
 
         projects_tree.force_refresh()
@@ -368,7 +438,7 @@ class MainScreen(BaseScreen):
         tree = await self.show_project(project)
 
         for step in todo.ancestors:
-            tree.expanded_nodes[step.uuid] = True
+            step.set_expanded(True)
 
         tree.force_refresh()
         self.app.set_focus(tree)
@@ -467,3 +537,23 @@ class MainScreen(BaseScreen):
         self.call_after_refresh(
             lambda: self.post_message(GotoFixedProject(TODAY.key))
         )
+
+        self._day = date.today()
+        self.set_interval(DAY_TICK, self.refresh_on_new_day)
+
+    def refresh_on_new_day(self) -> None:
+        """Redraw every pane once the date has changed.
+
+        Today and Upcoming gather their rows by the date, but nothing happens
+        in the app at midnight to redraw them. Holds off during an edit or
+        under an overlay, and tries again on the next tick.
+        """
+
+        if self.app.screen is not self or self.mid_edit:
+            return
+
+        today = date.today()
+
+        if today != self._day:
+            self._day = today
+            self.refresh_panes(ChangedRows())

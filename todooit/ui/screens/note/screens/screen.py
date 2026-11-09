@@ -2,13 +2,14 @@
 The note window: a todo's note (or the pinned note) with its attachments
 """
 
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Sequence, Tuple, Union
 
 from rich.markup import escape
 from textual import on
 from textual.app import ComposeResult
-from textual.timer import Timer
 from textual.containers import Vertical
+from textual.content import Content
+from textual.timer import Timer
 from textual.widgets import Static, TextArea
 
 from todooit.api import Todo
@@ -21,19 +22,26 @@ from todooit.utils import (
     resolve_path,
     write_attachments,
 )
-from todooit.utils.links import drawn_column
+from todooit.vim_engine import (
+    MODE_FLASH,
+    VimAction,
+    VimCommand,
+    VimMotion,
+    VimOperator,
+)
 
-from ..base import BaseScreen
-from .attachments import AttachmentStrip
-from .editor import (
+from ...base import BaseScreen
+from ..disp.theme import THEME_NAME, build_theme
+from ..vim.editor import NoteEditor
+from ..vim.modes import (
     MODE_INSERT,
     MODE_NORMAL,
-    THEME_NAME,
-    build_theme,
-    NoteEditor,
+    MODE_VISUAL,
+    MODE_VISUAL_LINE,
+    VISUAL_MODES,
 )
-from .markup import tidy_marks
-
+from .attachments import AttachmentStrip
+from .help import NoteHelpScreen
 
 # How long the editor sits still before the note is written back
 SAVE_DEBOUNCE = 0.4
@@ -43,6 +51,49 @@ REPORT_TIMEOUT = 3
 
 # How much of the todo's description the window title carries
 TITLE_MAX = 60
+
+# NORMAL's hint line, from the keys bound to these actions. Those in a group are
+# run together, and groups go either side of a slash: `jö/kl move`.
+NORMAL_HINTS: Sequence[Tuple[Sequence[Sequence[VimAction]], str]] = (
+    (((VimCommand.INSERT,),), "insert"),
+    (((VimMotion.LEFT, VimMotion.RIGHT), (VimMotion.UP, VimMotion.DOWN)), "move"),
+    (((VimMotion.HALF_PAGE_UP,), (VimMotion.HALF_PAGE_DOWN,)), "half page"),
+    (((VimCommand.OPEN_LINK,),), "link"),
+    (((VimCommand.PICK_FILES,),), "files"),
+)
+
+# VISUAL's and V-LINE's, built the same way
+VISUAL_HINTS: Sequence[Tuple[Sequence[Sequence[VimAction]], str]] = (
+    (((VimOperator.YANK,),), "yank"),
+    (((VimOperator.DELETE,),), "delete"),
+    (((VimOperator.CHANGE,),), "change"),
+    (((VimOperator.INDENT,), (VimOperator.UNINDENT,)), "nest"),
+    (((VimCommand.PASTE_AFTER,),), "replace"),
+    (((VimCommand.OPEN_BELOW,),), "other end"),
+)
+VISUAL_FIXED_HINTS = ("esc normal",)
+
+# On the editor's own bindings, so no keymap says what they are
+NORMAL_FIXED_HINTS = ("C-c copy", "esc close")
+
+
+# The frame's class in each mode but NORMAL, which colors its border and chip
+MODE_CLASSES = {
+    MODE_INSERT: "-insert",
+    MODE_VISUAL: "-visual",
+    MODE_VISUAL_LINE: "-visual",
+    MODE_FLASH: "-flash",
+}
+
+
+def key_label(key: str) -> str:
+    """A key as the hint line writes it: `<ctrl+u>` as `C-u`."""
+
+    if len(key) > 2 and key.startswith("<") and key.endswith(">"):
+        key = key[1:-1].replace("ctrl+", "C-")
+
+    return escape(key)
+
 
 class NoteFrame(Vertical):
     """
@@ -87,22 +138,14 @@ class NoteScreenBase(BaseScreen):
         ("escape", "close", "Close the note"),
     ]
 
-    # One line of hints per mode; keys that would do nothing here are omitted
-    HINTS = {
-        MODE_NORMAL: (
-            "i insert    jklö move    ud half page    o link    f files    "
-            "ctrl+c copy    ctrl+d clear    esc close"
-        ),
-        # Markup marks, not keys to press. Kept to 80 columns (usual terminal
-        # width) so a wrap doesn't split a mark from its meaning.
-        MODE_INSERT: (
-            "- bullet  1. list  > quote  # head  --- rule  *emph*  "
-            "tab nest  esc normal"
-        ),
-    }
+    # Markup marks, not keys to press. Kept to 80 columns (usual terminal
+    # width) so a wrap doesn't split a mark from its meaning.
+    INSERT_HINT = (
+        "- bullet  1. list  > quote  # head  --- rule  *emph*  tab nest  esc normal"
+    )
 
     # Hint line for when the strip (not the text) has the keyboard
-    FILES_HINT = "jö/kl pick    enter open    xx detach    esc back to the note"
+    FILES_HINT = "{move} pick    enter open    xx detach    esc back to the note"
 
     # Worded/escaped like todooit's other delete-confirm prompts
     CLEAR_PROMPT = r"Clear the whole note? \[y/N]"
@@ -180,6 +223,7 @@ class NoteScreenBase(BaseScreen):
 
     def compose(self) -> ComposeResult:
         editor = NoteEditor(self.load_note())
+        editor.line_numbers = self.api.vars.note_line_numbers
 
         frame = NoteFrame()
         frame.border_title = self.title_text
@@ -188,7 +232,8 @@ class NoteScreenBase(BaseScreen):
             yield editor
             yield AttachmentStrip()
 
-        yield Static(self.HINTS[editor.mode], id="note-hint")
+        hints = self.hint_for(editor.mode) if self.api.vars.note_hints else ""
+        yield Static(hints, id="note-hint")
 
     def on_mount(self) -> None:
         editor = self.editor
@@ -207,35 +252,125 @@ class NoteScreenBase(BaseScreen):
     def go_to(self, row: int, column: int) -> None:
         """
         Put the cursor at a place in the note, scrolled to the middle.
-        `column` is a stored-note column, converted to drawn since a folded
-        link ahead of it shortens the line.
+        `column` is a stored-note column, which may be inside a link's address:
+        the row goes raw first, where drawn columns are the stored ones.
         """
 
         document = self.editor.document
         row = max(0, min(row, document.line_count - 1))
-        column = drawn_column(document.stored_line(row), column)
+
+        self.editor.move_cursor((row, 0))
 
         self.editor.move_cursor((row, column), center=True)
+
+    def hint_for(self, mode: str, picking_files: bool = False) -> str:
+        """The hint line for `mode`, or for the strip while it has the keyboard."""
+
+        if picking_files:
+            left, right, up, down = self.api.motion_keys()
+            return self.FILES_HINT.replace("{move}", f"{left}{right}/{up}{down}")
+
+        if mode == MODE_NORMAL:
+            return self._keyed_hint(NORMAL_HINTS, NORMAL_FIXED_HINTS)
+
+        if mode in VISUAL_MODES:
+            return self._keyed_hint(VISUAL_HINTS, VISUAL_FIXED_HINTS)
+
+        return self.INSERT_HINT
+
+    def _keyed_hint(
+        self,
+        keyed: Sequence[Tuple[Sequence[Sequence[VimAction]], str]],
+        fixed: Sequence[str],
+    ) -> str:
+        """A mode's hints, leaving out whatever has no key."""
+
+        key_for = self.api.vim.keys.key_for
+        hints = []
+
+        for groups, meaning in keyed:
+            keys = [[key_for(action) for action in group] for group in groups]
+
+            if all(key for group in keys for key in group):
+                written = "/".join(
+                    "".join(key_label(key) for key in group if key) for group in keys
+                )
+                hints.append(f"{written} {meaning}")
+
+        return "   ".join([*hints, *fixed])
 
     def mode_changed(self) -> None:
         """Redraw the mode chip in the border and the hint line under it."""
 
         mode = self.editor.mode
 
-        frame = self.frame
+        self.pending_changed()
 
-        frame.border_subtitle = f" {mode} "
-        frame.set_class(mode == MODE_INSERT, "-insert")
+        for name in set(MODE_CLASSES.values()):
+            self.frame.set_class(MODE_CLASSES.get(mode) == name, name)
 
         # A pending question outranks the hints; answering restores them
         if not self.awaiting_answer:
-            self.hint.update(
-                self.FILES_HINT if self.picking_files else self.HINTS[mode]
-            )
+            self.hint.update(self._prompt_line() or self._hints(mode))
 
-    def report(self, message: str) -> None:
+    def _hints(self, mode: str) -> str:
+        """The key hints for `mode`, if they're on; the line stays, empty, if not."""
+
+        if not self.api.vars.note_hints:
+            return ""
+
+        return self.hint_for(mode, self.picking_files)
+
+    def show_help(self) -> None:
+        """Every key the note knows, by mode, over the note; it comes back as it was."""
+
+        self.app.push_screen(NoteHelpScreen())
+
+    def prompt_changed(self) -> None:
+        """Redraw the hint line, where a search, replace or vim_flash prompt stands in for the hints."""
+
+        if self._report_timer is not None:
+            self._report_timer.stop()
+
+        self.mode_changed()
+
+    def _prompt_line(self) -> Optional[Content]:
+        """The search, replace or vim_flash being typed, as typed, with a cursor at its end."""
+
+        engine = self.editor.engine
+        flash = engine.vim_flash_view
+        replace = engine.replace_prompt
+        action: VimAction = VimCommand.SEARCH
+
+        if replace is not None:
+            what, text = replace
+            return Content(f"replace {what} with: {text}█")
+
+        if flash is not None:
+            text, action = flash.text, VimMotion.VIM_FLASH
+        elif engine.search_prompt is not None:
+            text = engine.search_prompt
+        else:
+            return None
+
+        key = self.api.vim.keys.key_for(action)
+
+        return Content.from_markup(key_label(key or "")) + Content(f"{text}█")
+
+    def pending_changed(self) -> None:
+        """Redraw the mode chip, with any partial command beside it."""
+
+        editor = self.editor
+        # A space waiting for the rest of its command (`space ?`) is shown
+        pending = escape(editor.engine.pending).replace(" ", "␣")
+
+        self.frame.border_subtitle = (
+            f" {editor.mode} {pending} " if pending else f" {editor.mode} "
+        )
+
+    def report(self, message: Union[str, Content]) -> None:
         """
-        Show `message` in the hint line, restoring the hints after a timeout -
+        Show `message`, markup if it's a string, in the hint line, restoring the hints after a timeout -
         todooit's normal message bar is on the screen underneath this one.
         """
 
@@ -316,6 +451,7 @@ class NoteScreenBase(BaseScreen):
         """
 
         strip = self.files
+        motions = self.api.motion_keys()
         pending_x, self._pending_x = self._pending_x, False
 
         if key == "x":
@@ -323,10 +459,10 @@ class NoteScreenBase(BaseScreen):
                 self.detach()
             else:
                 self._pending_x = True
-        elif key in ("j", "b"):
+        elif key in (motions.left, "b"):
             strip.picked = max(0, strip.picked - 1)
             strip.refresh_strip()
-        elif key in ("ö", "w"):
+        elif key in (motions.right, "w"):
             strip.picked = min(len(strip.paths) - 1, strip.picked + 1)
             strip.refresh_strip()
         elif key == "0":
@@ -335,11 +471,11 @@ class NoteScreenBase(BaseScreen):
         elif key == "$":
             strip.picked = len(strip.paths) - 1
             strip.refresh_strip()
-        elif key in ("k", "l"):
+        elif key in (motions.up, motions.down):
             # Up off the top row goes back into the text above the strip
-            if strip.step_row(-1 if key == "k" else 1):
+            if strip.step_row(-1 if key == motions.up else 1):
                 strip.refresh_strip()
-            elif key == "k":
+            elif key == motions.up:
                 self.leave_files()
         elif key in ("enter", "o"):
             self.open_file()
@@ -391,7 +527,7 @@ class NoteScreenBase(BaseScreen):
 
     def save(self) -> None:
         self._save_timer = None
-        self.store_note(tidy_marks(self.editor.text))
+        self.store_note(self.editor.text)
 
     def ask(self, prompt: str, answered: Callable[[], None]) -> None:
         """Put a question up in place of the hint line; one at a time, answered by the next keystroke."""

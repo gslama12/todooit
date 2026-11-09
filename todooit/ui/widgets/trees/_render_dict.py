@@ -1,9 +1,10 @@
 from typing import TYPE_CHECKING, Dict, Generic, TypeVar
+
 from todooit.api import Project, Todo, fixed_project_from_id
 from todooit.ui.widgets.renderers import (
     BaseRenderer,
-    TodoRender,
     ProjectRender,
+    TodoRender,
 )
 
 T = TypeVar("T", bound=BaseRenderer)

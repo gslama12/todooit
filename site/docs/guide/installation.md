@@ -2,6 +2,14 @@
 
 todooit needs Python 3.9 or newer and runs on macOS, Linux and WSL.
 
+```bash
+uv tool install todooit
+todooit
+```
+
+That puts `todooit` on your `PATH` in an environment of its own. To work on
+todooit itself, install it [from source](#from-source) instead.
+
 ::: tip Terminal and font
 todooit was only tested on [WezTerm](https://wezterm.org/). Other terminals may
 not show every icon correctly.
@@ -19,13 +27,13 @@ config.color_scheme = 'Tokyo Night'
 
 Leave `enable_kitty_keyboard` off. With it on, WezTerm also reports the text of
 a `ctrl+<letter>` chord, and the note editor reads that as a printable
-character — so `ctrl+e` types an `e` instead of running the binding.
+character — so a `ctrl` chord types its letter instead of running the binding.
 :::
 
 ## Cmd shortcuts on macOS
 
 On a Mac every `ctrl` binding also answers to `cmd`: `cmd+c` copies, `cmd+v`
-pastes, `cmd+z` takes back, `cmd+q` quits, and so on. The terminal has to pass
+pastes, `cmd+n` copies a note, `cmd+r` redoes, and so on. The terminal has to pass
 those keys on first, and WezTerm doesn't by default. It keeps `cmd+c`, `cmd+v`,
 `cmd+n` and `cmd+q` for itself (copy, paste, new window, quit), and it sends any
 other `cmd` chord as the bare letter, since `enable_kitty_keyboard` stays off.
@@ -110,8 +118,8 @@ The other terminal spellings of the Mac editing chords work as they are:
 
 ## From source
 
-Each of these installs the app editable, so editing the source edits the
-running app.
+For development. Each of these installs the app editable, so editing the
+source edits the running app.
 
 ::: code-group
 
@@ -140,6 +148,13 @@ todooit
 ```
 
 :::
+
+## Coming from dooit
+
+`uv run python migration/db_migration.py` copies your dooit database into
+todooit. Your dooit database is left as it is. See
+[Migrating from dooit](/reference/data#migrating-from-dooit) for what carries
+over.
 
 ## Try it without touching your todos
 

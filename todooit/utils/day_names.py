@@ -12,9 +12,10 @@ from datetime import date
 # give English names on a default install.
 WEEKDAY_NAMES = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 
-# German date convention: day first, dot separated, and the year always
-# spelled out as its last two digits
-DATE_FORMAT = "%d.%m.%y"
+# German date convention: day first, dot separated. The year is left off to
+# keep the date columns tight -- it is still stored, and the edit field still
+# spells it out, so only what is drawn drops it
+DATE_FORMAT = "%d.%m."
 
 
 def day_label(day: date) -> str:

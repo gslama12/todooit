@@ -1,8 +1,8 @@
 import importlib.util
 import sys
-from typing import TYPE_CHECKING
-from pathlib import Path
 from contextlib import contextmanager
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from .plug import ConfigManager

@@ -3,16 +3,14 @@ The panes of the fixed projects: what they draw, and what they turn away
 """
 
 
-from datetime import datetime, timedelta
+import sys
+from datetime import date, datetime, timedelta
 
+import pytest
 from rich.style import Style as RichStyle
 from rich.styled import Styled
 from textual.style import Style
 
-from todooit.api import Todo, move_project_to_bin, restore_todo
-from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
-from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
-from todooit.ui.widgets.trees.model_tree import ModelTree
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -27,6 +25,10 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import TODAY, UPCOMING, Todo, move_project_to_bin, restore_todo
+from todooit.ui.api.events import GotoFixedProject, SpawnHelp
+from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
+from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
 
 
 async def settle(pilot):
@@ -483,6 +485,38 @@ async def test_upcoming_carries_a_slipped_row_into_today():
         assert "project" in upcoming.row_note(missed, upcoming._rows[missed.uuid]).plain
 
 
+async def test_a_step_finished_on_its_own_is_labelled_with_its_project_only():
+    """A lone step in the log names the project it came from, never its parent"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "move house")
+        await pilot.press("N")
+        await commit_line(pilot, "book van")
+
+        await pilot.press("c")
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+
+        completed = visible_todos(app)
+        assert descriptions(completed) == ["book van"]
+
+        row_id = tree_options(completed)[0].id
+        assert row_id is not None
+
+        step = completed._renderers[row_id].model
+        note = completed.row_note(step, completed._rows[step.uuid]).plain
+
+        assert "project" in note
+        assert "move house" not in note
+        assert step.parent_todo is not None and step.parent_todo.is_pending
+
+
 async def test_completing_a_task_moves_it_to_completed():
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -767,6 +801,44 @@ async def test_upcoming_takes_a_new_step_under_a_row():
         assert step.scheduled == task.scheduled
 
 
+async def test_n_on_a_step_adds_a_step_beside_it():
+    """
+    A step has a home a sibling can share: its parent task
+
+    The refusal is for gathered rows, which have no single project to add to.
+    A step drawn under its task has one, so `n` there adds another step to the
+    same task, on the same day, just as it would in the task's own project.
+    """
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await schedule(pilot, "today")
+
+        await pilot.press("g", "t")
+        await pilot.pause()
+
+        today = visible_todos(app)
+
+        await pilot.press("N")
+        await commit_line(pilot, "first")
+        await settle(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "second")
+        await settle(pilot)
+
+        assert descriptions(today) == ["task", "first", "second"]
+
+        task = [todo for todo in Todo.all() if todo.description == "task"][0]
+        second = [todo for todo in Todo.all() if todo.description == "second"][0]
+        assert second.parent_todo is task
+        assert second.scheduled == task.scheduled
+
+
 async def test_a_new_step_goes_under_a_scheduled_step_too():
     """
     The row the key was pressed on is the row it goes under, context or not
@@ -809,7 +881,7 @@ async def test_a_new_step_goes_under_a_scheduled_step_too():
 
 
 async def test_a_new_step_left_unnamed_is_dropped():
-    """Escape throws away a step never given a name, as it does anywhere else"""
+    """Leaving a step never given a name throws it away, as it does anywhere else"""
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -824,8 +896,9 @@ async def test_a_new_step_left_unnamed_is_dropped():
 
         today = visible_todos(app)
 
+        # Out of INSERT, then out of the edit
         await pilot.press("N")
-        await pilot.press("escape")
+        await pilot.press("escape", "escape")
         await settle(pilot)
 
         assert descriptions(today) == ["task"]
@@ -957,7 +1030,7 @@ async def test_restore_outside_the_bin_warns():
         await new_project(pilot, "project")
         await new_todo(pilot, "still here")
 
-        await pilot.press("u")
+        await pilot.press("R")
         await pilot.pause()
 
         message = notification_message(app)
@@ -983,7 +1056,7 @@ async def test_restore_from_the_bin():
         assert len(tree_options(bin_tree)) == 1
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         assert tree_options(bin_tree) == []
@@ -1037,7 +1110,7 @@ async def test_restoring_a_step_from_the_bin_brings_the_task_with_it():
         assert bin_tree.current_model.description == "the step"
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         assert tree_options(bin_tree) == []
@@ -1085,7 +1158,7 @@ async def test_restoring_a_finished_task_from_the_bin_goes_to_the_log():
         await settle(pilot)
 
         with flashed() as flashes:
-            await pilot.press("u")
+            await pilot.press("R")
             await settle(pilot)
 
         todo = Todo.all()[0]
@@ -1109,7 +1182,9 @@ async def test_empty_bin_via_chord():
             await pilot.press("x", "x")
             await pilot.pause()
 
-        # From anywhere at all; the question counts what is about to go
+        # Only with the Bin open; the question counts what is about to go
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
 
@@ -1120,6 +1195,67 @@ async def test_empty_bin_via_chord():
         await pilot.pause()
 
         assert Todo.all() == []
+
+
+async def test_empty_chord_does_nothing_outside_bin_and_completed():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        for name in ("binned", "done", "open"):
+            await pilot.press("n")
+            await commit_line(pilot, name)
+        await pilot.press("x", "x")
+        await pilot.pause()
+        await pilot.press("k")
+        await pilot.press("c")
+        await pilot.pause()
+
+        # Neither a project's pane nor another fixed one empties anything
+        for jump in (None, ("g", "t"), ("g", "u")):
+            if jump:
+                await pilot.press(*jump)
+                await pilot.pause()
+
+            await pilot.press("Y", "Y")
+            await pilot.pause()
+
+            assert app.bar_switcher.current != "confirm_bar"
+            message = notification_message(app)
+            assert message is not None and "only empties" in message
+            assert len(Todo.all()) == 3
+
+
+async def test_empty_completed_via_chord():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await create_and_move_to_todo(pilot)
+        for name in ("open", "done", "binned"):
+            await pilot.press("n")
+            await commit_line(pilot, name)
+
+        # "binned" to the Bin, "done" ticked off; "open" stays open
+        await pilot.press("x", "x")
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+
+        await pilot.press("g", "c")
+        await pilot.pause()
+        await pilot.press("Y", "Y")
+        await pilot.pause()
+
+        assert app.bar_switcher.current == "confirm_bar"
+        assert "1 task in Completed" in app.bar_switcher.visible_content.message
+
+        await pilot.press("y")
+        await pilot.pause()
+
+        # Only the completed task went; the Bin and the open one are untouched
+        left = sorted(t.description for t in Todo.all())
+        assert left == ["binned", "open"]
+        assert tree_options(visible_todos(app)) == []
 
 
 async def test_deleting_from_the_bin_leaves_no_ghost_row():
@@ -1194,3 +1330,151 @@ async def test_a_fixed_pane_gathers_its_blocks_once_per_redraw(monkeypatch):
 
         assert descriptions(today) == ["planned"]
         assert len(reads) == 1
+
+
+class NextDay(date):
+    """The date, as the clock reads it once midnight has passed"""
+
+    @classmethod
+    def today(cls):
+        return date.today() + timedelta(days=1)
+
+
+@pytest.fixture
+def turn_the_day(monkeypatch):
+    """Moves the clock past midnight for everything that gathers a pane"""
+
+    def turn():
+        for module in ("api.fixed_projects", "api.todo", "ui.screens.index"):
+            # Through sys.modules: `todooit.api` re-exports a function under
+            # the name of the fixed_projects module, shadowing it
+            monkeypatch.setattr(sys.modules[f"todooit.{module}"], "date", NextDay)
+
+    return turn
+
+
+async def go_to(pilot, key: str):
+    pilot.app.screen.post_message(GotoFixedProject(key))
+    await settle(pilot)
+
+
+async def tomorrows_task(pilot, name: str = "planned for tomorrow"):
+    """A task planned for tomorrow, with the Today pane in front (without it)"""
+
+    await create_and_move_to_todo(pilot)
+    await pilot.press("n")
+    await commit_line(pilot, name)
+    await schedule(pilot, "tomorrow")
+    await go_to(pilot, TODAY.key)
+
+
+async def test_a_new_day_brings_its_tasks_onto_today(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "planned for today")
+        await schedule(pilot, "today")
+        await pilot.press("n")
+        await commit_line(pilot, "planned for tomorrow")
+        await schedule(pilot, "tomorrow")
+
+        await go_to(pilot, TODAY.key)
+        tree = visible_todos(pilot.app)
+        assert descriptions(tree) == ["planned for today"]
+        was_on = tree.node.id
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        # Yesterday's task has slipped, so it leads; the cursor stays put
+        assert descriptions(tree) == ["planned for today", "planned for tomorrow"]
+        assert tree.node.id == was_on
+
+
+async def test_a_new_day_relabels_a_pane_out_of_sight(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+
+        await go_to(pilot, UPCOMING.key)
+        upcoming = visible_todos(pilot.app)
+        assert [row.label for row in upcoming._rows.values() if row.label] == [
+            "Tomorrow"
+        ]
+
+        await go_to(pilot, TODAY.key)
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await go_to(pilot, UPCOMING.key)
+
+        assert [row.label for row in upcoming._rows.values() if row.label] == ["Today"]
+
+
+async def test_the_same_day_redraws_nothing(monkeypatch):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+
+        redraws = []
+        monkeypatch.setattr(
+            pilot.app.screen, "refresh_panes", lambda changed: redraws.append(changed)
+        )
+
+        pilot.app.screen.refresh_on_new_day()
+
+        assert redraws == []
+
+
+async def test_a_new_day_waits_for_an_edit_to_finish(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+        await go_to(pilot, UPCOMING.key)
+
+        tree = visible_todos(pilot.app)
+        await pilot.press("s")
+        await pilot.pause()
+        assert tree.is_editing
+
+        turn_the_day()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        # The row being typed into is left alone, and the day isn't forgotten
+        assert tree.is_editing
+        assert [row.label for row in tree._rows.values() if row.label] == ["Tomorrow"]
+
+        await pilot.press("escape")
+        await pilot.pause()
+        pilot.app.screen.refresh_on_new_day()
+        await pilot.pause()
+
+        assert [row.label for row in tree._rows.values() if row.label] == ["Today"]
+
+
+async def test_a_new_day_waits_for_an_overlay_to_close(turn_the_day):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await tomorrows_task(pilot)
+
+        main = pilot.app.screen
+        tree = visible_todos(pilot.app)
+
+        main.post_message(SpawnHelp())
+        await settle(pilot)
+        assert pilot.app.screen is not main
+
+        turn_the_day()
+        main.refresh_on_new_day()
+        await pilot.pause()
+        assert descriptions(tree) == []
+
+        await pilot.app.pop_screen()
+        await pilot.pause()
+        main.refresh_on_new_day()
+        await pilot.pause()
+
+        assert descriptions(tree) == ["planned for tomorrow"]

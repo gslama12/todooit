@@ -4,6 +4,14 @@ The calendar overlay: a day picked off a month instead of typed into a field
 
 from datetime import date, timedelta
 
+from tests.test_ui.ui_base import (
+    boot,
+    commit_line,
+    create_and_move_to_todo,
+    new_todo,
+    run_pilot,
+    visible_todos,
+)
 from todooit.api import Todo
 from todooit.ui.screens import MainScreen
 from todooit.ui.screens.calendar import (
@@ -12,14 +20,6 @@ from todooit.ui.screens.calendar import (
     CalendarScreen,
     add_months,
     weeks_around,
-)
-from tests.test_ui.ui_base import (
-    boot,
-    commit_line,
-    create_and_move_to_todo,
-    new_todo,
-    run_pilot,
-    visible_todos,
 )
 
 TODAY = date.today()
@@ -250,7 +250,7 @@ async def test_a_field_that_is_no_date_reads_the_word_as_a_word():
         await create_and_move_to_todo(pilot)
         await new_todo(pilot, "file taxes")
 
-        await pilot.press("i")
+        await pilot.press("e", "c", "c")
         await pilot.press(*list("cal"))
         await pilot.pause()
 
@@ -453,7 +453,7 @@ async def test_a_picked_day_is_taken_back_like_a_typed_one():
         assert picked is not None
         assert picked.date() == date(2027, 9, 6)
 
-        await pilot.press("ctrl+z")
+        await pilot.press("u")
         await pilot.pause()
         await pilot.pause()
 
@@ -461,7 +461,7 @@ async def test_a_picked_day_is_taken_back_like_a_typed_one():
         assert back is not None
         assert back.date() == date(2027, 9, 5)
 
-        await pilot.press("ctrl+y")
+        await pilot.press("ctrl+r")
         await pilot.pause()
         await pilot.pause()
 

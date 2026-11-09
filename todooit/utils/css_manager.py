@@ -1,9 +1,10 @@
 import sys
 from pathlib import Path
 from typing import Optional, Type, Union
+from uuid import uuid4
+
 from todooit.api.theme import TodooitThemeBase, TokyoNight
 from todooit.paths import cache_dir
-from uuid import uuid4
 
 if getattr(sys, "frozen", False):
     BASE_PATH = Path(sys._MEIPASS) / "todooit"  # pragma: no cover (binary pkg)
@@ -21,12 +22,12 @@ class CssManager:
 
     def __init__(
         self,
-        theme: TodooitThemeBase = TokyoNight(),
+        theme: Optional[TodooitThemeBase] = None,
         cache_path: Optional[Path] = None,
     ):
         cache_path = cache_path or cache_dir()
 
-        self.theme: TodooitThemeBase = theme
+        self.theme: TodooitThemeBase = theme or TokyoNight()
         self.cache_path = cache_path
         self.stylesheets: Path = cache_path / "stylesheets"
         self.css_file: Path = cache_path / "todooit.tcss"

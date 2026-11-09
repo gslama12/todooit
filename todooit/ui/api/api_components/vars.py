@@ -3,8 +3,10 @@ from typing import TYPE_CHECKING, Optional
 from todooit.api import Project, TodoSortModeType
 from todooit.api.theme import TodooitThemeBase
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
-from ._base import ApiComponent
+from todooit.ui.widgets.trees.flash_jump import FLASH_ALPHABET
+from todooit.vim_engine import VIM_FLASH_ALPHABET
 
+from ._base import ApiComponent
 
 if TYPE_CHECKING:  # pragma: no cover
     from todooit.ui.api.todooit_api import TodooitAPI
@@ -18,6 +20,12 @@ class VarManager(ApiComponent):
         self._always_expand_projects = False
         self._always_expand_todos = False
         self._todo_sort: Optional[TodoSortModeType] = "priority"
+        self._projects_pane_auto_width = True
+        self._projects_pane_max_width = 0.25
+        self._flash_alphabet = FLASH_ALPHABET
+        self._vim_flash_alphabet = VIM_FLASH_ALPHABET
+        self._note_line_numbers = True
+        self._note_hints = False
 
     @property
     def todo_sort(self) -> Optional[TodoSortModeType]:
@@ -50,6 +58,75 @@ class VarManager(ApiComponent):
     @always_expand_todos.setter
     def always_expand_todos(self, value: bool):
         self._always_expand_todos = value
+
+    @property
+    def projects_pane_auto_width(self) -> bool:
+        """
+        Whether the projects pane is sized to its widest row (with every project
+        expanded) rather than held at a fixed quarter of the screen
+        """
+
+        return self._projects_pane_auto_width
+
+    @projects_pane_auto_width.setter
+    def projects_pane_auto_width(self, value: bool):
+        self._projects_pane_auto_width = value
+
+    @property
+    def projects_pane_max_width(self) -> float:
+        """The most of the screen's width an auto-sized projects pane may take (0-1)"""
+
+        return self._projects_pane_max_width
+
+    @projects_pane_max_width.setter
+    def projects_pane_max_width(self, value: float):
+        self._projects_pane_max_width = value
+
+    @property
+    def flash_alphabet(self) -> str:
+        """The keys flash mode (`t`) labels rows with, the nearest row first"""
+
+        return self._flash_alphabet
+
+    @flash_alphabet.setter
+    def flash_alphabet(self, value: str):
+        if len(set(value)) != len(value) or not value:
+            raise ValueError("flash_alphabet needs at least one key, none twice")
+
+        self._flash_alphabet = value
+
+    @property
+    def vim_flash_alphabet(self) -> str:
+        """The letters a note's `vim_flash` (`s`) labels with, nearest match first"""
+
+        return self._vim_flash_alphabet
+
+    @vim_flash_alphabet.setter
+    def vim_flash_alphabet(self, value: str):
+        if len(set(value)) != len(value) or not value:
+            raise ValueError("vim_flash_alphabet needs at least one key, none twice")
+
+        self._vim_flash_alphabet = value
+
+    @property
+    def note_line_numbers(self) -> bool:
+        """Whether a note has hybrid line numbers down its left, as LazyVim's"""
+
+        return self._note_line_numbers
+
+    @note_line_numbers.setter
+    def note_line_numbers(self, value: bool):
+        self._note_line_numbers = value
+
+    @property
+    def note_hints(self) -> bool:
+        """Whether the key hints show under a note; prompts and messages always do"""
+
+        return self._note_hints
+
+    @note_hints.setter
+    def note_hints(self, value: bool):
+        self._note_hints = value
 
     @property
     def show_confirm(self):

@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta
+
 from pytest import raises
-from todooit.api.exceptions import NoParentError, MultipleParentError
-from todooit.api import Cadence, Project, Todo
+
 from tests.test_core.core_base import *  # noqa
+from todooit.api import Cadence, Project, Todo
+from todooit.api.exceptions import MultipleParentError, NoParentError
 
 
 def test_todo_creation(create_project, create_todo):
@@ -202,18 +204,6 @@ def test_completion_is_stamped(create_project):
 
     t.toggle_complete()
     assert t.completed_at is None
-
-
-def test_agent_toggles(create_project):
-    p = create_project()
-    t = p.add_todo()
-    assert t.agent is False
-
-    t.toggle_agent()
-    assert t.agent is True
-
-    t.toggle_agent()
-    assert t.agent is False
 
 
 def test_descendants(create_project):

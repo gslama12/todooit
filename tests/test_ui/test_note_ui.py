@@ -4,39 +4,45 @@ Notes: the window on a todo's note, and the pinned scratchpad
 
 from unittest.mock import patch
 
+import pytest
 from rich.cells import cell_len
 from textual.geometry import Offset
+from textual.widgets.text_area import Selection
 
-from todooit.api import PinnedNote, Todo
-from todooit.api.theme import TodooitThemeBase
-
-from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
-from todooit.ui.screens.note.document import FoldedDocument, HangingDocument
-from todooit.ui.screens.note.editor import MODE_INSERT, MODE_NORMAL, build_theme
-from todooit.ui.screens.note.markup import (
-    EMPH,
-    EMPH_MARK,
-    HEADER,
-    INDENT,
-    LINK,
-    MARKER,
-    QUOTE,
-    QUOTE_BAR,
-    QUOTE_GLYPH,
-    QUOTE_ITEM,
-    RULE,
-    RULE_SPAN,
-    scan_note,
-)
-from todooit.utils import Opened
-from todooit.utils.links import fold_links
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
     create_and_move_to_todo,
     run_pilot,
     set_clipboard,
+    visible_todos,
 )
+from todooit.api import PinnedNote, Todo
+from todooit.api.theme import TodooitThemeBase
+from todooit.ui.screens.index import MainScreen
+from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
+from todooit.ui.screens.note.disp.document import FoldedDocument, HangingDocument
+from todooit.ui.screens.note.disp.markup import (
+    EMPH,
+    INDENT,
+    LINK,
+    MARKER,
+    QUOTE,
+    QUOTE_BAR,
+    QUOTE_ITEM,
+    draw_line,
+    recount,
+    scan_note,
+)
+from todooit.ui.screens.note.disp.theme import build_theme
+from todooit.ui.screens.note.vim.modes import MODE_INSERT, MODE_NORMAL
+from todooit.ui.screens.search import Found, NoteHit
+from todooit.utils import Opened
+from todooit.utils.default_config import NOTE_ICON
+from todooit.utils.links import fold_links
+
+# What a note writes either side of an emphasised phrase
+EMPH_MARK = "**"
 
 # The address that started all this: too long to sit on a line of its own, let
 # alone inside a quote bar, and with nothing past the page name worth reading
@@ -51,7 +57,7 @@ LONG_LINK_DRAWN = "atdfsds.sharepoint.com/…/AllItems.aspx"
 
 
 async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
-    """A project, a todo, and the note window opened on it with space"""
+    """A project, a todo, and its note opened with space, ready to be typed in"""
 
     await create_and_move_to_todo(pilot)
     await pilot.press("n")
@@ -62,6 +68,8 @@ async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
 
     screen = pilot.app.screen
     assert isinstance(screen, NoteScreen)
+
+    await pilot.press("i")
     return screen
 
 
@@ -69,10 +77,7 @@ async def test_space_opens_the_note_window():
     async with run_pilot() as pilot:
         screen = await open_note(pilot, "the todo")
 
-        # Titled by the todo, and opened ready to write: there is nothing in
-        # an empty note to have opened it to read
         assert screen.frame.border_title == "the todo"
-        assert screen.editor.mode == MODE_INSERT
 
 
 async def test_a_written_note_opens_to_be_read():
@@ -126,7 +131,7 @@ async def test_the_note_opens_on_what_it_holds():
         assert isinstance(screen, NoteScreen)
         assert screen.editor.text == "first draft"
 
-        await pilot.press("$", "i")  # to the end of the line, then INSERT
+        await pilot.press("i", "end")  # INSERT, where the line's end can be reached
         await pilot.press(*list(" and more"))
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -150,8 +155,8 @@ async def test_normal_mode_letters_do_not_write():
 
 async def test_normal_mode_answers_to_no_other_letter():
     """
-    `i` is the only way into INSERT, and no letter outside the motions moves
-    the cursor: vim's `a`/`I`/`A` and its `w`/`b` are not keys here
+    A letter with no command on it does nothing at all, in the text or to the
+    cursor
     """
 
     async with run_pilot() as pilot:
@@ -163,7 +168,7 @@ async def test_normal_mode_answers_to_no_other_letter():
 
         assert screen.editor.mode == MODE_NORMAL
 
-        for key in ("a", "I", "A", "w", "b"):
+        for key in ("q", "Q"):
             screen.editor.move_cursor((0, 0))
             await pilot.press(key)
             await pilot.pause()
@@ -192,7 +197,7 @@ async def test_the_window_takes_most_of_the_screen():
         await pilot.pause()
 
 
-async def test_u_and_d_scroll_half_a_page():
+async def test_ctrl_u_and_ctrl_d_scroll_half_a_page():
     """
     vim's half-page keys, on a note too long to be read in one window
     """
@@ -211,24 +216,23 @@ async def test_u_and_d_scroll_half_a_page():
         half = editor.half_page()
         assert half > 1
 
-        await pilot.press("d")
+        await pilot.press("ctrl+d")
         await pilot.pause()
 
-        # The view came with it, so the cursor is back on the row of the
-        # window it started on and the text under it is what changed
-        assert editor.cursor_location == (half, 0)
+        # The view came with it, and the cursor keeps its 4 rows from the top
+        assert editor.cursor_location == (half + 4, 0)
         assert editor.scroll_offset.y == half
 
-        await pilot.press("d")
+        await pilot.press("ctrl+d")
         await pilot.pause()
 
-        assert editor.cursor_location == (half * 2, 0)
+        assert editor.cursor_location == (half * 2 + 4, 0)
         assert editor.scroll_offset.y == half * 2
 
-        await pilot.press("u")
+        await pilot.press("ctrl+u")
         await pilot.pause()
 
-        assert editor.cursor_location == (half, 0)
+        assert editor.cursor_location == (half + 4, 0)
         assert editor.scroll_offset.y == half
 
         await pilot.press("escape")
@@ -257,7 +261,7 @@ async def test_clear_note_asks_first():
         await pilot.press(*list("precious words"))
         await pilot.press("escape")
 
-        await pilot.press("ctrl+d")
+        await pilot.press("i", "ctrl+d")
         await pilot.pause()
         assert screen.awaiting_answer
 
@@ -318,37 +322,97 @@ async def test_attachment_alone_marks_the_row():
         assert formatter.format_value(todo.note, todo).plain.strip() != ""
 
 
-async def test_emph_and_bullet_markup():
-    """Both are written rather than pressed, and both are drawn as typed"""
+def icon_drawn(pilot) -> bool:
+    """Whether the note icon is on the screen in the pane in front"""
 
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
+    tree = visible_todos(pilot.app)
 
-        # markdown's own `- `, and emphasis wrapped in markdown's own stars -
-        # which are swapped for the marks that cost no columns on the way in,
-        # exactly as the dash is swapped for the bullet
-        await pilot.press(*list("- say *this* twice"))
-        assert screen.editor.text == (
-            "• say " + EMPH_MARK + "this" + EMPH_MARK + " twice"
-        )
+    return any(
+        NOTE_ICON in tree.render_line(y).text for y in range(tree.size.height)
+    )
 
-        names = [name for _, _, name in list(scan_note([screen.editor.text]))[0]]
 
-        assert names[0] == "note-bullet-0"
-        assert EMPH in names
+async def close_note(pilot) -> None:
+    """Out of the window from either mode, however many presses that takes"""
 
-        await pilot.press("escape", "escape")
+    while isinstance(pilot.app.screen, NoteScreenBase):
+        await pilot.press("escape")
         await pilot.pause()
 
 
-async def test_emph_marks_take_no_room_on_the_line():
-    """What the heading gets for free, emphasis gets from a zero-width mark"""
+async def test_writing_a_note_shows_the_icon_on_close():
+    """The text isn't in the undo history, so closing has to redraw by itself"""
 
-    assert cell_len(EMPH_MARK) == 0
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        screen.editor.insert("something")
+        await close_note(pilot)
 
-    line = "say " + EMPH_MARK + "this" + EMPH_MARK + " twice"
+        assert icon_drawn(pilot)
 
-    assert cell_len(line) == len("say this twice")
+
+async def test_emptying_a_note_takes_the_icon_away_on_close():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        screen.editor.insert("something")
+        await close_note(pilot)
+        assert icon_drawn(pilot)
+
+        await pilot.press(" ")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.clear()
+        await close_note(pilot)
+
+        assert not icon_drawn(pilot)
+
+
+async def test_closing_a_note_leaves_the_cursor_on_its_row():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot, "first")
+        await close_note(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "second")
+
+        tree = visible_todos(pilot.app)
+        assert tree.current_model.description == "second"
+
+        await pilot.press(" ")
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.insert("something")
+        await close_note(pilot)
+
+        assert tree.current_model.description == "second"
+        assert pilot.app.focused is tree
+
+
+async def test_note_opened_from_the_finder_shows_the_icon_on_close():
+    async with run_pilot() as pilot:
+        await open_note(pilot)
+        await close_note(pilot)
+
+        main = pilot.app.screen
+        assert isinstance(main, MainScreen)
+
+        todo = Todo.all()[0]
+        await main.search_done(Found(todo, NoteHit(0, 0, "")))
+        await pilot.pause()
+
+        screen = pilot.app.screen
+        assert isinstance(screen, NoteScreen)
+
+        screen.editor.insert("something")
+        await close_note(pilot)
+
+        assert icon_drawn(pilot)
 
 
 async def test_emph_is_drawn_in_its_own_color():
@@ -380,14 +444,15 @@ async def test_cmd_keys_in_the_note():
 
         await pilot.press("super+a")
         await pilot.pause()
-        assert editor.selected_text == "some words"
+        span = editor.engine.selected_span
+        assert span and editor.get_text_range(*span) == "some words"
 
         set_clipboard("pasted")
         await pilot.press("super+v")
         await pilot.pause()
         assert editor.text == "pasted"
 
-        await pilot.press("escape")
+        # Pasting left it in INSERT, the mode where this clears
         await pilot.press("super+d")
         await pilot.press("y")
         await pilot.pause()
@@ -435,165 +500,14 @@ async def test_star_markers_are_faint_but_not_hidden():
     assert marker != theme.syntax_styles[EMPH].color.triplet
 
 
-async def test_typing_a_quote_marker():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        # markdown's `> ` goes in, the bar it stands for comes out
-        await pilot.press(*list("> "))
-        assert screen.editor.text == QUOTE_GLYPH
-
-        await pilot.press(*list("a note to self"))
-        assert screen.editor.text == QUOTE_GLYPH + "a note to self"
-
-        # Enter carries the bar on, the way it carries a bullet on
-        await pilot.press("enter")
-        await pilot.press(*list("and another"))
-        assert screen.editor.text == (
-            QUOTE_GLYPH + "a note to self\n" + QUOTE_GLYPH + "and another"
-        )
-
-        # And an empty one is where the quote ends
-        await pilot.press("enter", "enter")
-        assert screen.editor.text == (
-            QUOTE_GLYPH + "a note to self\n" + QUOTE_GLYPH + "and another\n"
-        )
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_typing_a_quote_marker_after_an_indent():
-    """markdown puts the mark after the indent; so does this"""
+async def test_a_quote_marker_mid_line_stays_a_greater_than_sign():
+    """Only a mark at the head of a line is opening one"""
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
-        await pilot.press("tab")
-        await pilot.press(*list("> indented"))
-        assert screen.editor.text == "  " + QUOTE_GLYPH + "indented"
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_typing_a_bullet_marker():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        # markdown's `- ` goes in, the bullet it stands for comes out
-        await pilot.press(*list("- "))
-        assert screen.editor.text == "• "
-
-        await pilot.press(*list("first"))
-
-        # Enter carries it on, the way it carries a typed bullet on
-        await pilot.press("enter")
-        await pilot.press(*list("second"))
-        assert screen.editor.text == "• first\n• second"
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_star_opens_a_bullet_too():
-    """markdown's other list mark, arriving as the one glyph the note draws"""
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("* item"))
-        assert screen.editor.text == "• item"
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_star_pair_at_the_head_of_a_line_costs_no_column():
-    """
-    The bug: a `*` painted out to be unseen still took the column it was
-    written in, so emphasis opening a line read as an indent that was not
-    there. The pair is swapped for the zero-width marks the moment it closes,
-    and what is left on the page is the words and nothing else
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("*loud* and clear"))
-
-        assert screen.editor.text == (
-            EMPH_MARK + "loud" + EMPH_MARK + " and clear"
-        )
-        assert cell_len(screen.editor.text) == len("loud and clear")
-
-        # The words are what is emphasised and the marks are not drawn at all:
-        # they are folded off the page, so there is no span for them to wear
-        # and no column of the window for them to sit in
-        text = screen.editor.text
-        drawn, _ = fold_links(text)
-        spans = list(scan_note([text]))[0]
-
-        assert drawn == "loud and clear"
-        assert [
-            (drawn.encode()[start:end].decode(), name)
-            for start, end, name in spans
-        ] == [("loud", EMPH)]
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_an_emphasised_word_stays_emphasised_across_an_enter():
-    """
-    The bug: `enter` typed in front of an emphasised word un-emphasised it
-
-    The opening mark stood in a column of the page of its own, so the cursor
-    could come to rest between the mark and the word it opened - and the split
-    made there left the mark alone on the line above and the word below it
-    wearing half a pair. The marks are folded off the page now, so the column
-    in front of the word is in front of the mark as well, and the whole of the
-    pair moves down together.
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("*loud* and clear"))
-        await pilot.press("home", "enter")
-        await pilot.pause()
-
-        assert screen.editor.text == (
-            "\n" + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
-        )
-
-        # And it is still drawn as emphasis, which is the half of it that a
-        # count of the marks would not catch
-        spans = list(scan_note(screen.editor.text.split("\n")))
-
-        assert EMPH in [name for _, _, name in spans[1]]
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_typing_in_front_of_an_emphasised_word_stays_out_of_it():
-    """
-    The other half of the same column: what is typed at the head of a phrase
-    goes in front of the mark, so the words carry on unemphasised
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("*loud* and clear"))
-        await pilot.press("home")
-        await pilot.press(*list("very "))
-        await pilot.pause()
-
-        assert screen.editor.text == (
-            "very " + EMPH_MARK + "loud" + EMPH_MARK + " and clear"
-        )
+        await pilot.press(*list("2 > 1"))
+        assert screen.editor.text == "2 > 1"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -621,7 +535,7 @@ async def test_the_cursor_never_stands_in_a_mark():
 
         assert EMPH_MARK not in drawn
 
-        await pilot.press("0")
+        await pilot.press("=")
 
         for _ in range(len(drawn)):
             _, column = editor.cursor_location
@@ -637,59 +551,6 @@ async def test_the_cursor_never_stands_in_a_mark():
         await pilot.pause()
 
 
-async def test_a_note_with_emphasis_draws_no_zero_width_column():
-    """
-    The bug: the window's right-hand edge came apart on the lines that carried
-    emphasis
-
-    A mark is a character of the document worth no columns of the terminal,
-    and a window drawn one way and measured the other ends up with its border
-    and its scrollbar a column off on exactly those lines. Nothing zero-width
-    reaches the page any more, so every row of the screen is as many
-    characters wide as it is columns wide.
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("say *this* twice"))
-        await pilot.press("escape")
-        await pilot.pause()
-
-        assert EMPH_MARK in screen.editor.text
-
-        for strip in pilot.app.screen._compositor.render_strips():
-            drawn = "".join(segment.text for segment in strip)
-
-            assert cell_len(drawn) == len(drawn)
-
-        await pilot.press("escape")
-        await pilot.pause()
-
-
-async def test_an_emphasised_word_deleted_leaves_no_mark_behind():
-    """
-    Deleting the words out from between a pair leaves two marks holding
-    nothing, which is markup no edit can ever finish. They go when the note is
-    written back rather than being carried around for good.
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("say *this* twice"))
-
-        # Back over the whole of the emphasised word: the first backspace
-        # takes the emphasis off, and the rest take the letters
-        await pilot.press(*["backspace"] * 11)
-        await pilot.press(*list("that twice"))
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-        assert Todo.all()[0].note == "say that twice"
-
-
 async def test_stars_leaning_on_a_space_stay_stars():
     """What markdown asks of a pair: `2 * 3 * 4` is arithmetic, not emphasis"""
 
@@ -699,30 +560,6 @@ async def test_stars_leaning_on_a_space_stay_stars():
         await pilot.press(*list("2 * 3 * 4"))
         assert screen.editor.text == "2 * 3 * 4"
         assert list(scan_note([screen.editor.text]))[0] == []
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_backspace_next_to_a_mark_takes_the_emphasis_off():
-    """
-    The marks cannot be seen, so taking only the one backspace landed on would
-    look like nothing happening and strand the other in the note for good
-    """
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("say *this*"))
-        assert screen.editor.text == "say " + EMPH_MARK + "this" + EMPH_MARK
-
-        await pilot.press("backspace")
-        assert screen.editor.text == "say this"
-        assert screen.editor.cursor_location == (0, 8)
-
-        # And what is typed next lands after the words, not inside them
-        await pilot.press(*list(" twice"))
-        assert screen.editor.text == "say this twice"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -748,15 +585,156 @@ async def test_a_number_mid_line_is_not_an_enumeration():
     assert list(scan_note(["worth about 1. of a point"]))[0] == []
 
 
-async def test_a_typed_bullet_follows_the_indent_it_is_typed_at():
-    """The glyph says how deep the line sits, however the bullet got there"""
+async def test_enter_carries_an_enumeration_on_with_the_next_number():
+    """A numbered item is carried on like a bullet, one number further"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        await pilot.press(*list("1. first"))
+        await pilot.press("enter")
+        await pilot.press(*list("second"))
+        assert editor.text == "1. first\n2. second"
+
+        # Past nine, the number grows a digit and the cursor stays past it
+        editor.text = "9. ninth"
+        editor.move_cursor((0, 8))
+        await pilot.press("enter")
+        assert editor.text == "9. ninth\n10. "
+        assert editor.cursor_location == (1, 4)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_tab_nests_an_enumeration_and_enter_walks_it_back_out():
+    """A nested list counts from one, and the one it came out of carries on"""
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
 
+        await pilot.press(*list("1. top"))
+        await pilot.press("enter", "tab")
+        await pilot.press(*list("a"))
+        await pilot.press("enter")
+        await pilot.press(*list("b"))
+        assert screen.editor.text == "1. top\n  1. a\n  2. b"
+
+        # Out of the nested list, the outer one picks up after its last number
+        await pilot.press("enter", "enter")
+        assert screen.editor.text == "1. top\n  1. a\n  2. b\n2. "
+
+        # And at the top the list ends the way a bulleted one does
+        await pilot.press("enter")
+        assert screen.editor.text == "1. top\n  1. a\n  2. b\n"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_edit_mid_list_moves_the_numbers_below_it():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c"
+        editor.move_cursor((0, 4))
+        await pilot.press("enter")
+        assert editor.text == "1. a\n2. \n3. b\n4. c"
+
+        # A tab closes the gap the item leaves behind it
+        editor.move_cursor((2, 4))
         await pilot.press("tab")
-        await pilot.press(*list("- nested"))
-        assert screen.editor.text == "  ◦ nested"
+        assert editor.text == "1. a\n2. \n  1. b\n3. c"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_backspace_takes_a_nested_numbers_marker_one_character_at_a_time():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. top\n  1. child"
+        editor.move_cursor((1, 5))
+
+        await pilot.press("backspace")
+        assert editor.text == "1. top\n  1.child"
+
+        await pilot.press("backspace")
+        assert editor.text == "1. top\n  1child"
+        assert editor.cursor_location == (1, 3)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_an_enumeration_is_carried_on_inside_a_quote():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("> "))
+        await pilot.press(*list("1. said"))
+        await pilot.press("enter")
+        await pilot.press(*list("again"))
+        assert screen.editor.text == "> 1. said\n" + "> 2. again"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_o_opens_the_next_numbered_item():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("3. third"))
+        await pilot.press("escape", "o")
+        await pilot.press(*list("fourth"))
+        assert screen.editor.text == "3. third\n4. fourth"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+@pytest.mark.parametrize(
+    "lines, row, counted",
+    [
+        # Each depth counts on; a nested list starts over
+        (["1. a", "1. b", "  5. x", "  5. y", "7. c"], 1, ["1. a", "2. b", "  1. x", "  2. y", "3. c"]),
+        # Stepped out of a nested list: the outer one counts it in, the rest starts over
+        (["1. a", "  1. x", "2. y", "  3. z", "2. b"], 2, ["1. a", "  1. x", "2. y", "  1. z", "3. b"]),
+        # The first item's own number opens the count
+        (["5. a", "1. b"], 1, ["5. a", "6. b"]),
+        # A blank line ends the list, and so does a change of quote
+        (["1. a", "", "9. b"], 0, ["1. a", "", "9. b"]),
+        (["> 1. a", "1. b"], 0, ["> 1. a", "1. b"]),
+        # A bullet is counted around, and restarts the count after it
+        (["1. a", "- b", "4. c"], 0, ["1. a", "- b", "1. c"]),
+        (["- a", "  - b"], 0, ["- a", "  - b"]),
+        (["plain"], 0, ["plain"]),
+    ],
+)
+def test_recount(lines, row, counted):
+    edited = list(lines)
+
+    for at, start, end, marker in recount(lines, row):
+        edited[at] = edited[at][:start] + marker + edited[at][end:]
+
+    assert edited == counted
+
+
+async def test_a_dash_put_mid_line_stays_a_hyphen():
+    """In front of existing words, but after other words: still a hyphen"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+
+        await pilot.press(*list("well almost"))
+        await pilot.press(*["left"] * len("almost"))
+        await pilot.press(*list("- "))
+        assert screen.editor.text == "well - almost"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -780,45 +758,6 @@ async def test_a_dash_mid_line_stays_a_hyphen():
         await pilot.pause()
 
 
-async def test_dashes_still_reach_the_separator():
-    """`- ` is a bullet, `---` is still a rule: the two never meet"""
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("---"))
-        await pilot.pause()
-
-        assert set(screen.editor.text) == {RULE}
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_bullet_opens_inside_a_quote():
-    """A quote is a wrapper, not a kind of line: a list in one is still a list"""
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("> "))
-        await pilot.press(*list("- quoted item"))
-        assert screen.editor.text == QUOTE_GLYPH + "• quoted item"
-
-        # Enter carries both markers on, so the list goes on inside the quote
-        await pilot.press("enter")
-        await pilot.press(*list("and another"))
-        assert screen.editor.text == (
-            QUOTE_GLYPH
-            + "• quoted item\n"
-            + QUOTE_GLYPH
-            + "• and another"
-        )
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
 async def test_a_quoted_marker_is_green_rather_than_its_depth():
     """
     Inside a quote the color is spoken for - it says the line is quoted - so
@@ -826,9 +765,9 @@ async def test_a_quoted_marker_is_green_rather_than_its_depth():
     """
 
     lines = [
-        QUOTE_GLYPH + "• an item worth quoting",
-        QUOTE_GLYPH + "  ◦ and one under it",
-        QUOTE_GLYPH + "1. numbered, and quoted too",
+        "> - an item worth quoting",
+        ">   - and one under it",
+        "> 1. numbered, and quoted too",
     ]
     names = [[name for _, _, name in row] for row in scan_note(lines)]
 
@@ -856,7 +795,7 @@ async def test_tab_nests_a_bullet_inside_its_quote():
         await pilot.press("tab")
 
         assert screen.editor.text == (
-            QUOTE_GLYPH + "• top\n" + QUOTE_GLYPH + "  ◦ child"
+            "> - top\n" + ">   - child"
         )
 
         # Still quoted at every level it reaches
@@ -879,13 +818,13 @@ async def test_an_empty_quoted_item_unwinds_one_marker_at_a_time():
         await pilot.press(*list("> "))
         await pilot.press(*list("- item"))
 
-        written = QUOTE_GLYPH + "• item\n"
+        written = "> - item\n"
 
         await pilot.press("enter")
-        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+        assert screen.editor.text == written + "> - "
 
         await pilot.press("enter")
-        assert screen.editor.text == written + QUOTE_GLYPH
+        assert screen.editor.text == written + "> "
 
         await pilot.press("enter")
         assert screen.editor.text == written
@@ -895,7 +834,7 @@ async def test_an_empty_quoted_item_unwinds_one_marker_at_a_time():
 
 
 async def test_a_quoted_line_is_green_behind_its_bar():
-    line = QUOTE_GLYPH + "a snippet worth keeping"
+    line = "> a snippet worth keeping"
     names = [name for _, _, name in list(scan_note([line]))[0]]
 
     assert names == [QUOTE, QUOTE_BAR]
@@ -907,12 +846,12 @@ async def test_a_long_link_is_styled_where_it_is_drawn():
     that name stands in for
     """
 
-    line = QUOTE_GLYPH + "see " + LONG_LINK + " here"
+    line = "> see " + LONG_LINK + " here"
     (spans,) = list(scan_note([line]))
 
     assert [name for _, _, name in spans] == [QUOTE, QUOTE_BAR, LINK]
 
-    drawn, _ = fold_links(line)
+    drawn = draw_line(line)
     start, end, _ = spans[-1]
 
     # The spans are counted in bytes of the drawn line, which is what
@@ -936,11 +875,11 @@ async def test_a_long_link_in_a_quote_stays_inside_the_block():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text("a line\n" + QUOTE_GLYPH + "see " + LONG_LINK + " here")
+        editor.load_text("a line\n" + "> see " + LONG_LINK + " here")
         await pilot.pause()
 
         assert editor.document.get_line(1) == (
-            QUOTE_GLYPH + "see " + LONG_LINK_DRAWN + " here"
+            "▎ see " + LONG_LINK_DRAWN + " here"
         )
 
         # One row on the page: nothing has wrapped out from under the bar,
@@ -954,58 +893,70 @@ async def test_a_long_link_in_a_quote_stays_inside_the_block():
         await pilot.pause()
 
 
-async def test_a_link_stays_folded_with_the_cursor_on_it():
+async def test_the_cursor_line_shows_a_link_in_full():
     """
-    The cursor is not what unfolds a link - nothing is. A note is read with
-    the cursor somewhere in it, and a link that opened out under it would put
-    the address back on the page exactly when it is being looked at
+    Standing on a line shows what is written on it, columns and all; every
+    other line goes on showing the name
     """
+
+    written = "see [the folder](" + LONG_LINK + ") here"
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text(QUOTE_GLYPH + "see " + LONG_LINK + " here")
+        editor.load_text("a line\n" + written)
         await pilot.pause()
 
-        folded = QUOTE_GLYPH + "see " + LONG_LINK_DRAWN + " here"
+        assert editor.document.get_line(1) == "see the folder here"
 
-        for column in (0, 8, len(folded) - 1):
-            editor.move_cursor((0, column))
-            await pilot.pause()
+        editor.move_cursor((1, 0))
+        await pilot.pause()
 
-            assert editor.document.get_line(0) == folded
-            assert editor.wrapped_document.get_offsets(0) == []
+        assert editor.document.get_line(1) == written
 
-        # And the whole of the address is still in the note behind it
-        assert LONG_LINK in editor.text
+        # A cursor column on this line is a column of the stored text
+        editor.move_cursor((1, written.index("https")))
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, written.index("https"))
+        assert editor.document[1][editor.cursor_location[1]] == "h"
+
+        # Leaving folds it back, and nothing was lost behind the name
+        editor.move_cursor((0, 0))
+        await pilot.pause()
+
+        assert editor.document.get_line(1) == "see the folder here"
+        assert editor.text == "a line\n" + written
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
 
-async def test_a_name_is_edited_where_it_is_drawn():
+async def test_a_name_is_edited_on_the_stored_text():
     """
-    What the fold hides is the markup, not the name: the words on the page are
-    the words in the note, so they are retyped like any other words
+    The cursor line is the stored text, so a name is retyped like any other
+    words and the folded line picks the new name up
     """
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text("see [the folder](" + LONG_LINK + ") here")
+        editor.load_text("see [the folder](" + LONG_LINK + ") here\nbelow")
         await pilot.pause()
 
-        assert editor.document.get_line(0) == "see the folder here"
-
         # Between "the " and "folder"
-        editor.move_cursor((0, 8))
+        editor.move_cursor((0, 9))
         await pilot.press(*list("big "))
         await pilot.pause()
 
+        assert editor.text == "see [the big folder](" + LONG_LINK + ") here\nbelow"
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
         assert editor.document.get_line(0) == "see the big folder here"
-        assert editor.text == "see [the big folder](" + LONG_LINK + ") here"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1033,11 +984,8 @@ async def test_indenting_a_line_keeps_the_address_on_it():
         await pilot.pause()
 
 
-async def test_an_edit_reaching_into_a_link_takes_the_whole_of_it():
-    """
-    Half a link left on the line is not something that could be written back
-    out as a note, so an edit that touches one swallows it
-    """
+async def test_backspace_on_the_cursor_line_takes_one_stored_character():
+    """Nothing is folded under the cursor, so nothing widens an edit into a link"""
 
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
@@ -1050,7 +998,350 @@ async def test_an_edit_reaching_into_a_link_takes_the_whole_of_it():
         await pilot.press("backspace")
         await pilot.pause()
 
-        assert editor.text == "see "
+        assert editor.text == "see [](" + LONG_LINK
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_line_rewraps_with_its_hanging_indent_as_the_cursor_passes():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n- see [the folder](" + LONG_LINK + ") here")
+        await pilot.pause()
+
+        wrapped = editor.wrapped_document
+        assert isinstance(wrapped, HangingDocument)
+        assert wrapped.get_offsets(1) == []
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        # Wrapped, and every row past the first sits under the bullet's words
+        assert wrapped.get_offsets(1) != []
+        assert wrapped.hanging_pad(1, 1) == 2
+
+        editor.move_cursor((0, 0))
+        await pilot.pause()
+
+        assert wrapped.get_offsets(1) == []
+        assert wrapped.height == 2
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_line_above_the_view_changing_height_does_not_move_the_view():
+    filler = "\n".join(f"line {number}" for number in range(80))
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [the folder](" + LONG_LINK + ") here\n" + filler)
+        await pilot.pause()
+
+        wrapped = editor.wrapped_document
+        assert isinstance(wrapped, HangingDocument)
+        assert wrapped.get_offsets(0) != []
+
+        editor.scroll_to(y=20, animate=False, immediate=True)
+        await pilot.pause()
+
+        top_line = wrapped.row_at(editor.scroll_offset.y)
+        # Well inside the view: a click nearer its edge scrolls, to keep context
+        clicked = wrapped.row_at(editor.scroll_offset.y + 6)
+        assert clicked is not None
+
+        # The raw line above the view folds up when the click takes the cursor away
+        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 6))
+        await pilot.pause()
+
+        assert editor.cursor_location[0] == clicked[0]
+        assert wrapped.get_offsets(0) == []
+        assert wrapped.row_at(editor.scroll_offset.y) == top_line
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_moving_by_screen_row_crosses_raw_and_folded_lines():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a plain line up here\n" + written + "\nanother plain line")
+        await pilot.pause()
+
+        # Over the second "e" of "the" as the line is drawn folded
+        editor.move_cursor((0, 6))
+        editor.action_cursor_down()
+        await pilot.pause()
+
+        row, column = editor.cursor_location
+        assert (row, column) == (1, written.index("the") + 2)
+
+        # Down through the rows the raw line wraps to, and on past it
+        rows = len(editor.wrapped_document.get_offsets(1)) + 1
+
+        for _ in range(rows):
+            editor.action_cursor_down()
+            await pilot.pause()
+
+        assert editor.cursor_location[0] == 2
+        assert editor.document.get_line(1) == "see the folder here"
+
+        # And back up: on to the line and off it the other side, never stuck
+        visited = set()
+
+        for _ in range(rows + 2):
+            editor.action_cursor_up()
+            await pilot.pause()
+            visited.add(editor.cursor_location[0])
+
+        assert visited == {0, 1}
+        assert editor.cursor_location[0] == 0
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_folded_line_lands_on_the_character_clicked():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        # The "f" of "folder", drawn at column 8 of "see the folder here"
+        x = editor.gutter.left + editor.gutter_width
+        await pilot.click(editor, offset=(x + 8, editor.gutter.top + 1))
+        await pilot.pause()
+
+        row, column = editor.cursor_location
+        assert (row, column) == (1, written.index("folder"))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_undoing_an_edit_made_on_a_line_the_cursor_has_left():
+    """An edit's columns were raw ones; by the time of the undo that row is folded"""
+
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written + "\nbelow")
+        await pilot.pause()
+
+        await pilot.press("escape")
+        await pilot.press("A", "!", "escape")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        await pilot.press("u")
+        await pilot.pause()
+
+        assert editor.text == written + "\nbelow"
+        assert editor.cursor_location == (0, 0)
+        assert editor.document.get_line(0) == written
+
+        await pilot.press("ctrl+r")
+        await pilot.pause()
+
+        assert editor.text == written + "!\nbelow"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_go_to_lands_inside_a_links_address():
+    written = "see [the folder](" + LONG_LINK + ") here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        column = written.index("AllItems")
+        screen.go_to(1, column)
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, column)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_joining_up_to_a_folded_line_keeps_its_link_whole():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("see [n](" + LONG_LINK + ")\nnext")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.press("backspace")
+        await pilot.pause()
+
+        assert editor.text == "see [n](" + LONG_LINK + ")next"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_joining_a_folded_line_up_keeps_its_link_whole():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("abc\n[n](" + LONG_LINK + ") tail")
+        await pilot.pause()
+
+        editor.move_cursor((0, 3))
+        await pilot.press("delete")
+        await pilot.pause()
+
+        assert editor.text == "abc[n](" + LONG_LINK + ") tail"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_before_a_link_lands_at_the_line_start_and_undoes_cleanly():
+    written = "abc [n](" + LONG_LINK + ") tail"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written)
+        await pilot.pause()
+
+        editor.move_cursor((0, 4))
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, 0)
+
+        await pilot.press("escape", "u")
+        await pilot.pause()
+
+        assert editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_the_start_of_a_folded_line_is_the_start_of_the_raw_one():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("[n](" + LONG_LINK + ") tail\nbelow")
+        await pilot.pause()
+
+        editor.move_cursor((1, 0))
+        await pilot.pause()
+
+        editor.action_note_start()
+        await pilot.pause()
+
+        assert editor.cursor_location == (0, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_renumbering_another_row_leaves_the_cursor_on_its_words():
+    written = "1. see [n](" + LONG_LINK + ") tail"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text(written + "\n5. b")
+        await pilot.pause()
+
+        column = written.index("tail")
+        editor.move_cursor((0, column))
+        await pilot.press("tab")
+        await pilot.pause()
+
+        row, landed = editor.cursor_location
+        assert row == 0
+        assert editor.document[0][landed:] == "tail"
+        assert editor.text.split("\n")[1] == "1. b"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_pasting_lines_ending_in_a_link_leaves_the_cursor_past_it():
+    last = "second [n](" + LONG_LINK + ")"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        set_clipboard("first\n" + last)
+        await pilot.press("ctrl+v")
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, len(last))
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_short_bare_address_lands_on_the_character_clicked():
+    written = "see https://example.com/x here"
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n" + written)
+        await pilot.pause()
+
+        column = written.index("example")
+        x = editor.gutter.left + editor.gutter_width
+        await pilot.click(editor, offset=(x + column, editor.gutter.top + 1))
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, column)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_click_on_a_name_opening_the_line_lands_on_its_first_letter():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.load_text("a line\n[name](" + LONG_LINK + ") tail")
+        await pilot.pause()
+
+        await pilot.click(editor, offset=(editor.gutter.left, editor.gutter.top + 1))
+        await pilot.pause()
+
+        assert editor.cursor_location == (1, 1)
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1077,12 +1368,12 @@ async def test_copying_a_link_carries_its_address():
         await pilot.pause()
 
 
-async def test_o_opens_a_folded_link_in_full():
+async def test_gx_opens_a_folded_link_in_full():
     async with run_pilot() as pilot:
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.screen.open_url",
+            "todooit.ui.screens.note.screens.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             screen = await open_note(pilot)
@@ -1095,7 +1386,7 @@ async def test_o_opens_a_folded_link_in_full():
 
             # Anywhere on the name it is drawn under
             editor.move_cursor((0, 6))
-            await pilot.press("o")
+            await pilot.press("g", "x")
             await pilot.pause()
 
             assert opened == [LONG_LINK]
@@ -1118,11 +1409,17 @@ async def test_pasting_a_long_link_leaves_it_unnamed():
         await pilot.press("ctrl+v")
         await pilot.pause()
 
-        assert editor.text == "[](" + LONG_LINK + ")"
-        assert editor.document.get_line(0) == LONG_LINK_DRAWN
+        written = "[](" + LONG_LINK + ")"
+
+        assert editor.text == written
 
         # Past the whole of it, where there is more of the note to write
-        assert editor.cursor_location == (0, len(LONG_LINK_DRAWN))
+        assert editor.cursor_location == (0, len(written))
+
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert editor.document.get_line(0) == LONG_LINK_DRAWN
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1168,7 +1465,7 @@ async def test_a_quote_still_holds_markup():
     """A quoted line is still a line of the note: links and emphasis work"""
 
     emphasised = EMPH_MARK + "this" + EMPH_MARK
-    line = QUOTE_GLYPH + "see " + emphasised + " at https://example.com"
+    line = "> see " + emphasised + " at https://example.com"
     names = [name for _, _, name in list(scan_note([line]))[0]]
 
     assert names[:2] == [QUOTE, QUOTE_BAR]
@@ -1186,20 +1483,20 @@ async def test_tab_nests_a_bullet():
         await pilot.press("enter")
         await pilot.press(*list("child"))
         await pilot.press("tab")
-        assert screen.editor.text == "• top\n  ◦ child"
+        assert screen.editor.text == "- top\n  - child"
 
         # A second level in, and the glyph changes again
         await pilot.press("tab")
-        assert screen.editor.text == "• top\n    ▪ child"
+        assert screen.editor.text == "- top\n    - child"
 
         # And back out the way it came
         await pilot.press("shift+tab", "shift+tab")
-        assert screen.editor.text == "• top\n• child"
+        assert screen.editor.text == "- top\n- child"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
-        assert Todo.all()[0].note == "• top\n• child"
+        assert Todo.all()[0].note == "- top\n- child"
 
 
 async def test_enter_on_an_empty_nested_bullet_steps_out_a_level():
@@ -1222,14 +1519,14 @@ async def test_enter_on_an_empty_nested_bullet_steps_out_a_level():
         await pilot.press("enter", "tab")
         await pilot.press(*list("grandchild"))
 
-        written = "• top\n  ◦ child\n    ▪ grandchild\n"
+        written = "- top\n  - child\n    - grandchild\n"
 
         # Out of the deepest level, and the glyph comes back with it
         await pilot.press("enter", "enter")
-        assert screen.editor.text == written + "  ◦ "
+        assert screen.editor.text == written + "  - "
 
         await pilot.press("enter")
-        assert screen.editor.text == written + "• "
+        assert screen.editor.text == written + "- "
 
         # And at the top the list ends the way it always did
         await pilot.press("enter")
@@ -1250,31 +1547,23 @@ async def test_an_empty_nested_bullet_steps_out_inside_a_quote_too():
         await pilot.press("enter", "tab")
         await pilot.press(*list("under"))
 
-        written = QUOTE_GLYPH + "• item\n" + QUOTE_GLYPH + "  ◦ under\n"
+        written = "> - item\n" + ">   - under\n"
 
         await pilot.press("enter", "enter")
-        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+        assert screen.editor.text == written + "> - "
 
         # The bar is the last thing to go, as it always was
         await pilot.press("enter")
-        assert screen.editor.text == written + QUOTE_GLYPH
+        assert screen.editor.text == written + "> "
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
 
-async def test_backspace_at_the_words_steps_a_nested_bullet_out():
-    """
-    The bug: `backspace` at the head of a nested item ate the marker
-
-    Which is the wrong end of the list to end: an item under another one is a
-    branch, and the key that walks back up it has to leave it an item. It
-    steps out a level at a time now, words and all, and the marker only goes
-    at the top, where there is no level left to step back to.
-    """
-
+async def test_backspace_takes_a_nested_bullets_marker_and_indent_like_any_text():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        editor = screen.editor
 
         await pilot.press(*list("- top"))
         await pilot.press("enter", "tab")
@@ -1283,44 +1572,149 @@ async def test_backspace_at_the_words_steps_a_nested_bullet_out():
         await pilot.press(*list("grandchild"))
 
         # Back to the head of the words, where the marker ends
-        screen.editor.move_cursor((2, 6))
+        editor.move_cursor((2, 6))
 
         await pilot.press("backspace")
-        assert screen.editor.text == "• top\n  ◦ child\n  ◦ grandchild"
+        assert editor.text == "- top\n  - child\n    -grandchild"
 
         await pilot.press("backspace")
-        assert screen.editor.text == "• top\n  ◦ child\n• grandchild"
+        assert editor.text == "- top\n  - child\n    grandchild"
 
-        # At the top the marker goes, and the words stay
+        # The indent goes a space at a time, not a level at a time
         await pilot.press("backspace")
-        assert screen.editor.text == "• top\n  ◦ child\ngrandchild"
+        assert editor.text == "- top\n  - child\n   grandchild"
 
-        # And with nothing in front of them a backspace is a backspace again
+        await pilot.press("backspace", "backspace", "backspace")
+        assert editor.text == "- top\n  - child\ngrandchild"
+
+        # And from the margin it joins the line above
         await pilot.press("backspace")
-        assert screen.editor.text == "• top\n  ◦ childgrandchild"
+        assert editor.text == "- top\n  - childgrandchild"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
 
 
-async def test_backspace_steps_an_empty_nested_bullet_out_inside_a_quote():
-    """The same walk back up, with the bar left standing until the end"""
-
+async def test_backspace_takes_a_quoted_bullets_marker_like_any_text():
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        editor = screen.editor
 
         await pilot.press(*list("> "))
         await pilot.press(*list("- item"))
         await pilot.press("enter", "tab")
 
-        written = QUOTE_GLYPH + "• item\n"
+        written = "> - item\n"
+        assert editor.text == written + ">   - "
 
         await pilot.press("backspace")
-        assert screen.editor.text == written + QUOTE_GLYPH + "• "
+        assert editor.text == written + ">   -"
 
-        # The bar is the last thing to go, as it always was
+        await pilot.press("backspace", "backspace", "backspace")
+        assert editor.text == written + "> "
+
+        # The bar is two characters like any other two
         await pilot.press("backspace")
-        assert screen.editor.text == written + QUOTE_GLYPH
+        assert editor.text == written + ">"
+
+        await pilot.press("backspace")
+        assert editor.text == written
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_enter_at_a_headings_end_stops_on_the_next_line():
+    """A `---` below is a line of its own, not part of the title to skip past"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "# Title\n---\nbody"
+        editor.move_cursor((0, 7))
+        await pilot.press("enter")
+
+        assert editor.text == "# Title\n\n---\nbody"
+        assert editor.cursor_location == (1, 0)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_a_backspace_that_joins_two_lists_renumbers_them():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n\n1. c\n2. d"
+        editor.move_cursor((2, 0))
+        await pilot.press("backspace")
+
+        assert editor.text == "1. a\n2. b\n3. c\n4. d"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_taking_an_items_marker_away_leaves_the_rest_of_the_list_counted():
+    """What's left below is a list of its own, and its first item keeps its number"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c\n4. d"
+        editor.move_cursor((1, 0))
+        await pilot.press("delete")
+
+        assert editor.text == "1. a\n. b\n3. c\n4. d"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_deleting_a_line_out_of_a_list_closes_the_gap():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b\n3. c"
+        editor.selection = Selection((0, 4), (1, 4))
+        await pilot.press("backspace")
+
+        assert editor.text == "1. a\n2. c"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_typing_a_new_item_into_a_list_takes_its_place_in_the_count():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n\n2. b\n3. c"
+        editor.move_cursor((1, 0))
+        await pilot.press(*list("9. new"))
+
+        assert editor.text == "1. a\n2. new\n3. b\n4. c"
+        assert editor.cursor_location == (1, 6)
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
+
+
+async def test_changing_a_lists_first_number_counts_on_from_it():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
+
+        editor.text = "1. a\n2. b"
+        editor.move_cursor((0, 0))
+        await pilot.press("delete", "5")
+
+        assert editor.text == "5. a\n6. b"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1331,7 +1725,7 @@ async def test_enter_in_front_of_a_bullet_opens_a_line_above():
     The bug: `enter` from the head of a bullet wrote the marker out twice
 
     The prefix is carried onto the new line, so from column 0 the line below
-    ended up as `• • item` - the marker it already had, behind a fresh one.
+    ended up as `- - item` - the marker it already had, behind a fresh one.
     From anywhere in front of the words the line moves down whole instead,
     with a blank one opening above it.
     """
@@ -1343,13 +1737,13 @@ async def test_enter_in_front_of_a_bullet_opens_a_line_above():
         await pilot.press(*list("- one"))
         await pilot.press("enter")
         await pilot.press(*list("two"))
-        assert editor.text == "• one\n• two"
+        assert editor.text == "- one\n- two"
 
         # At the very start of the second bullet
         editor.move_cursor((1, 0))
         await pilot.press("enter")
 
-        assert editor.text == "• one\n\n• two"
+        assert editor.text == "- one\n\n- two"
         assert editor.cursor_location == (2, 0)
 
         await pilot.press("escape", "escape")
@@ -1367,20 +1761,20 @@ async def test_enter_between_glyph_and_words_keeps_the_marker_whole():
         await pilot.press("enter")
         await pilot.press(*list("child"))
         await pilot.press("tab")
-        assert editor.text == "• top\n  ◦ child"
+        assert editor.text == "- top\n  - child"
 
         # In the indent of the nested line, short of its glyph
         editor.move_cursor((1, 1))
         await pilot.press("enter")
 
-        assert editor.text == "• top\n\n  ◦ child"
+        assert editor.text == "- top\n\n  - child"
         assert editor.cursor_location == (2, 1)
 
         # And between the glyph and the space that follows it
         editor.move_cursor((2, 3))
         await pilot.press("enter")
 
-        assert editor.text == "• top\n\n\n  ◦ child"
+        assert editor.text == "- top\n\n\n  - child"
         assert editor.cursor_location == (3, 3)
 
         await pilot.press("escape", "escape")
@@ -1399,7 +1793,7 @@ async def test_enter_at_the_words_still_opens_an_empty_bullet_above():
         editor.move_cursor((0, 2))
         await pilot.press("enter")
 
-        assert editor.text == "• \n• item"
+        assert editor.text == "- \n- item"
 
         await pilot.press("escape", "escape")
         await pilot.pause()
@@ -1430,11 +1824,29 @@ async def test_tab_indents_a_plain_line_too():
         await pilot.pause()
 
 
-async def test_nested_bullets_are_drawn_by_depth():
-    lines = ["• top", "  ◦ nested", "    ▪ deeper"]
-    names = [[name for _, _, name in row] for row in scan_note(lines)]
+async def test_tab_nests_a_quoted_line_after_its_bar():
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        editor = screen.editor
 
-    assert names == [["note-bullet-0"], ["note-bullet-1"], ["note-bullet-2"]]
+        editor.text = "> said\n> - item"
+        editor.move_cursor((0, 6))
+        await pilot.press("tab")
+        assert editor.text == ">   said\n> - item"
+        assert editor.cursor_location == (0, 8)
+
+        await pilot.press("shift+tab", "shift+tab")
+        assert editor.text == "> said\n> - item"
+
+        editor.move_cursor((1, 4))
+        await pilot.press("tab")
+        assert editor.text == "> said\n>   - item"
+
+        await pilot.press("shift+tab")
+        assert editor.text == "> said\n> - item"
+
+        await pilot.press("escape", "escape")
+        await pilot.pause()
 
 
 async def test_tab_never_writes_in_normal_mode():
@@ -1459,127 +1871,6 @@ async def test_tab_never_writes_in_normal_mode():
         assert Todo.all()[0].note == "untouched"
 
 
-async def test_three_dashes_become_the_separator():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("above"))
-        await pilot.press("enter")
-        await pilot.press(*list("---"))
-        await pilot.pause()
-
-        lines = screen.editor.text.splitlines()
-        assert lines[0] == "above"
-
-        # A blank line is kept above it: a rule tight under words is a header,
-        # and `# ` is how a header is meant on purpose
-        assert lines[1] == ""
-        assert set(lines[2]) == {RULE}
-
-        # The cursor comes to rest on the rule, ready to carry on beneath it
-        await pilot.press("enter")
-        await pilot.press(*list("below"))
-        assert screen.editor.text.splitlines()[3] == "below"
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_three_dashes_with_nothing_above_need_no_blank_line():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("---"))
-        await pilot.pause()
-
-        assert set(screen.editor.text) == {RULE}
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_separator_is_not_a_header():
-    """A rule with words over it titles them; one with a blank line does not"""
-
-    header = [name for row in scan_note(["Title", RULE * 5]) for _, _, name in row]
-    separator = [name for row in scan_note(["", RULE * 5]) for _, _, name in row]
-
-    assert header == [HEADER, RULE_SPAN]
-    assert separator == [RULE_SPAN]
-
-
-async def test_a_hash_draws_the_rule_the_title_is_typed_over():
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("# "))
-        await pilot.pause()
-
-        # The mark goes and the rule arrives; the title line is left empty,
-        # with the cursor standing on it
-        lines = screen.editor.text.splitlines()
-        assert lines[0] == ""
-        assert set(lines[1]) == {RULE}
-
-        # Which is where the title is typed, and it is a title from its first
-        # letter, because the rule saying so is already underneath it
-        await pilot.press(*list("Section"))
-        await pilot.pause()
-
-        lines = screen.editor.text.splitlines()
-        assert lines[0] == "Section"
-
-        names = [name for row in scan_note(lines) for _, _, name in row]
-        assert names == [HEADER, RULE_SPAN]
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_run_of_hashes_opens_the_one_header_there_is():
-    """Every depth of markdown heading means heading; this note has one"""
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("### "))
-        await pilot.pause()
-
-        lines = screen.editor.text.splitlines()
-        assert lines[0] == ""
-        assert set(lines[1]) == {RULE}
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
-async def test_a_hash_in_front_of_a_written_line_titles_it():
-    """The mark opens a header where the words already are, not only before"""
-
-    async with run_pilot() as pilot:
-        screen = await open_note(pilot)
-
-        await pilot.press(*list("Section"))
-        await pilot.press("home")
-        await pilot.press(*list("# "))
-        await pilot.pause()
-
-        # The words stay put and the rule arrives underneath them: the same
-        # header, written the other way round
-        lines = screen.editor.text.splitlines()
-        assert lines[0] == "Section"
-        assert set(lines[1]) == {RULE}
-
-        names = [name for row in scan_note(lines) for _, _, name in row]
-        assert names == [HEADER, RULE_SPAN]
-
-        # The cursor is left where the mark was, in front of the title
-        assert screen.editor.cursor_location == (0, 0)
-
-        await pilot.press("escape", "escape")
-        await pilot.pause()
-
-
 async def test_a_hash_mid_line_stays_a_number_sign():
     """Only a mark at the head of a line is opening one"""
 
@@ -1598,7 +1889,7 @@ async def test_open_link_inside_the_note():
         opened = []
 
         with patch(
-            "todooit.ui.screens.note.screen.open_url",
+            "todooit.ui.screens.note.screens.screen.open_url",
             lambda url: opened.append(url) or True,
         ):
             await open_note(pilot)
@@ -1607,14 +1898,14 @@ async def test_open_link_inside_the_note():
             await pilot.press("escape")
 
             # The cursor sits at the end, past the link: no link under it
-            await pilot.press("o")
+            await pilot.press("g", "x")
             await pilot.pause()
             assert opened == []
 
             # Walk back onto the link and open it: `see ` is four columns, so
             # the fifth is the first of the folded address
-            await pilot.press("0", "ö", "ö", "ö", "ö")
-            await pilot.press("o")
+            await pilot.press("=", "ö", "ö", "ö", "ö")
+            await pilot.press("g", "x")
             await pilot.pause()
 
             assert opened == ["https://example.com"]
@@ -1634,7 +1925,7 @@ async def test_pinned_note_via_m():
         assert isinstance(screen, PinnedNoteScreen)
         assert screen.frame.border_title == "Pinned Note"
 
-        await pilot.press(*list("a thought with no task yet"))
+        await pilot.press("i", *list("a thought with no task yet"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 
@@ -1688,14 +1979,14 @@ async def test_a_wrapped_bullet_keeps_its_indent():
     second row drawn from the margin, which reads as a line out of the list
     """
 
-    drawn = rows(wrapped("• " + LONG_TEXT))
+    drawn = rows(wrapped("- " + LONG_TEXT))
 
     assert len(drawn) > 1
     assert all(row.startswith(INDENT) and row[2] != " " for row in drawn[1:])
 
 
 async def test_a_nested_bullet_wraps_under_its_own_words():
-    line = INDENT * 2 + "◦ " + LONG_TEXT
+    line = INDENT * 2 + "- " + LONG_TEXT
     drawn = rows(wrapped(line))
 
     # Six columns: two levels of indent and the glyph with its space, which is
@@ -1712,10 +2003,25 @@ async def test_a_wrapped_enumeration_keeps_its_indent():
 
 
 async def test_a_wrapped_quoted_bullet_stays_inside_its_block():
-    drawn = rows(wrapped(QUOTE_GLYPH + "• " + LONG_TEXT))
+    drawn = rows(wrapped("> - " + LONG_TEXT))
 
     assert len(drawn) > 1
     assert all(row.startswith(" " * 4) and row[4] != " " for row in drawn[1:])
+
+
+async def test_a_wrapped_quote_keeps_its_bar_on_every_row():
+    document = wrapped("> " + LONG_TEXT)
+
+    assert document.get_offsets(0)
+    assert document.bar_at(0) is None
+    assert all(document.bar_at(row) == 0 for row in range(1, document.height))
+
+
+async def test_a_wrapped_line_outside_a_quote_draws_no_bar():
+    document = wrapped("- " + LONG_TEXT)
+
+    assert document.get_offsets(0)
+    assert all(document.bar_at(row) is None for row in range(document.height))
 
 
 async def test_an_indented_line_with_no_marker_keeps_its_indent_too():
@@ -1738,7 +2044,7 @@ async def test_an_indented_row_still_fits_the_window():
     added to a row already as wide as the window
     """
 
-    for line in ("• " + LONG_TEXT, INDENT * 2 + "◦ " + LONG_TEXT, "1. " + LONG_TEXT):
+    for line in ("- " + LONG_TEXT, INDENT * 2 + "- " + LONG_TEXT, "1. " + LONG_TEXT):
         assert all(cell_len(row) <= 40 for row in rows(wrapped(line)))
 
 
@@ -1748,7 +2054,7 @@ async def test_a_deep_item_in_a_narrow_window_gives_the_indent_up():
     few characters wide is worse than a row that starts at the margin
     """
 
-    document = wrapped(INDENT * 6 + "▪ " + LONG_TEXT, width=20)
+    document = wrapped(INDENT * 6 + "- " + LONG_TEXT, width=20)
 
     assert document.get_offsets(0)
     assert document.hanging_pad(0, 1) == 0
@@ -1760,7 +2066,7 @@ async def test_a_column_of_a_wrapped_row_is_read_where_it_is_drawn():
     from the words of the second row, which is five in from the window's edge
     """
 
-    document = wrapped("• " + LONG_TEXT)
+    document = wrapped("- " + LONG_TEXT)
     (break_at, *_) = document.get_offsets(0)
 
     assert document.location_to_offset((0, break_at + 3)) == (5, 1)
@@ -1772,7 +2078,7 @@ async def test_a_wrapped_bullet_is_drawn_under_its_words():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        editor.load_text(INDENT * 2 + "- " + LONG_TEXT)
         await pilot.pause()
 
         assert editor.wrapped_document.get_offsets(0)
@@ -1798,7 +2104,7 @@ async def test_the_cursor_keeps_its_column_into_a_wrapped_row():
         screen = await open_note(pilot)
         editor = screen.editor
 
-        editor.load_text(INDENT * 2 + "◦ " + LONG_TEXT)
+        editor.load_text(INDENT * 2 + "- " + LONG_TEXT)
         await pilot.pause()
 
         editor.move_cursor((0, 20))
@@ -1868,7 +2174,7 @@ async def test_a_pasted_path_is_attached_beside_the_note(tmp_path):
         # Attaching is not typing: the note is not edited and the cursor is
         # left standing exactly where it was
         assert screen.editor.mode == MODE_NORMAL
-        assert screen.editor.cursor_location == (0, len("some words"))
+        assert screen.editor.cursor_location == (0, len("some words") - 1)
 
 
 async def test_what_is_attached_comes_back_with_the_note(tmp_path):
@@ -1920,7 +2226,7 @@ async def test_a_copied_file_leaves_no_text_to_paste(tmp_path):
         await pilot.press("escape")
         set_clipboard("")
 
-        with patch("todooit.ui.screens.note.editor.paste_files", lambda: [str(report)]):
+        with patch("todooit.ui.screens.note.vim.clipboard.paste_files", lambda: [str(report)]):
             await pilot.press("ctrl+v")
             await pilot.pause()
 
@@ -1941,25 +2247,27 @@ async def test_a_pasted_sentence_is_still_a_sentence(tmp_path):
         assert "the file is in" in screen.editor.text
 
 
-async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
+async def test_gf_picks_the_files_up_and_escape_puts_them_down(tmp_path):
     async with run_pilot() as pilot:
         screen = await open_note(pilot)
+        screen.api.vars.note_hints = True
 
         await pilot.press(*list("some words"))
         await pilot.press("escape")
 
         # Nothing attached: the key says so and the text keeps the keyboard
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert not screen.picking_files
         assert "Nothing attached" in str(screen.hint.render())
 
         await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
 
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert screen.picking_files
-        assert str(screen.hint.render()) == screen.FILES_HINT
+        assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL, True)
+        assert "jö/kl pick" in str(screen.hint.render())
 
         # The motions the panes behind the window use, on a line of files
         assert screen.files.picked == 1
@@ -1978,8 +2286,9 @@ async def test_f_picks_the_files_up_and_escape_puts_them_down(tmp_path):
         await pilot.pause()
         assert not screen.picking_files
         assert screen.editor.has_focus
-        assert screen.editor.cursor_location == (0, len("some words"))
-        assert str(screen.hint.render()) == screen.HINTS[MODE_NORMAL]
+        assert screen.editor.cursor_location == (0, len("some words") - 1)
+        assert str(screen.hint.render()) == screen.hint_for(MODE_NORMAL)
+        assert "jö/kl move" in str(screen.hint.render())
 
 
 async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):
@@ -1989,7 +2298,7 @@ async def test_escape_out_of_the_files_does_not_close_the_note(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "one.md")
 
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.press("escape")
         await pilot.pause()
 
@@ -2003,13 +2312,13 @@ async def test_enter_opens_the_file_that_is_picked_out(tmp_path):
         report = tmp_path / "Q3 report.pdf"
 
         with patch(
-            "todooit.ui.screens.note.screen.open_path",
+            "todooit.ui.screens.note.screens.screen.open_path",
             lambda path: opened.append(path) or Opened.OK,
         ):
             await pilot.press("escape")
             await attach(pilot, screen, report)
 
-            await pilot.press("f", "enter")
+            await pilot.press("g", "f", "enter")
             await pilot.pause()
 
             assert opened == [report]
@@ -2024,7 +2333,7 @@ async def test_xx_detaches_the_file_that_is_picked_out(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "one.md", tmp_path / "two.md")
 
-        await pilot.press("f", "j")          # onto the first of the two
+        await pilot.press("g", "f", "j")          # onto the first of the two
         await pilot.press("x", "x")
         await pilot.pause()
 
@@ -2070,7 +2379,7 @@ async def test_the_strip_grows_a_row_rather_than_hiding_a_file(tmp_path):
             assert name in drawn(screen)
 
         # Up and down walk the rows, and up off the top row is the way out
-        await pilot.press("f")
+        await pilot.press("g", "f")
         await pilot.pause()
         assert strip.row_of(strip.picked) == len(strip.rows) - 1
 
@@ -2096,7 +2405,7 @@ async def test_a_file_that_is_gone_is_offered_for_detaching(tmp_path):
         await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "moved away.md")
 
-        await pilot.press("f", "enter")
+        await pilot.press("g", "f", "enter")
         await pilot.pause()
 
         assert screen.awaiting_answer
@@ -2119,7 +2428,6 @@ async def test_the_pinned_note_carries_files_too(tmp_path):
         screen = pilot.app.screen
         assert isinstance(screen, PinnedNoteScreen)
 
-        await pilot.press("escape")
         await attach(pilot, screen, tmp_path / "scratch.md")
 
         assert PinnedNote.get_attachments() == str(tmp_path / "scratch.md")

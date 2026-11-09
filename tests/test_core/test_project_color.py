@@ -132,3 +132,35 @@ def test_color_root_is_the_top_of_the_tree(create_project):
     assert top.color_root is top
     assert child.color_root is top
     assert grandchild.color_root is top
+
+
+def test_an_indented_tree_takes_its_new_parents_color(create_project):
+    work = create_project("work")
+    work.set_color(2)
+    home = create_project("home")
+    home.set_color(5)
+    room = home.add_project()
+
+    outcome = home.indent()
+
+    assert [p.color for p in (home, room)] == [2, 2]
+    # Its own color gave way, which is worth a word in the bar
+    assert outcome
+    assert "recolored" in outcome.summary()
+
+
+def test_indenting_into_the_same_color_says_nothing(create_project):
+    create_project("work")
+    home = create_project("home")
+
+    assert not home.indent()
+
+
+def test_an_unindented_project_keeps_its_color(create_project):
+    work = create_project("work")
+    work.set_color(3)
+    sub = work.add_project()
+    sub_sub = sub.add_project()
+
+    assert not sub.unindent()
+    assert [p.color for p in (work, sub, sub_sub)] == [3, 3, 3]

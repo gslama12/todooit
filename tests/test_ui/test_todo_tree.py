@@ -6,11 +6,6 @@ from datetime import date, datetime, timedelta
 
 from pytest import raises
 
-from todooit.api import Cadence, Todo
-from todooit.api.exceptions import NoNodeError
-from todooit.ui.api.widgets import TodoWidget
-from todooit.ui.tui import Todooit
-from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
@@ -19,6 +14,12 @@ from tests.test_ui.ui_base import (
     run_pilot,
     tree_options,
 )
+from todooit.api import Cadence, Todo
+from todooit.api.exceptions import NoNodeError
+from todooit.ui.api.widgets import TodoWidget
+from todooit.ui.tui import Todooit
+from todooit.ui.widgets.renderers.base_renderer import BaseRenderer
+from todooit.ui.widgets.trees.todos_tree import DATE_COLUMN_ICON
 
 
 def custom_formatter(value, todo):
@@ -37,7 +38,7 @@ async def test_no_node_error():
         tree = await create_and_move_to_todo(pilot)
 
         with raises(NoNodeError):
-            tree.current
+            _ = tree.current
 
 
 async def test_add_todo_via_keys():
@@ -55,13 +56,13 @@ async def test_add_todo_via_keys():
         assert highlighted_index(tree) == 1
 
 
-async def test_escape_discards_a_new_todo():
+async def test_a_new_todo_left_without_a_name_is_dropped():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
 
+        # Out of INSERT, then out of the edit with nothing in it
         await pilot.press("n")
-        await pilot.press(*list("never kept"))
-        await pilot.press("escape")
+        await pilot.press("escape", "escape")
         await pilot.pause()
 
         assert Todo.all() == []
@@ -93,7 +94,7 @@ async def test_blanking_a_todo_with_steps_asks_first():
 
         # Blank the parent's name and commit
         await pilot.press("k")  # up to the parent
-        await pilot.press("i", "ctrl+l")
+        await pilot.press("e", "c", "c")
         await pilot.press("enter")
         await pilot.pause()
 
@@ -133,6 +134,36 @@ async def test_add_child_and_expansion():
         assert len(tree_options(tree)) == 2
 
 
+async def test_child_count_shows_only_while_collapsed():
+    """
+    An open todo has its steps on the rows below it, so the count trailing its
+    description is only drawn once it is folded shut
+    """
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "task")
+        await pilot.press("N")
+        await commit_line(pilot, "step")
+
+        task = next(t for t in Todo.all() if t.description == "task")
+
+        def drawn() -> str:
+            return tree.formatter.description.format_value("task", task).plain
+
+        assert drawn() == "task"
+
+        await pilot.press("k", "h")
+        await pilot.pause()
+        assert drawn() == "task (1)"
+
+        await pilot.press("h")
+        await pilot.pause()
+        assert drawn() == "task"
+
+
 async def test_edit_description():
     async with run_pilot() as pilot:
         await create_and_move_to_todo(pilot)
@@ -140,7 +171,7 @@ async def test_edit_description():
         await pilot.press("n")
         await commit_line(pilot, "old")
 
-        await pilot.press("i", "ctrl+l")
+        await pilot.press("e", "c", "c")
         await commit_line(pilot, "new")
 
         assert Todo.all()[0].description == "new"
@@ -188,6 +219,52 @@ async def test_todo_tree_layout():
         app.api.layouts.todo_layout = [TodoWidget.description]
         table = tree.render_row(tree._rows[tree.current.id])
         assert table.columns[0].header == "description"
+
+
+async def test_status_and_note_columns_go_untitled():
+    """The checkbox and the note icon need no header, so neither column is widened by one"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "nixos")
+
+        assert tree.column_title("status") == ""
+        assert tree.column_title("note") == ""
+        assert tree.column_title("description") == "Description"
+
+        tree.get_column_width.cache_clear()
+        assert tree.get_column_width("status") < len("Status")
+        assert tree.get_column_width("note") < len("Note")
+
+
+async def test_date_icon_sits_in_the_header_and_rows_drop_the_year():
+    """The calendar is drawn once per date column, and a row's date leaves the year off"""
+
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+
+        await pilot.press("n")
+        await commit_line(pilot, "nixos")
+
+        todo = tree.current_model
+        assert isinstance(todo, Todo)
+        when = datetime(date.today().year + 1, 3, 7)
+        todo.due = when
+        todo.scheduled = when
+        todo.save()
+
+        assert tree.column_title("due") == f"{DATE_COLUMN_ICON} Due"
+        assert tree.column_title("scheduled") == f"{DATE_COLUMN_ICON} Scheduled"
+
+        for column in ("due", "scheduled"):
+            drawn = getattr(tree.formatter, column).format_value(when, todo).plain
+            assert drawn.endswith("07.03.")
+            assert DATE_COLUMN_ICON not in drawn
+
+        # Stored in full all the same
+        assert todo.due.year == when.year
 
 
 async def test_incorrect_edit():
@@ -373,26 +450,6 @@ async def test_priority_keybinds():
         assert todo.priority == 0
 
 
-async def test_agent_keybind_toggles():
-    async with run_pilot() as pilot:
-        tree = await create_and_move_to_todo(pilot)
-
-        await pilot.press("n")
-        await commit_line(pilot, "nixos")
-
-        todo = tree.current_model
-        assert isinstance(todo, Todo)
-        assert todo.agent is False
-
-        await pilot.press("a")
-        await pilot.pause()
-        assert todo.agent is True
-
-        await pilot.press("a")
-        await pilot.pause()
-        assert todo.agent is False
-
-
 async def test_status_change():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
@@ -409,35 +466,6 @@ async def test_status_change():
 
         todo.toggle_complete()
         assert todo.status == "completed"
-
-
-async def test_agent_column_is_never_typed_into():
-    """
-    The flag is turned on and off with a key, so the column turns an edit down
-    even with the column drawn and the cursor sitting on the row
-    """
-
-    async with run_pilot() as pilot:
-        app = pilot.app
-        assert isinstance(app, Todooit)
-
-        tree = await create_and_move_to_todo(pilot)
-
-        await pilot.press("n")
-        await commit_line(pilot, "nixos")
-
-        todo = tree.current_model
-        assert isinstance(todo, Todo)
-
-        app.api.layouts.todo_layout = [TodoWidget.description]
-        assert not tree.start_edit("agent")  # column is not in the layout
-
-        app.api.layouts.todo_layout = [
-            TodoWidget.description,
-            TodoWidget.agent,
-        ]
-        assert not tree.start_edit("agent")  # and it is not editable either
-        assert todo.agent is False
 
 
 async def test_recurrence_change():

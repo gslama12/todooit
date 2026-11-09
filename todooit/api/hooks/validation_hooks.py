@@ -1,15 +1,19 @@
 from sqlalchemy import event
-from ..exceptions import NoParentError, MultipleParentError
+
+from ..exceptions import MultipleParentError, NoParentError
 from ..todo import Todo
 
 
 @event.listens_for(Todo, "before_insert")
 @event.listens_for(Todo, "before_update")
 def validate_parent_todo(mapper, connection, target: Todo):
-    if target.parent_project is None and target.parent_todo is None:
-        # Orphans (project deleted) are allowed if they carry an origin path
-        if not target.origin_path:
-            raise NoParentError("Todo must have a parent project or todo")
+    # Orphans (project deleted) are allowed if they carry an origin path
+    if (
+        target.parent_project is None
+        and target.parent_todo is None
+        and not target.origin_path
+    ):
+        raise NoParentError("Todo must have a parent project or todo")
 
     if target.parent_project is not None and target.parent_todo is not None:
         raise MultipleParentError("Todo cannot have both a parent project and todo")

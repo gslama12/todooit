@@ -5,12 +5,11 @@ of real use strings them together
 
 from datetime import date, timedelta
 
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
-from todooit.ui.screens.search import SearchScreen
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
     create_and_move_to_todo,
+    descriptions,
     new_project,
     new_todo,
     notification_message,
@@ -18,6 +17,8 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
+from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
+from todooit.ui.screens.search import SearchScreen
 
 
 async def test_a_task_s_whole_life():
@@ -34,7 +35,6 @@ async def test_a_task_s_whole_life():
         await commit_line(pilot, "ship the release")
 
         await pilot.press("p", "1")
-        await pilot.press("a")
         await pilot.press("d")
         await commit_line(pilot, "in 3 days")
         await pilot.press("s")
@@ -43,14 +43,13 @@ async def test_a_task_s_whole_life():
 
         await pilot.press(" ")
         await pilot.pause()
-        await pilot.press(*list("remember the changelog"))
+        await pilot.press("i", *list("remember the changelog"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 
         todo = Todo.all()[0]
         assert todo.description == "ship the release"
         assert todo.priority == 1
-        assert todo.agent is True
         assert todo.due is not None and todo.due.date() == date.today() + timedelta(days=3)
         assert todo.scheduled is not None
         assert todo.scheduled.date() == date.today() + timedelta(days=1)
@@ -129,9 +128,9 @@ async def test_planning_a_day_across_projects():
 
 async def test_steps_of_a_task_leave_the_task_to_be_ticked():
     """
-    Steps added with N, finished one by one from the pane: the parent waits
-    to be ticked itself however few steps are left, and once it is the whole
-    family shows in the log together.
+    Steps added with N, finished one by one from the pane: each leaves for the
+    log on its own, the parent waits to be ticked itself even with no steps
+    left, and once it is, the steps finished earlier are drawn under it there.
     """
 
     async with run_pilot() as pilot:
@@ -148,50 +147,52 @@ async def test_steps_of_a_task_leave_the_task_to_be_ticked():
 
         parent = next(t for t in Todo.all() if t.description == "move house")
         steps = list(parent.todos)
-        assert len(tree_options(tree)) == 3  # parent expanded, both steps
+        assert descriptions(tree) == ["move house", "pack boxes", "book van"]
 
-        # Finish the steps; the cursor sits on "book van"
+        # Finish "book van", where the cursor sits: it leaves for the log alone
         await pilot.press("c")
         await pilot.pause()
+
         assert parent.is_pending
+        assert descriptions(tree) == ["move house", "pack boxes"]
+        assert [t.description for t in COMPLETED.todos] == ["book van"]
 
-        await pilot.press("k")  # up to "pack boxes"
+        # Finish the other step too
+        while tree.current_model.description != "pack boxes":
+            await pilot.press("j")
         await pilot.press("c")
         await pilot.pause()
 
-        # Every step is done and the task is still standing there with them
-        # under it, waiting for the tick it only ever gets by hand
+        # Every step is done and the task is still standing there on its own,
+        # waiting for the tick it only ever gets by hand
         assert all(step.is_completed for step in steps)
         assert parent.is_pending
-        assert len(tree_options(tree)) == 3
+        assert descriptions(tree) == ["move house"]
+        assert len(COMPLETED.todos) == 2
 
-        # Tick it, and the whole family leaves for the log
-        await pilot.press("k", "k")  # back up onto the task itself
+        # Tick it, and it gathers its steps under it in the log
         await pilot.press("c")
         await pilot.pause()
 
         assert parent.is_completed
-
-        # The whole family left the project pane together
         assert tree_options(tree) == []
         assert COMPLETED.todos == [parent]
 
-        # Unticking one step in the log hands the whole task back
+        # Unticking one step in the log hands the task back with that step
         await pilot.press("g", "c")
         await pilot.pause()
 
         completed_tree = visible_todos(app)
-        rows = tree_options(completed_tree)
 
         # The task with its steps under it
-        assert len(rows) == 3
+        assert len(tree_options(completed_tree)) == 3
 
         await pilot.press("l")  # down onto a step
         await pilot.press("c")
         await pilot.pause()
 
         assert parent.is_pending
-        assert len(tree_options(tree)) >= 1
+        assert sum(step.is_pending for step in steps) == 1
 
 
 async def test_bin_round_trip_with_a_dropped_project():
@@ -224,7 +225,7 @@ async def test_bin_round_trip_with_a_dropped_project():
         # The Bin reads newest first; walk to "worth keeping"
         keeper = next(t for t in BIN.todos if t.description == "worth keeping")
         bin_tree.highlight_id(keeper.uuid)
-        await pilot.press("u")
+        await pilot.press("R")
         await pilot.pause()
 
         revived = next(iter(Project.all()), None)
@@ -235,7 +236,9 @@ async def test_bin_round_trip_with_a_dropped_project():
         message = notification_message(app)
         assert message is not None and "abandoned" in message
 
-        # Empty the rest of the Bin for good
+        # Restoring went with the task, so back to the Bin to empty the rest of it
+        await pilot.press("g", "b")
+        await pilot.pause()
         await pilot.press("Y", "Y")
         await pilot.pause()
         await pilot.press("y")
@@ -385,11 +388,11 @@ async def test_indenting_builds_a_task_out_of_rows():
         assert step.parent_todo == task
         assert len(tree_options(tree)) == 2
 
-        # The child count rides along with the parent's description
+        # The parent is open, its step drawn right below it, so no child count
         formatted = app.api.formatter.todos.description.format_value(
             task.description, task
         ).plain
-        assert "(1)" in formatted
+        assert "(1)" not in formatted
 
         # Pull it back out
         await pilot.press("U")

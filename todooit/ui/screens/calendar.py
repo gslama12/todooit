@@ -6,7 +6,7 @@ Uses Austrian German month names, Monday-first weeks, and marks public holidays.
 
 from calendar import monthrange
 from datetime import date, timedelta
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from rich.console import Group
 from rich.style import Style
@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from todooit.api.theme import TodooitThemeBase
+from todooit.ui.api.api_components.keys import MotionKeys
 from todooit.utils import WEEKDAY_NAMES, blend, day_label, holiday_name
 
 from .base import BaseScreen
@@ -89,24 +90,41 @@ def weeks_around(day: date) -> List[List[date]]:
 # "back" not "cancel": escape hands the field back mid-edit, doesn't discard it.
 HINT = HINT_GAP.join(("t today", "esc back", "enter pick"))
 
-# A day stepping off the end of the month rolls into the next one
+# A day stepping off the end of the month rolls into the next one. The panes'
+# direction keys join these (see `day_steps`), and their shifted twins the
+# month steps.
 DAY_STEPS = {
-    "j": -1,
     "left": -1,
-    "ö": 1,
     "right": 1,
-    "k": -7,
     "up": -7,
-    "l": 7,
     "down": 7,
 }
 
 MONTH_STEPS = {
-    "J": -1,
     "pageup": -1,
-    "Ö": 1,
     "pagedown": 1,
 }
+
+
+def day_steps(motions: MotionKeys) -> Dict[str, int]:
+    return {
+        **DAY_STEPS,
+        motions.left: -1,
+        motions.right: 1,
+        motions.up: -7,
+        motions.down: 7,
+    }
+
+
+def month_steps(motions: MotionKeys) -> Dict[str, int]:
+    steps = dict(MONTH_STEPS)
+
+    for key, step in ((motions.left, -1), (motions.right, 1)):
+        # Only a letter has a shifted twin to give the month to
+        if len(key) == 1 and key.upper() != key:
+            steps[key.upper()] = step
+
+    return steps
 
 
 def add_months(day: date, months: int) -> date:
@@ -162,11 +180,14 @@ class CalendarScreen(BaseScreen, ModalScreen):
             self.dismiss(self._selected)
             return True
 
-        if key in DAY_STEPS:
-            self._step(lambda: self._selected + timedelta(days=DAY_STEPS[key]))
+        motions = self.api.motion_keys()
+        days, months = day_steps(motions), month_steps(motions)
 
-        elif key in MONTH_STEPS:
-            self._step(lambda: add_months(self._selected, MONTH_STEPS[key]))
+        if key in days:
+            self._step(lambda: self._selected + timedelta(days=days[key]))
+
+        elif key in months:
+            self._step(lambda: add_months(self._selected, months[key]))
 
         elif key == "t":
             self._move(date.today())

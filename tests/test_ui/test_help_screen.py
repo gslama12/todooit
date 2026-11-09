@@ -4,9 +4,9 @@ The help overlay: the keybinds of the config, grouped the way it groups them
 
 from textual.screen import ModalScreen
 
+from tests.test_ui.ui_base import boot, run_pilot
 from todooit.ui.screens import HelpScreen, MainScreen
 from todooit.ui.screens.help import TodooitKeyTable
-from tests.test_ui.ui_base import boot, run_pilot
 
 
 async def test_help_is_an_overlay_like_the_others():
@@ -105,9 +105,6 @@ async def test_every_visible_keybind_has_a_row():
         assert "p0-p3" in rows
         assert "p1" not in rows
 
-        # The agent flag is one key rather than a scale, so it is its own row
-        assert "a" in rows
-
         # So do the sort chords
         assert "SP/SD/SS" in rows
         assert "SP" not in rows
@@ -198,3 +195,17 @@ async def test_help_scrolls_with_the_navigation_keys():
         await pilot.press("g")
         await pilot.pause()
         assert screen.scroll_target_y == 0
+
+
+async def test_the_help_says_how_to_reach_the_notes_own_help():
+    """The note's keys live in a help of their own, so the app's help points there"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        await pilot.pause()
+
+        table = app.screen.query_one(TodooitKeyTable)
+        assert table._groups()[-1] == "Notes"
+        assert [key for key, _ in table._rows("Notes")] == ["space ?"]

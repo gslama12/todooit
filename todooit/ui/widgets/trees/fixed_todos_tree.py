@@ -4,13 +4,14 @@ from typing import Any, List, Optional
 from rich.style import Style
 from rich.text import Text
 
-from todooit.api import FixedProject, Todo, TodoGroup
-from todooit.api.fixed_projects import PATH_SEPARATOR
+from todooit.api import FixedProject, Todo, TodoGroup, TodoSortModeType
+from todooit.api.fixed_projects import split_path
 from todooit.api.placement import project_of
 from todooit.ui.api.events import BarNotification, StartFieldEdit
-from todooit.ui.pane_layout import PaneRow
 from todooit.ui.api.widgets import TodoWidget
+from todooit.ui.pane_layout import PaneRow
 from todooit.utils import blend
+
 from .todos_tree import TodosTree
 
 # Same folder icon the projects pane uses, so a row visibly points back to its project
@@ -149,7 +150,8 @@ class FixedTodosTree(TodosTree):
         """
         Shows the source project's name after a row's description, for fixed projects
         grouped by something other than project (those already say it via headings).
-        Only on the gathered row, not its steps, to avoid repeating it. A todo whose
+        Only on the gathered row, not its steps, to avoid repeating it; a step
+        gathered on its own names its project only, never its parent. A todo whose
         project was dropped falls back to the project name from its stored path.
         """
 
@@ -163,6 +165,7 @@ class FixedTodosTree(TodosTree):
 
         if not name:  # pragma: no cover
             return Text()
+
 
         theme = self.api.vars.theme
         style = Style(color=blend(theme.foreground1, theme.background1, OWNER_FADE))
@@ -179,7 +182,9 @@ class FixedTodosTree(TodosTree):
             return project.description
 
         # Last segment of the stored path: that's the project's name
-        return todo.origin_path.split(PATH_SEPARATOR)[-1].strip()
+        names = split_path(todo.origin_path)
+
+        return names[-1] if names else ""
 
     @staticmethod
     def _fit(name: str) -> str:
@@ -211,13 +216,30 @@ class FixedTodosTree(TodosTree):
 
         self.post_message(BarNotification(message, "warning"))
 
-    def _new_sibling(self) -> None:
-        """No sibling slot here — rows are gathered from the whole tree, so there's no single project to add one to."""
+    def _new_sibling(self) -> Optional[Todo]:
+        """
+        A step beside the highlighted step, filed under the same parent task. A gathered
+        row itself gets no sibling slot — rows come from the whole tree, so there's no
+        single project to add one to.
+        """
+
+        if self.takes_new_steps and self._on_step():
+            return super()._new_sibling()
 
         instead = "[b]N[/b] adds a step to one" if self.takes_new_steps else ""
 
         self._not_here("Tasks can't be added", instead)
         return None
+
+    def _on_step(self) -> bool:
+        """Whether the cursor is on a step drawn under its parent, rather than on a gathered row."""
+
+        if self.highlighted is None or not self.node.id:
+            return False
+
+        row = self._rows.get(self.node.id)
+
+        return row is not None and not row.is_root
 
     def add_child_node(self):
         """Adds a step under the highlighted task, filed in that task's real project (not this pane)."""
@@ -240,7 +262,7 @@ class FixedTodosTree(TodosTree):
     def shift_down(self):
         self._not_here("Tasks can't be reordered")
 
-    def sort_by(self, mode: str) -> bool:
+    def sort_by(self, mode: TodoSortModeType) -> bool:
         """Sort keys do nothing here — the pane's order is fixed, not user-selectable — rather than silently sorting elsewhere."""
 
         self._not_here("Tasks can't be sorted")

@@ -1,14 +1,36 @@
+from dataclasses import dataclass
 from typing import List, Optional, Union
+
 from sqlalchemy import ForeignKey, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from ..api.todo import Todo
-from .model import TodooitModel
 from .manager import manager
+from .model import TodooitModel
 
 ModelType = Union["Project", "Todo"]
 
 
-class Project(TodooitModel):
+@dataclass
+class LevelChange:
+    """
+    What moving a project to another level meant
+
+    Falsy when there is nothing worth telling the status bar.
+    """
+
+    project: "Project"
+    # Took its new parent's color in place of its own
+    recolored: bool = False
+
+    def __bool__(self) -> bool:
+        return self.recolored
+
+    def summary(self) -> str:
+        return "recolored to match its new parent" if self.recolored else ""
+
+
+class Project(TodooitModel[LevelChange]):
     description: Mapped[str] = mapped_column(default="")
     is_root: Mapped[bool] = mapped_column(default=False)
 
@@ -59,18 +81,6 @@ class Project(TodooitModel):
     @property
     def parent(self) -> Optional["Project"]:
         return self.parent_project
-
-    @property
-    def total_todos(self) -> int:
-        """
-        Pending, unbinned todos in here and in all sub projects, at every depth
-        """
-
-        return sum(project.total_todos for project in self.projects) + sum(
-            1 + todo.total_children
-            for todo in self.todos
-            if todo.pending and not todo.is_binned
-        )
 
     @property
     def total_projects(self) -> int:
@@ -142,6 +152,34 @@ class Project(TodooitModel):
         )
         project.save()
         return project
+
+    @property
+    def _children_of_kind(self) -> List["Project"]:
+        return self.projects
+
+    @property
+    def _parent_of_kind(self) -> Optional["Project"]:
+        parent = self.parent_project
+        return None if parent is None or parent.is_root else parent
+
+    def _place(self, parent: TodooitModel) -> LevelChange:
+        """
+        Under another project the whole tree takes that project's color;
+        back at the top level it keeps the one it had
+        """
+
+        assert isinstance(parent, Project)
+
+        before = self.color
+        self.parent_project = parent
+
+        # Saving colors this project itself; the ones under it follow here
+        if not parent.is_root:
+            for project in self.descendants:
+                project.color = parent.color
+
+        self.save()
+        return LevelChange(self, recolored=self.color != before)
 
     def save(self) -> None:
         # Sub projects always inherit their parent's color. no_autoflush keeps

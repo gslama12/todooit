@@ -1,15 +1,17 @@
 import os
 import sys
-from functools import partial
 from collections import defaultdict
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, List, Optional, Type
+
 from textual.app import ScreenStackError
 from textual.css.query import NoMatches
 
+from todooit.paths import config_file
 from todooit.ui.api.event_handlers import TODOOIT_EVENT_ATTR, TODOOIT_TIMER_ATTR
 from todooit.ui.api.events import TodooitEvent
-from todooit.paths import config_file
+
 from .loader import load_file
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -59,7 +61,7 @@ class ConfigManager:
 
     def on_event(self, event: TodooitEvent):
         matched_events = [
-            e for e in self.events.keys() if issubclass(event.__class__, e)
+            e for e in self.events if issubclass(event.__class__, e)
         ]
 
         # Batch so one event triggers one pane redraw regardless of how many

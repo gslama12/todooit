@@ -31,6 +31,15 @@ ModelTree {
             background: $secondary 40%;
             color: $foreground3;
         }
+
+        /* Mid-edit the row wears the mode's color, as the note's frame does */
+        &.-mode-normal .option-list--option-highlighted {
+            background: $blue 40%;
+        }
+
+        &.-mode-insert .option-list--option-highlighted {
+            background: $green 40%;
+        }
     }
 
     # --------- Options ------------------
@@ -73,28 +82,47 @@ DooitKeyTable {
   }
 }
 
+/* The screen behind a note wears the note's own background: a round border's
+   cells are painted in it, so on any other color it shows outside the curve */
+NoteScreenBase {
+  background: $background2;
+}
+
 /* Wraps the whole note (text + files) in one border */
 NoteFrame {
   background: $background2;
-  border: $border_type $secondary;
   border-title-background: $primary;
   border-title-color: $background1;
   border-title-align: center;
   padding: 0 1;
 
-  /* Mode shown in the bottom border, same colors as the status bar: primary
-     for NORMAL, secondary for INSERT */
-  border-subtitle-background: $primary;
+  /* The mode chip, bottom left as lualine's section A, in its colors for
+     LazyVim; the border takes the chip's color with it */
+  border: $border_type $blue;
+  border-subtitle-background: $blue;
   border-subtitle-color: $background1;
-  border-subtitle-align: right;
+  border-subtitle-style: bold;
+  border-subtitle-align: left;
 
   &.-insert {
-    border-subtitle-background: $secondary;
+    border: $border_type $green;
+    border-subtitle-background: $green;
+  }
+
+  &.-visual {
+    border: $border_type $magenta;
+    border-subtitle-background: $magenta;
+  }
+
+  &.-flash {
+    border: $border_type $orange;
+    border-subtitle-background: $orange;
   }
 }
 
 /* No own border: TextArea's default border would double up inside the frame's */
 NoteEditor {
+  scrollbar-size-vertical: 0;
   background: $background2;
   border: none;
   padding: 0;
@@ -107,6 +135,8 @@ NoteEditor {
 }
 
 #note-hint {
+  /* Kept with nothing in it, so the window doesn't move when a hint comes */
+  min-height: 1;
   color: $foreground1 60%;
   text-align: center;
 
