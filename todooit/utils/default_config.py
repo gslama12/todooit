@@ -586,7 +586,13 @@ def key_setup(api: TodooitAPI, _):
     # "g" jumps because it is one -- those name the pane to go to, this one
     # lets the highlighted row name it -- and scoped to the tasks, since a
     # project row is already standing in its own pane
-    api.keys.set("gi", api.goto_item, group=NAVIGATION, scope="todos")
+    api.keys.set(
+        "gi",
+        api.goto_item,
+        description="Jump to the task's source project (in Today or Upcoming)",
+        group=NAVIGATION,
+        scope="todos",
+    )
     api.keys.set("G", api.go_to_bottom, group=NAVIGATION)
     # Flash mode, "f" for "flash": a label on every row on screen in this pane,
     # and typing one lands the cursor there -- the way to a row you can see
@@ -600,7 +606,15 @@ def key_setup(api: TodooitAPI, _):
 
     # With the note's vim keys, in NORMAL on the last character; with
     # `api.vim.descriptions = False`, typing straight over all of it
-    api.keys.set("e", api.edit_description_vim, group=EDITING)
+    api.keys.set(
+        "e",
+        api.edit_description_vim,
+        description=(
+            "Edit a task (vim motion subset: i = insert, "
+            "Esc = normal/save, Enter = save and exit)"
+        ),
+        group=EDITING,
+    )
     api.keys.set("d", api.edit_due, group=EDITING)
     # Lowercase, matching the other date: the sorting chords below moved up to
     # the shifted "S" to leave this one free, since a key that is the start of
@@ -612,7 +626,7 @@ def key_setup(api: TodooitAPI, _):
     # The whole task in one line, from wherever the cursor happens to be. The
     # shifted twin of the key that ticks one off, since between them they are
     # the two ends of a task's life
-    api.keys.set("C", api.quick_add, group=EDITING)
+    api.keys.set("C", api.quick_add, description="Quick add", group=EDITING)
     api.keys.set(" ", api.show_note, group=EDITING)
     # The scratchpad, next to the key that opens a todo's note: the same
     # window, for the thoughts that have no task to be written on yet
@@ -694,13 +708,21 @@ def key_setup(api: TodooitAPI, _):
     # A row moves sideways as well as up and down: shifted "i" files it under
     # the row above it, shifted "u" pulls it back out. Tasks and projects
     # both nest, so the two keys work the same in either pane
-    api.keys.set("I", api.indent, group=MOVING)
-    api.keys.set("U", api.unindent, group=MOVING)
+    api.keys.set("I", api.indent, description="Indent task/project", group=MOVING)
+    api.keys.set(
+        "U", api.unindent, description="Unindent task/project", group=MOVING
+    )
     # The move that crosses the whole tree rather than one step of it: the
     # other three shift a task among the rows around it, and this one takes it
     # out of the project altogether. Shifted "m", which is free over the tasks
     # — plain "m" is the pinned note, and nothing else starts with either
-    api.keys.set("M", api.move_todo, group=MOVING, scope="todos")
+    api.keys.set(
+        "M",
+        api.move_todo,
+        description="Move task to a different project",
+        group=MOVING,
+        scope="todos",
+    )
     # The clipboard is the system one, so it is worked with the keys the rest
     # of the desktop uses rather than vim's
     api.keys.set("<ctrl+c>", api.copy_description_to_clipboard, group=MOVING)

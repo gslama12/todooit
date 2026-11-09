@@ -196,7 +196,7 @@ class HelpScreen(BaseScreen, ModalScreen):
         if key is None:
             return {}
 
-        row = (TodooitKeyTable.key_label(key), "List every key a note knows (pressed inside a note)")
+        row = (TodooitKeyTable.key_label(key), "List available vim motions (press when inside a note)")
         return {NOTES_SECTION: [row]}
 
     def on_mount(self) -> None:
