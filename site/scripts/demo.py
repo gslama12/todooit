@@ -18,7 +18,8 @@ Pillow, straight out of the real JetBrainsMono Nerd Font Mono file. One
 character per cell at a fixed pitch, which is what a terminal does anyway.
 
 Needs **JetBrainsMono Nerd Font Mono** installed, like the screenshots do.
-`--font-dir <path>` if it cannot be found.
+`--font-dir <path>` if it cannot be found. `--frames <dir>` also writes every
+frame out as a PNG, to check the script against.
 """
 
 import asyncio
@@ -91,8 +92,16 @@ def type_(text: str, ms: int = TYPE_MS) -> List[Step]:
     return [(character, ms) for character in text]
 
 
-# Markdown as it is written, since that is the only way a note is formatted.
-# A note opens in NORMAL, so `i` first; it ends back in NORMAL.
+# The flash labels of the three tasks the script jumps to, in Work
+FLASH_CHANGELOG = "d"
+FLASH_EXPENSES = "k"
+FLASH_RELEASE = "s"
+
+
+# Markdown as it is written, since that is the only way a note is formatted,
+# then a word fixed the vim way (`b` back onto it, `ciw` to retype it). A note
+# opens in NORMAL, so `i` first; it ends back in NORMAL, off the last line,
+# since the cursor's own line is drawn as the raw markdown.
 NOTE = (
     press("i", ms=TYPE_MS)
     + type_("# Release")
@@ -106,54 +115,57 @@ NOTE = (
     + type_("Announce it")
     + press("enter", ms=TYPE_MS)
     + press("enter", ms=TYPE_MS)
-    + type_("> Nothing ships on a friday")
-    + press("escape", ms=TYPE_MS)
+    + type_("> Nothing ships on a monday")
+    + press("escape") + hold(500)
+    + press("c", "i", "w") + hold(300)
+    + type_("friday") + hold(300)
+    + press("escape")
+    + press("k")
 )
 
-# The cursor starts on Today, which is where the app opens.
-SCRIPT: Sequence[Step] = (
-    hold(1700)
-    # --- the fixed projects the real ones are read through ----------------
-    + press("g", "u") + hold(1700)
-    # --- a whole task typed in one line, project and priority and day -----
-    + press("C") + hold(400)
-    + type_("Order the firewood #House p2 tomorrow 17:00") + hold(900)
-    + press("enter") + hold(1300)
-)
-
-# Where the second half starts from: the projects pane, standing on Home.
+# One morning, start to finish. The cursor starts on Today, where the app
+# opens.
 #
 # The flash labels go out top to bottom over the rows on screen, one key each
-# while the alphabet is enough, so in Work (sorted by priority) `s` is "Ship the
-# 1.1 release" and `r` "Team standup".
-SCRIPT_FROM_HOME: Sequence[Step] = (
-    press("j") + hold(600)
-    # --- projects nest, and the pane walks into them -----------------------
-    + press("l", "l") + hold(1100)
-    + press("k", "k") + hold(500)
-    + press("ö") + hold(600)
-    # --- the finder reaches across the whole tree, not just the pane -------
+# while the alphabet is enough, so which letter lands on which task depends on
+# the seed; `--frames <dir>` dumps every frame to check them against.
+SCRIPT: Sequence[Step] = (
+    hold(1800)
+    # --- a whole task typed in one line: project, priority, day -----------
+    + press("C") + hold(400)
+    + type_("Pick up the parcel #Home p1 tomorrow 17:00") + hold(900)
+    + press("enter") + hold(900)
+    # --- ...and Upcoming already has it under tomorrow --------------------
+    + press("g", "u") + hold(2000)
+    # --- the finder reaches across the whole tree, into the project -------
     + press("/") + hold(350)
     + type_("release") + hold(800)
     + press("enter") + hold(1500)
-    # --- tasks nest too, and fold away ------------------------------------
-    + press("h") + hold(1000)
-    + press("h") + hold(800)
-    # --- flash: a label on every row, typing one jumps there ---------------
-    + press("f") + hold(1400)
-    + press("r") + hold(900)
+    # --- a new step, planned in words -------------------------------------
+    + press("N") + hold(300)
+    + type_("Smoke-test the wheel") + hold(400)
+    + press("enter") + hold(700)
+    + press("s") + hold(300)
+    + type_("tom") + hold(700)
+    + press("enter") + hold(1300)
+    # --- flash: a label on every row, typing one jumps there --------------
+    + press("f") + hold(1300)
+    + press(FLASH_CHANGELOG) + hold(600)
+    + press("c") + hold(1300)
     # --- a recurrence on the last working day of the month ----------------
+    + press("f") + hold(900)
+    + press(FLASH_EXPENSES) + hold(600)
     + press("r") + hold(300)
     + type_("eom") + hold(700)
     + press("enter") + hold(1500)
-    # --- every task carries a note, written as markdown is written --------
+    # --- every task carries a note: markdown, edited with vim keys --------
     + press("f") + hold(700)
-    + press("s") + hold(600)
+    + press(FLASH_RELEASE) + hold(500)
     + press(" ") + hold(600)
-    + NOTE + hold(1800)
+    + NOTE + hold(2000)
     + press("escape") + hold(700)
-    # --- `?` lists every key ------------------------------------------------
-    + press("?") + hold(2200)
+    # --- `?` lists every key ----------------------------------------------
+    + press("?") + hold(2400)
     + press("escape") + hold(400)
     + press("g", "t") + hold(2200)
 )
@@ -300,6 +312,32 @@ class Frames:
 # --------------------------------------------------------------------------
 
 
+async def settle(pilot: Pilot, frames: Frames) -> None:
+    """
+    Waits until two renders in a row come out the same.
+
+    `boot()` returns as soon as Today has focus, which is a refresh before the
+    screen is repainted to match: taken then, the first frame is the default
+    Textual theme with the panes half laid out.
+    """
+
+    margin = pilot.app.api.vars.theme.background1
+    previous = b""
+
+    for _ in range(40):
+        await pilot.pause()
+        await asyncio.sleep(0.05)
+
+        current = frames.render(
+            screen_segments(pilot.app), COLUMNS, ROWS, margin
+        ).tobytes()
+        if current == previous:
+            return
+        previous = current
+
+    raise AssertionError("The screen never stopped changing after boot")
+
+
 async def run(frames: Frames) -> Tuple[List[Image.Image], List[int]]:
     images: List[Image.Image] = []
     durations: List[int] = []
@@ -329,18 +367,14 @@ async def run(frames: Frames) -> Tuple[List[Image.Image], List[int]]:
 
     db_path = shots._INSTANCE / "demo.db"
     app = Todooit(db_path=str(db_path))
-    projects = shots.seed()
+    shots.seed()
 
     async with app.run_test(size=(COLUMNS, ROWS)) as pilot:
         await shots.boot(pilot)
         app.title = "todooit"
+        await settle(pilot, frames)
 
         await play(pilot, SCRIPT)
-
-        # The quick-added task landed in House; the tour of the tree starts a
-        # level up from it, on Home, the way the cursor would be walked there
-        await shots.reveal(pilot, projects["Home"])
-        await play(pilot, SCRIPT_FROM_HOME)
 
     return images, durations
 
@@ -348,6 +382,16 @@ async def run(frames: Frames) -> Tuple[List[Image.Image], List[int]]:
 # --------------------------------------------------------------------------
 # The GIF
 # --------------------------------------------------------------------------
+
+
+def dump_frames(
+    images: Sequence[Image.Image], durations: Sequence[int], directory: Path
+) -> None:
+    """Every frame as a PNG, named by index and hold, for checking the script"""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    for index, (image, ms) in enumerate(zip(images, durations)):
+        image.save(directory / f"{index:03d}-{ms}ms.png")
 
 
 def write_gif(images: Sequence[Image.Image], durations: Sequence[int]) -> None:
@@ -381,12 +425,16 @@ def write_gif(images: Sequence[Image.Image], durations: Sequence[int]) -> None:
     )
 
 
-async def main(font_dir: Optional[Path]) -> int:
+async def main(font_dir: Optional[Path], frames_dir: Optional[Path]) -> int:
     frames = Frames(font_dir)
 
     print(f"recording {COLUMNS}x{ROWS}")
     images, durations = await run(frames)
     print(f"  {len(images)} frames, {sum(durations) / 1000:.1f}s")
+
+    if frames_dir is not None:
+        dump_frames(images, durations, frames_dir)
+        print(f"  frames in {frames_dir}")
 
     write_gif(images, durations)
     print(f"wrote {OUT_FILE} ({OUT_FILE.stat().st_size / 1_000_000:.1f} MB)")
@@ -396,11 +444,14 @@ async def main(font_dir: Optional[Path]) -> int:
 if __name__ == "__main__":
     argv = sys.argv[1:]
     directory = None
+    frames_dir = None
 
     if "--font-dir" in argv:
         directory = Path(argv[argv.index("--font-dir") + 1]).expanduser()
+    if "--frames" in argv:
+        frames_dir = Path(argv[argv.index("--frames") + 1]).expanduser()
 
     try:
-        raise SystemExit(asyncio.run(main(directory)))
+        raise SystemExit(asyncio.run(main(directory, frames_dir)))
     finally:
         shutil.rmtree(shots._INSTANCE, ignore_errors=True)
