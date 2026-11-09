@@ -46,6 +46,7 @@ VIM_NOTE_KEYS = {
     # QWERTY has no ü or ä: the line above and below go where vim has them
     "ü": "-",
     "ä": "+",
+    "?": "/",  # search forward
 }
 
 
@@ -53,7 +54,7 @@ VIM_NOTE_KEYS = {
 def vim_keys(api: TodooitAPI, _):
     api.keys.remap(VIM_KEYS)
     api.vim.keys.remap(VIM_NOTE_KEYS)
-    # The note's help, space then ? as by default: `?` alone stays the search
+    # The note's help, space then ? as by default
     api.vim.keys.set(" ?", VimCommand.HELP)
     # Free by default: a lone 0 is never a count
     api.vim.keys.set("0", VimMotion.LINE_START)

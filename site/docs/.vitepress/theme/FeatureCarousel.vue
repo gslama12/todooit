@@ -35,20 +35,36 @@ const features: Feature[] = [
     alt: 'The Today pane, a block per project',
   },
   {
-    title: 'Projects that nest',
+    title: 'Projects and tasks that nest',
     details:
-      'Projects hold projects, as deep as you like. A folded one shows how many it hides, and a color put on a project spreads down the whole tree.',
-    link: '/guide/projects',
-    shot: 'nested-projects.svg',
-    alt: 'Projects nested under projects in the left pane',
-  },
-  {
-    title: 'Steps under tasks',
-    details:
-      'Tasks nest the way projects do. <kbd>h</kbd> folds one shut, and planning a task plans every step of it — date a single step instead and the task gives up its own day, because it no longer happens all at once.',
+      'Projects hold projects and tasks hold tasks, as deep as you like. <kbd>h</kbd> folds one shut, <kbd>I</kbd> / <kbd>U</kbd> indent and unindent. A task&rsquo;s dates hold its steps: planning a task plans its steps, and no step is due after its task.',
     link: '/guide/tasks#steps',
     shot: 'child-tasks.svg',
     alt: 'Tasks nested under tasks',
+  },
+  {
+    title: 'Dates in words',
+    details:
+      '<kbd>s</kbd> scheduled, <kbd>d</kbd> due: <code>tom</code>, <code>next monday</code>, <code>in 2w</code>, <code>eom</code>, <code>19.07.</code> — or type <code>cal</code> in a date field for a month to pick from, public holidays marked.',
+    link: '/guide/dates',
+    shot: 'calendar.svg',
+    alt: 'The calendar picker open over the app',
+  },
+  {
+    title: 'Smart recurrence',
+    details:
+      '<kbd>r</kbd> sets an interval — <code>3d</code>, <code>2w</code>, <code>1m</code>, or <code>eom</code> for the last working day of every month. Ticking a repeating task moves it on and hands it straight back, steps reset.',
+    link: '/guide/dates#recurrence',
+    shot: 'upcoming.svg',
+    alt: 'The Upcoming pane, grouped by day',
+  },
+  {
+    title: 'Flash jumps',
+    details:
+      '<kbd>f</kbd> puts a label on every row on screen; type one and the cursor is there. No counting, no scrolling. Inside a note, <kbd>s</kbd> does the same for any text.',
+    link: '/guide/search-move#flash',
+    shot: 'flash.svg',
+    alt: 'Flash labels on every row of the tasks pane',
   },
   {
     title: 'Quick add',
@@ -59,84 +75,68 @@ const features: Feature[] = [
     alt: 'The quick add line, with its legend',
   },
   {
-    title: 'Dates in words',
+    title: 'Markdown notes',
     details:
-      '<code>tom</code>, <code>next monday</code>, <code>in 2w</code>, <code>19.07.</code> — or type <code>cal</code> in a date field for a month to pick from, Austrian public holidays marked.',
-    link: '/guide/dates',
-    shot: 'calendar.svg',
-    alt: 'The calendar picker open over the app',
-  },
-  {
-    title: 'Recurrence',
-    details:
-      '<kbd>r</kbd> sets an interval — <code>3d</code>, <code>4w</code>. Ticking a repeating task moves it on by that interval and hands it straight back, still pending. It is never finished, only done for now.',
-    link: '/guide/dates#recurrence',
-    shot: 'upcoming.svg',
-    alt: 'The Upcoming pane, grouped by day',
-  },
-  {
-    title: 'Notes in markdown',
-    details:
-      '<kbd>space</kbd> opens a note. Bullets, quotes, headings and emphasis are drawn as you type them, so there are no formatting keys to learn.',
+      '<kbd>space</kbd> opens a note. Bullets, numbered lists that renumber themselves, quotes, headings and emphasis are drawn as you type them, and the note is stored as plain markdown.',
     link: '/guide/notes',
     shot: 'note.svg',
     alt: 'A note with headings, bullets and a quote',
   },
   {
+    title: 'Vim in notes and descriptions',
+    details:
+      'Motions, operators, text objects, VISUAL, search and replace, undo — in every note. <kbd>e</kbd> edits a task&rsquo;s description with the same keys. <kbd>space</kbd> <kbd>?</kbd> lists them all.',
+    link: '/guide/vim',
+    shot: 'note-help.svg',
+    alt: 'The list of a note’s vim keys',
+  },
+  {
+    title: 'Files attached to notes',
+    details:
+      'Copy a file anywhere and <kbd>ctrl+v</kbd> it into a note: it is pinned to the strip along the bottom, by path, never copied. <kbd>gf</kbd> picks one to open.',
+    link: '/guide/notes#attachments',
+    shot: 'attachments.svg',
+    alt: 'Files in the strip along the bottom of a note',
+  },
+  {
+    title: 'The finder',
+    details:
+      '<kbd>/</kbd> searches every task in the database rather than the pane in front, then walks the cursor over to the one you pick. Start with <code>&gt;</code> to search inside notes.',
+    link: '/guide/search-move#finder',
+    shot: 'search-notes.svg',
+    alt: 'The finder, matching inside notes',
+  },
+  {
     title: 'A note pinned to nothing',
     details:
-      '<kbd>m</kbd> opens a scratchpad that belongs to no task and no project. It is always where you left it — the place for the thing that has not become work yet.',
+      '<kbd>m</kbd> opens a scratchpad that belongs to no task and no project — the place for the thing that has not become work yet.',
     link: '/guide/notes#the-pinned-note',
     shot: 'pinned-note.svg',
     alt: 'The pinned note',
   },
   {
-    title: 'Sorting and arranging',
+    title: 'Sorting and moving',
     details:
-      '<kbd>SP</kbd> <kbd>SD</kbd> <kbd>SS</kbd> sort by priority, due date or scheduled date. Move a row by hand with <kbd>K</kbd> / <kbd>L</kbd> and the pane drops out of the sort, so it stays where you put it.',
-    link: '/guide/projects#sorting-view',
-    shot: 'sort.svg',
-    alt: 'Tasks sorted by due date',
-  },
-  {
-    title: 'The finder',
-    details:
-      '<kbd>/</kbd> searches every task in the database rather than the pane in front — any project, done or not — then walks the cursor over to the one you pick.',
-    link: '/guide/search-move#finder',
-    shot: 'search.svg',
-    alt: 'The finder, matching across projects',
-  },
-  {
-    title: 'Move between projects',
-    details:
-      '<kbd>M</kbd> asks for one thing: the project to file the task under, completed from the first letter. Write a path — <code>Home/Reading</code> — when a name on its own is not enough.',
+      '<kbd>SP</kbd> <kbd>SD</kbd> <kbd>SS</kbd> sort by priority, due or scheduled date. <kbd>K</kbd> / <kbd>L</kbd> shift a row, <kbd>M</kbd> files a task under another project.',
     link: '/guide/search-move#move',
     shot: 'move.svg',
     alt: 'The move prompt completing a project name',
   },
   {
-    title: 'Clipboard, both ways',
+    title: 'Undo, the Bin and the clipboard',
     details:
-      '<kbd>ctrl+c</kbd> copies a description, <kbd>ctrl+n</kbd> a whole note without opening it, <kbd>ctrl+v</kbd> pastes a new task. Copying goes out through OSC 52 as well, so it carries out of ssh and out of WSL.',
-    link: '/guide/search-move#clipboard',
-    shot: 'workspace.svg',
-    alt: 'The workspace, with the note icon column',
-  },
-  {
-    title: 'Links, opened from the row',
-    details:
-      '<kbd>o</kbd> opens the first link written in a row, or the one under the cursor inside a note. A long address is folded away behind its name when it is drawn.',
-    link: '/guide/tasks#links',
-    shot: 'note.svg',
-    alt: 'A markdown link inside a note',
-  },
-  {
-    title: 'Undo, and the Bin',
-    details:
-      '<kbd>xx</kbd> throws work away rather than deleting it and <kbd>u</kbd> fetches it back, carrying the path it came from. <kbd>ctrl+z</kbd> / <kbd>ctrl+y</kbd> walk through everything else.',
+      '<kbd>xx</kbd> throws work into the Bin and <kbd>R</kbd> fetches it back. <kbd>u</kbd> / <kbd>ctrl+r</kbd> undo and redo anything. <kbd>ctrl+c</kbd> / <kbd>ctrl+v</kbd> copy and paste tasks through the system clipboard.',
     link: '/guide/undo-bin',
     shot: 'bin.svg',
     alt: 'The Bin, holding thrown-away tasks',
+  },
+  {
+    title: 'Every key, one press away',
+    details:
+      '<kbd>?</kbd> lists every binding, grouped and always matching your config. Drop-in configs switch to standard vim keys on QWERTY or QWERTZ.',
+    link: '/guide/keybindings',
+    shot: 'help.svg',
+    alt: 'The help screen listing every key',
   },
 ]
 

@@ -69,13 +69,13 @@ Type `cal` into either date field and a month opens over the app.
 | `j` / `ö` (or `←` / `→`) | A day back / forward |
 | `k` / `l` (or `↑` / `↓`) | A week back / forward |
 | `J` / `Ö` (or `PgUp` / `PgDn`) | A month back / forward |
+| `t` | Back to today |
+| `enter` | Pick the day |
+| `escape` | Close the month, leaving the field mid-edit |
 
 The direction keys are whatever the panes move with, so a
 [vim layout](/guide/keybindings#vim-layouts) turns these into `h` `j` `k` `l`
 and `H` / `L`.
-| `t` | Back to today |
-| `enter` | Pick the day |
-| `escape` | Close the month, leaving the field mid-edit |
 
 Weeks start on Monday, the names are Austrian German, and the thirteen
 Austrian public holidays are drawn in red. A time the task already carried is
@@ -93,6 +93,9 @@ kept.
 | `1m`, `1mo` | every month, on the same day of the month |
 | `1y` | every year |
 | `eom` | on the last working day of every month |
+
+`eom` is the smart one: it lands on the **last working day** of the month, so
+a monthly report is never due on a Sunday or a public holiday.
 
 There are no minutes, so `m` is a month. Months and years are calendar steps:
 a monthly task on the 31st lands on the last day of a shorter month (28 Feb,

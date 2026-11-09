@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-9ECE6A?style=flat-square)](LICENSE)
 
 A keyboard-driven todo app for the terminal: todos in a tree of projects, vim-like
-keys, notes, dates and search. Started as a fork of
+keys, markdown notes with vim editing, natural-language dates and search. Started as a fork of
 [dooit](https://github.com/dooit-org/dooit) and extended with the parts of Todoist
 it was missing.
 
@@ -15,16 +15,19 @@ it was missing.
 ## Features
 
 - **Fixed views** — Today, Upcoming, Completed and a Bin, built from your real projects and jumped to with `gt` / `gu` / `gc` / `gb`.
-- **Projects and steps** — projects nest as deep as you want, and so do tasks. `h` folds a task shut; Projects act as folders.
+- **Nested projects and tasks** — both nest as deep as you want; `h` folds, `I` / `U` indent. A task's dates hold its steps: planning a task plans its steps, and no step is due after its task.
+- **Dates in words** — scheduled (`s`) and due (`d`) typed as `tom`, `next friday`, `in 2w`, `eom`, `19.07.`, or picked off a calendar (`cal`).
+- **Smart recurrence** — `r` repeats a task every `3d`, `2w`, `1m`, or on the last *working* day of the month with `eom`.
+- **Flash jumps** *(new)* — `f` labels every row on screen; type a label and the cursor is there.
+- **Markdown notes** — every task has a note (`space`) with headings, quotes, emphasis, bullets and numbered lists that continue and renumber themselves; `m` opens a pinned scratchpad.
+- **File attachments** — copy a file anywhere and `ctrl+v` it into a note; it is pinned to the note by path.
+- **Vim editing** — notes are edited with real vim keys (motions, operators, text objects, VISUAL, search & replace, flash), and `e` edits a task's description with the same keys.
 - **Quick add** — `C` types a whole task in one line, with its project, priority and day.
-- **Finder** — `/` searches every task in the database, not just the pane in front, and walks the cursor over to the one you pick. Start with `>` to search inside notes instead.
-- **Notes** — every task carries a markdown note (`space`), and `m` opens a pinned scratchpad for thoughts with no task yet.
-- **Note Attachments** — copy a file anywhere on your machine and `ctrl+v` in a note pins a refernce to it at the bottom of the note window.
-- **Dates** — due and scheduled dates typed as words (`next friday`) or picked off a calendar (`cal`), and `r` makes a task recur.
-- **Ordering** — `K` / `L` move a task, `I` / `U` nest it, `M` sends it to another project, and `SP` / `SD` / `SS` read a project by priority or date.
-- **The small things** — `ctrl+c` / `ctrl+v` move tasks through the system clipboard, `o` opens the link under the cursor, `a` flags a task handed to an AI, `ctrl+z` takes back anything.
+- **Finder** — `/` searches every task in the database and walks the cursor to the one you pick; start with `>` to search inside notes.
+- **The small things** — `xx` to the Bin and `R` back, `u` / `ctrl+r` undo and redo everything, `ctrl+c` / `ctrl+v` copy and paste tasks, `ctrl+n` copies a note, `M` moves a task to another project, `SP` / `SD` / `SS` sort, `o` opens a link, `c0`–`c9` color a project.
 
-`?` shows all available keybinds. Also check the [Documentation](https://gslama12.github.io/todooit/) for more.
+> [!TIP]
+> **Press `?` for a list of every key**, always matching your config. Inside a note, `space` `?` lists the note's vim keys. More in the [documentation](https://gslama12.github.io/todooit/).
 
 
 ## Install
@@ -41,15 +44,16 @@ Also check out the [installation guide](https://gslama12.github.io/todooit/guide
 
 ## Keyboard layout
 
-The default keys are set up for a **QWERTZ** keyboard, with `j` `k` `l` `ö` as the navigation keys (one key to the right of vim's `h` `j` `k` `l`).
+The default keys are set up for a **QWERTZ** keyboard, with `j` `k` `l` `ö` as the navigation keys (one key to the right of vim's `h` `j` `k` `l`), and a few note keys moved to where a German keyboard has room for them.
 
 | Key | Moves |
 | --- | --- |
 | `j` / `ö` | To the projects / tasks pane |
 | `k` / `l` | Up / down |
 
-The [`config/`](config/) folder has two drop-in configs that switch to standard
-vim navigation instead — `qwertz_vim.py` and `qwerty_vim.py`. 
+The [`config/`](config/) folder has two drop-in configs that switch everything to
+**standard vim keys** instead — `qwertz_vim.py` and `qwerty_vim.py`: `h` `j` `k` `l`
+in the panes, and vim's own `0` `^` `$` `-` `+` `;` `,` `/` inside notes.
 
 ```bash
 mkdir -p "$(dirname "$(todooit config-loc)")"
@@ -82,10 +86,11 @@ uv run python migration/db_migration.py            # reads ~/.local/share/dooit/
 uv run python migration/db_migration.py --dry-run  # what would move, nothing written
 ```
 
-This copies a dooit v3 database into todooit's. The dooit file is opened
-read-only, and an existing todooit database is only replaced with `--force`,
-which backs it up first. Effort is dropped, and minute recurrences round up to
-hours. Details are in
+This copies a dooit v3 database (v3.0 to v3.3.4) into todooit's. The dooit file
+is opened read-only, and an existing todooit database is only replaced with
+`--force`, which backs it up first. Effort is dropped, minute recurrences round
+up to hours, and each family of steps is fitted to todooit's rules (open steps
+of a done task are completed, nested recurrences end). Details are in
 [Migrating from dooit](https://gslama12.github.io/todooit/reference/data#migrating-from-dooit).
 
 

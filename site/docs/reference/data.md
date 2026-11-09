@@ -78,7 +78,8 @@ TODOOIT_HOME=~/scratch/todooit todooit
   in the same directory, then writes the new one.
 - The new database is built in a temporary file and only renamed into place
   once it's complete, so a failed run leaves nothing behind.
-- Only dooit v3 databases are accepted (v3.0 to v3.3.4 share one schema).
+- Only dooit v3 databases are accepted (v3.0 to v3.3.4, the latest release,
+  share one schema).
   Anything else, including a todooit database, is rejected without writing
   anything.
 
@@ -92,6 +93,18 @@ TODOOIT_HOME=~/scratch/todooit todooit
 | due date | due date |
 | recurrence | a cadence (`3d`, `2w`, `5h`); the todo's due date becomes its scheduled date, since a recurring todo has no due date |
 
+**What is fitted**
+
+dooit let every todo hold any value; todooit keeps a task and its steps
+consistent (see [Steps](/guide/tasks#steps)). So each tree is fitted the way
+the app fits a task filed under another, and the summary counts every change:
+
+- A completed todo's open steps are completed with it.
+- A step stops recurring when a todo above it recurs, has a due date or is
+  completed — only one todo on a family line repeats. Its dooit due date stays
+  its due date.
+- An open step due after a todo above it takes that todo's due date.
+
 **What doesn't**
 
 - **Effort** has no todooit equivalent and is dropped. The summary counts how
@@ -102,6 +115,8 @@ TODOOIT_HOME=~/scratch/todooit todooit
   naming each todo it changed.
 - **Completion dates.** dooit never recorded when a todo was completed, so
   completed todos have none and sort last in Completed.
+- **Tags** were words starting with `@` in the description; they stay in the
+  description as plain words.
 
 ## Backing up
 

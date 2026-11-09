@@ -203,7 +203,11 @@ VIM_NOTE_BINDINGS = {
     "$": VimMotion.LAST_CHARACTER,
     "I": VimCommand.INSERT_FIRST_NON_BLANK,
     "A": VimCommand.INSERT_LINE_END,
-    "?": VimCommand.SEARCH,
+    "/": VimCommand.SEARCH,
+    ";": VimMotion.REPEAT_FIND,
+    ",": VimMotion.REVERSE_FIND,
+    "-": VimMotion.LINE_ABOVE,
+    "+": VimMotion.LINE_BELOW,
 }
 
 
@@ -216,8 +220,8 @@ class NoteLayout:
 
 
 NOTE_LAYOUTS = {
-    "qwertz_vim.py": NoteLayout("ö", "ü", "ä", ("=", "_")),
-    "qwerty_vim.py": NoteLayout(";", "-", "+", ("=", "_", "ü", "ä")),
+    "qwertz_vim.py": NoteLayout(";", "-", "+", ("=", "_", "ü", "ä", "?", "ö", "Ö")),
+    "qwerty_vim.py": NoteLayout(";", "-", "+", ("=", "_", "ü", "ä", "?")),
 }
 
 
@@ -287,8 +291,8 @@ async def test_vim_layout_edits_the_note(layout):
         await pilot.press("k", "0", "1", "0", "l")
         assert editor.cursor_location == (0, 6)
 
-        # Search with `?`, then repeat a find with the template's key
-        await pilot.press("0", "?", "c", "enter")
+        # Search with `/`, then repeat a find with the template's key
+        await pilot.press("0", "/", "c", "enter")
         assert editor.cursor_location == (0, 5)
         await pilot.press("0", "f", "b")
         assert editor.cursor_location == (0, 3)

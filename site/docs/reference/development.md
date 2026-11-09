@@ -82,11 +82,15 @@ there to `SCENES`. Write a chord one key at a time — `("g", "u")`, never
 `COLUMNS` and `ROWS` set the frame. They are sized so the image comes out
 square; changing one means changing the other to keep it that way.
 
-::: warning Notes have to be typed
-A note's markup is drawn as it is *typed*, so a note written straight into the
-database renders as raw characters. `NOTE_KEYS` and `PINNED_KEYS` are typed
-through the pilot for that reason.
+::: warning Notes are typed
+The note scenes type their markdown through the pilot (`NOTE_KEYS`,
+`PINNED_KEYS`), so the shot shows the lists and numbering exactly as the editor
+builds them. A note opens in NORMAL, so those start with `i` and end with
+`escape` — the cursor's own line is drawn raw.
 :::
+
+`find("text")` in a scene is the finder walking the cursor to a task, which is
+steadier than counting rows in a pane sorted by priority.
 
 ### The demo GIF
 

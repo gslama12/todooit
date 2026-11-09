@@ -11,14 +11,16 @@ ones the app builds from them.
 | --- | --- |
 | `n` | New project, as a sibling |
 | `N` | New project, as a child of this one |
-| `i` | Rename |
+| `e` | Rename, with [vim keys](/guide/vim#task-descriptions) |
 | `h` | Expand / collapse |
 | `K` / `L` | Move up / down among its siblings |
+| `I` / `U` | Nest it under the project above / take it out one level |
 | `c0`–`c9` | Color it (the same key again takes the color off) |
 
 Projects nest. A collapsed project shows how many projects are folded away
 under it, e.g. `work (3)`; an expanded one drops the count, since its children
-are right there below it. A child project inherits its parent's color;
+are right there below it. What is folded is remembered across restarts, and
+the pane is as wide as its longest name needs (up to a quarter of the screen). A child project inherits its parent's color;
 coloring a project colors everything filed under it.
 
 The ten slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,

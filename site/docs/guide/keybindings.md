@@ -1,6 +1,10 @@
 # Keybindings
 
-Hold `?` in the app for the same list, grouped the same way.
+::: tip Press `?`
+`?` opens this list inside the app, grouped the same way and always matching
+the keys you actually have — your own config included. `escape` closes it.
+Inside a note, `space` `?` lists the note's own keys.
+:::
 
 ![The help screen](/screenshots/help.svg)
 
@@ -18,41 +22,41 @@ Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim
 | Key | What it does | Pane |
 | --- | --- | --- |
 | `j` | Move focus to the projects pane | both |
-| `ö` | Move focus to the todos pane | both |
-| `k` | Move the cursor up in the focused list | both |
-| `l` | Move the cursor down in the focused list | both |
+| `ö` | Move focus to the tasks pane | both |
+| `k` | Move the cursor up | both |
+| `l` | Move the cursor down | both |
 | `gg` | Move the cursor to the top of the list | both |
 | `G` | Move the cursor to the bottom of the list | both |
-| `h` | Toggle the expansion of the highlighted item | both |
+| `f` | [Flash](/guide/search-move#flash): label every row on screen, type a label to jump there | both |
+| `h` | Fold / unfold the highlighted item | both |
 | `gt` | Jump to Today, on the first task scheduled for it | both |
 | `gu` | Jump to Upcoming, on the nearest day's first task | both |
 | `gc` | Jump to Completed, on the task finished last | both |
 | `gb` | Jump to the Bin, on the task thrown away last | both |
-| `gi` | Jump to the highlighted task in the project it is filed under | todos |
+| `gi` | Jump to the highlighted task in the project it is filed under | tasks |
 
 ## Editing
 
 | Key | What it does | Pane |
 | --- | --- | --- |
-| `i` | Start editing the description of the focused item | both |
-| `d` | Start editing the due date of the todo | both |
-| `s` | Start editing the scheduled date of the todo | both |
-| `r` | Start editing the recurrence of the todo | both |
-| `n` | Add a sibling to the highlighted item | both |
-| `N` | Add a child to the highlighted item | both |
-| `C` | Type a whole task in one line: project, priority and day | both |
-| `space` | Show and edit the note of the todo | both |
-| `m` | Write in the pinned note, which belongs to no task | both |
-| `c` | Toggle the completion of the todo | todos |
-| `a` | Mark the todo as handed to an AI, or take the mark back off | both |
-| `p0`–`p3` | Set the priority: `p1` most urgent, `p3` least, `p0` clears it | both |
+| `e` | Edit the description, with [vim keys](/guide/vim#task-descriptions) | both |
+| `d` | Edit the due date | both |
+| `s` | Edit the scheduled date | both |
+| `r` | Edit the recurrence | both |
+| `n` | Add a sibling | both |
+| `N` | Add a child | both |
+| `C` | [Quick add](/guide/quick-add): a whole task in one line | both |
+| `space` | Open the task's [note](/guide/notes) | both |
+| `m` | Open the pinned note, which belongs to no task | both |
+| `c` | Tick the task off / back on | tasks |
+| `p0`–`p3` | Priority: `p1` most urgent, `p3` least, `p0` clears it | both |
 | `c0`–`c9` | Color the project and everything under it; the same key again takes it off | projects |
 | `xx` | Move the highlighted item to the Bin | both |
-| `u` | Restore the highlighted item out of the Bin | both |
-| `yy` | Delete the highlighted item for good (asks first) | both |
-| `YY` | Delete everything in the Bin or Completed for good, whichever is open (asks first) | both |
-| `ctrl+z` | Take back the last change made in the panes | both |
-| `ctrl+y` | Put back the change that was last taken back | both |
+| `R` | Restore it out of the Bin | both |
+| `yy` | Delete it for good (asks first) | both |
+| `YY` | Delete everything in the Bin or Completed, whichever is open (asks first) | both |
+| `u` | Undo the last change in the panes | both |
+| `ctrl+r` | Redo | both |
 
 The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 `c5` purple, `c6` cyan, `c7` pink, `c8` brown, `c9` olive.
@@ -63,21 +67,21 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 | --- | --- | --- |
 | `K` | Shift the highlighted item up | both |
 | `L` | Shift the highlighted item down | both |
-| `I` | Make the highlighted task a step of the task above it | both |
-| `U` | Take the highlighted task out of the task it is a step of | both |
-| `M` | File the highlighted task under another project | todos |
-| `ctrl+c` | Copy the description of the focused item to the clipboard | both |
-| `ctrl+n` | Copy the note of the highlighted todo to the clipboard | both |
+| `I` | Indent: make it a child of the item above | both |
+| `U` | Unindent: take it out one level | both |
+| `M` | Move the task to another project | tasks |
+| `ctrl+c` | Copy the description to the clipboard | both |
+| `ctrl+n` | Copy the task's note to the clipboard | both |
 | `ctrl+v` | Add an item described by whatever is on the clipboard | both |
 
 ## Search & view
 
 | Key | What it does | Pane |
 | --- | --- | --- |
-| `/` | Find a task anywhere in the tree and jump to it | both |
-| `o` | Open the first link written in the highlighted row | both |
-| `SP` / `SD` / `SS` | Sort the todos by priority / due date / scheduled date | both |
-| `?` | Show the help screen (while held) | both |
+| `/` | [Find](/guide/search-move#finder) a task anywhere and jump to it; `>` first searches notes | both |
+| `o` | Open the first link in the highlighted row | both |
+| `SP` / `SD` / `SS` | Sort the tasks by priority / due date / scheduled date | both |
+| `?` | Show every key | both |
 | `q` | Quit | both |
 
 ## Inside an edit
@@ -85,38 +89,42 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 | Key | What it does |
 | --- | --- |
 | `enter` | Keep the edit |
-| `escape` | Throw it away |
+| `escape` | In a date or recurrence field: throw it away. In a description: see [Vim editing](/guide/vim#task-descriptions) |
 | `cal` | In a date field: open the [calendar](/guide/dates#the-calendar-picker) |
 
 ## Inside a note
 
-See [Notes](/guide/notes#two-modes).
+A note is edited with vim's keys: NORMAL, INSERT, VISUAL, operators, text
+objects, search and flash. See [Vim editing](/guide/vim) for the list, or
+press `space` `?` in a note.
 
 ## Vim layouts
 
 The defaults are laid out for a **QWERTZ** keyboard: the direction keys are
 `j` `k` `l` `ö`, one key to the right of vim's, so the hand stays where it
-types. The repo's [`config/`](https://github.com/gslama12/todooit/tree/main/config)
-folder has two drop-in configs that put them back on vim's `h` `j` `k` `l`:
+types. A few note keys are moved to where a German keyboard has room for them
+too (`=` `_` `ü` `ä` `h` `H` `?`).
+
+The repo's [`config/`](https://github.com/gslama12/todooit/tree/main/config)
+folder has two drop-in configs that put everything back on **standard vim
+keys**:
 
 | File | For | Fold / unfold | Shift down |
 | --- | --- | --- | --- |
 | `qwertz_vim.py` | QWERTZ keyboards | `ö` | `J` |
 | `qwerty_vim.py` | QWERTY keyboards (which have no `ö`) | `;` | `J` |
 
-Everything else stays as listed above. The note window, the calendar, the help
-screen and the attachment strip steer with whatever the panes move with, so
-they switch to `h` `j` `k` `l` too (and the calendar's months to `H` / `L`).
+The panes move with `h` `j` `k` `l`, and so do the note window, the calendar
+(months on `H` / `L`), the help screen and the attachment strip. Inside a note
+and a description, both switch to vim's own keys:
 
-Inside a note, both also switch to vim's own keys:
-
-| Note action | Default | `qwertz_vim.py` | `qwerty_vim.py` |
-| --- | --- | --- | --- |
-| Line start: column 0 / first non-blank / end | — / `=` / `_` | `0` / `^` / `$` | `0` / `^` / `$` |
-| Repeat / reverse `f` `F` `t` `T` | `h` / `H` | `ö` / `Ö` | `;` / `,` |
-| Line above / below | `ü` / `ä` | `ü` / `ä` | `-` / `+` |
-
-`I` and `A` insert at the start and end of the line in all three.
+| Note action | Default | Both vim layouts |
+| --- | --- | --- |
+| Left / down / up / right | `j` `l` `k` `ö` | `h` `j` `k` `l` |
+| Line start / first non-blank / line end | — / `=` / `_` | `0` / `^` / `$` |
+| Line above / below (first non-blank) | `ü` / `ä` | `-` / `+` |
+| Repeat / reverse `f` `F` `t` `T` | `h` / `H` | `;` / `,` |
+| Search | `?` | `/` |
 
 ```bash
 mkdir -p "$(dirname "$(todooit config-loc)")"

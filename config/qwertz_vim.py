@@ -39,10 +39,13 @@ VIM_NOTE_KEYS = {
     "j": "h",  # left
     "ö": "l",  # right
     "l": "j",  # down (k, up, stays where it is)
-    "h": "ö",  # repeat the last f F t T
-    "H": "Ö",  # the same, the other way
+    "h": ";",  # repeat the last f F t T
+    "H": ",",  # the same, the other way
     "=": "^",  # first non-blank of the line
     "_": "$",  # last character of the line
+    "ü": "-",  # first non-blank of the line above
+    "ä": "+",  # and of the line below
+    "?": "/",  # search forward
 }
 
 
@@ -50,7 +53,7 @@ VIM_NOTE_KEYS = {
 def vim_keys(api: TodooitAPI, _):
     api.keys.remap(VIM_KEYS)
     api.vim.keys.remap(VIM_NOTE_KEYS)
-    # The note's help, space then ? as by default: `?` alone stays the search
+    # The note's help, space then ? as by default
     api.vim.keys.set(" ?", VimCommand.HELP)
     # Free by default: a lone 0 is never a count
     api.vim.keys.set("0", VimMotion.LINE_START)

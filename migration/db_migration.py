@@ -28,6 +28,16 @@ What cannot carry over:
 - dooit's `m` recurrence meant minutes; todooit has none (its `m` is a month),
   so an interval that is not whole hours is rounded up to whole hours.
 - dooit never recorded when a todo was completed, so `completed_at` is empty.
+
+dooit let any todo hold any value; todooit keeps a family of steps consistent.
+So the trees are fitted the way the app fits a todo filed under another:
+
+- a completed todo's open steps are completed with it;
+- only one todo on any line of a family recurs, and nothing under a todo with
+  a due date or under a completed one does: the step's recurrence is ended;
+- an open step is never due after the todos above it.
+
+Every such change is counted in the report.
 """
 
 import argparse
@@ -38,11 +48,12 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from platformdirs import user_data_dir
 
 from todooit.api.cadence import EPOCH, Cadence
+from todooit.api.note_migration import MARKDOWN_NOTES_VERSION
 from todooit.paths import database_file
 
 # Where dooit v3 keeps its database
@@ -88,6 +99,10 @@ class Report:
     recurrence_changed: List[Tuple[int, str, timedelta, Optional[str]]] = field(
         default_factory=list
     )
+    # Fitting the trees to todooit's rules for a family of steps
+    steps_completed: int = 0
+    recurrence_ended: int = 0
+    due_lowered: int = 0
     backup: Optional[Path] = None
 
     def lines(self) -> List[str]:
@@ -100,6 +115,15 @@ class Report:
 
         if self.effort_dropped:
             lines.append(f"effort dropped: {self.effort_dropped} todo(s) had a non-zero effort")
+
+        for count, what in (
+            (self.steps_completed, "open step(s) of a completed todo were completed"),
+            (self.recurrence_ended, "step(s) stopped recurring under a todo that "
+             "recurs, is due or is completed"),
+            (self.due_lowered, "step(s) due after the todo above them now share its due date"),
+        ):
+            if count:
+                lines.append(f"fitted: {count} {what}")
 
         for todo_id, description, interval, cadence in self.recurrence_changed:
             change = f"rounded up to {cadence}" if cadence else "dropped"
@@ -139,7 +163,7 @@ def migrate(
 
     report = Report(source, target, dry_run, target.exists())
     projects = [_project(row) for row in workspaces]
-    todos = [_todo(row, report) for row in todo_rows]
+    todos = _todos(todo_rows, report)
     report.projects, report.todos = len(projects), len(todos)
 
     if dry_run:
@@ -236,14 +260,79 @@ def _project(row: sqlite3.Row) -> dict:
     }
 
 
-def _todo(row: sqlite3.Row, report: Report) -> dict:
+@dataclass
+class _Above:
+    """What the todos above a step hold it to"""
+
+    completed: bool = False
+    # Some todo above recurs, or has a due date: the step may not recur
+    owned: bool = False
+    # The earliest due date above: no open step is due after it. (Only a
+    # recurring todo is scheduled, and nothing under one recurs, so there is
+    # no scheduled floor to hold to.)
+    ceiling: Optional[str] = None
+
+
+def _todos(rows: List[sqlite3.Row], report: Report) -> List[dict]:
+    """Every todo, parents before their steps, fitted to the todos above it"""
+
+    children: Dict[Optional[int], List[sqlite3.Row]] = {}
+
+    for row in rows:
+        children.setdefault(row["parent_todo_id"], []).append(row)
+
+    out: List[dict] = []
+    # Top-level todos have no todo above them
+    stack = [(row, _Above()) for row in reversed(children.get(None, []))]
+
+    while stack:
+        row, above = stack.pop()
+        todo = _todo(row, above, report)
+        out.append(todo)
+
+        below = _Above(
+            completed=above.completed or not todo["pending"],
+            owned=above.owned or bool(todo["recurrence"]) or todo["due"] is not None,
+            ceiling=_earliest(above.ceiling, todo["due"]),
+        )
+        stack.extend((child, below) for child in reversed(children.get(row["id"], [])))
+
+    if len(out) != len(rows):
+        reached = {todo["id"] for todo in out}
+        lost = sorted(row["id"] for row in rows if row["id"] not in reached)
+        raise MigrationError(
+            f"todo(s) {lost} sit under a todo that does not exist; "
+            "not a database dooit wrote"
+        )
+
+    return out
+
+
+def _earliest(a: Optional[str], b: Optional[str]) -> Optional[str]:
+    return min(filter(None, (a, b)), default=None)
+
+
+def _todo(row: sqlite3.Row, above: _Above, report: Report) -> dict:
     cadence = _cadence(row, report)
-    due, scheduled, pending = row["due"], None, row["pending"]
+    due, scheduled, pending = row["due"], None, bool(row["pending"])
+
+    if cadence is not None and (above.completed or above.owned):
+        report.recurrence_ended += 1
+        cadence = None
 
     if cadence is not None:
         # A recurring todo is planned by its scheduled date and has no due date
         report.recurring += 1
-        due, scheduled, pending = None, row["due"], 1
+        due, scheduled, pending = None, row["due"], True
+
+    if above.completed and pending:
+        report.steps_completed += 1
+        pending = False
+
+    # Ticked-off steps keep their dates in todooit too
+    if pending and due is not None and above.ceiling is not None and due > above.ceiling:
+        report.due_lowered += 1
+        due = above.ceiling
 
     if row["effort"]:
         report.effort_dropped += 1
@@ -256,7 +345,7 @@ def _todo(row: sqlite3.Row, report: Report) -> dict:
         "scheduled": scheduled,
         "recurrence": cadence,
         "priority": URGENCY_TO_PRIORITY.get(row["urgency"], 0),
-        "pending": pending,
+        "pending": int(pending),
         # dooit never recorded it
         "completed_at": None,
         "binned_at": None,
@@ -321,6 +410,10 @@ def _write(target: Path, projects: List[dict], todos: List[dict], report: Report
             with connection:
                 _insert(connection, "project", projects)
                 _insert(connection, "todo", todos)
+                # dooit had no notes, so there are none to move to markdown:
+                # without this, todooit's first start would back the new
+                # database up and look for some
+                connection.execute(f"PRAGMA user_version = {MARKDOWN_NOTES_VERSION}")
         finally:
             connection.close()
 

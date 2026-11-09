@@ -343,6 +343,119 @@ def test_the_report_counts_what_moved(source):
     assert str(database_file()) in report.lines()[1]
 
 
+def test_todooit_opens_the_result_without_a_note_backup(source):
+    """dooit had no notes: nothing to move to markdown, so nothing to back up"""
+
+    migrate(source, database_file())
+
+    manager.connect(str(database_file()))
+    manager.session.close()
+    manager.engine.dispose()
+
+    assert not (database_file().parent / "backups").exists()
+
+
+# --------------------------------------------------------------------------
+# Fitting families to todooit's rules
+
+LATER = "2026-03-10 09:30:00.000000"
+EARLIER = "2026-03-01 09:30:00.000000"
+EVERY_DAY = interval(timedelta(days=1))
+
+
+def migrate_family(tmp_path, parent: dict, step: dict, grandchild=None):
+    """A todo with one step (and maybe one under that); their todooit rows and the report"""
+
+    todos = [
+        todo(1, workspace=1, description="parent", **parent),
+        todo(2, parent_todo=1, description="step", **step),
+    ]
+
+    if grandchild is not None:
+        todos.append(todo(3, parent_todo=2, description="grandchild", **grandchild))
+
+    db = build_dooit(tmp_path / "family.db", workspaces=[workspace(1, is_root=True)], todos=todos)
+    report = migrate(db, database_file())
+
+    return rows(database_file(), "todo"), report
+
+
+def test_a_completed_todo_completes_its_open_steps(tmp_path):
+    todos, report = migrate_family(
+        tmp_path, dict(pending=False), dict(), grandchild=dict()
+    )
+
+    assert [todos[i]["pending"] for i in (1, 2, 3)] == [0, 0, 0]
+    assert report.steps_completed == 2
+    assert any("completed" in line for line in report.lines())
+
+
+def test_a_step_under_a_recurring_todo_stops_recurring(tmp_path):
+    todos, report = migrate_family(
+        tmp_path,
+        dict(due=DUE, recurrence=EVERY_DAY),
+        dict(due=LATER, recurrence=EVERY_DAY),
+    )
+
+    assert todos[1]["recurrence"] == "1d"
+    assert todos[2]["recurrence"] is None
+    # No longer recurring, so its dooit due date stays a due date
+    assert (todos[2]["due"], todos[2]["scheduled"]) == (LATER, None)
+    assert (report.recurrence_ended, report.recurring) == (1, 1)
+
+
+def test_a_step_under_a_due_todo_stops_recurring(tmp_path):
+    todos, report = migrate_family(
+        tmp_path, dict(due=LATER), dict(due=EARLIER, recurrence=EVERY_DAY)
+    )
+
+    assert todos[2]["recurrence"] is None
+    assert todos[2]["due"] == EARLIER
+    assert report.recurrence_ended == 1
+
+
+def test_a_step_due_after_its_todo_is_lowered(tmp_path):
+    todos, report = migrate_family(
+        tmp_path, dict(due=DUE), dict(due=LATER), grandchild=dict(due=LATER)
+    )
+
+    assert (todos[2]["due"], todos[3]["due"]) == (DUE, DUE)
+    assert report.due_lowered == 2
+
+
+def test_a_finished_step_keeps_its_due_date(tmp_path):
+    todos, report = migrate_family(tmp_path, dict(due=DUE), dict(due=LATER, pending=False))
+
+    assert todos[2]["due"] == LATER
+    assert report.due_lowered == 0
+
+
+def test_a_step_under_a_missing_todo_is_refused(tmp_path):
+    db = build_dooit(
+        tmp_path / "dangling.db",
+        workspaces=[workspace(1, is_root=True)],
+        todos=[todo(1, workspace=1), todo(2, parent_todo=99)],
+    )
+
+    with pytest.raises(MigrationError, match="does not exist"):
+        migrate(db, database_file())
+
+
+def test_the_fitted_result_opens_in_todooit(tmp_path):
+    migrate_family(tmp_path, dict(pending=False, due=DUE), dict(due=LATER, recurrence=EVERY_DAY))
+
+    manager.connect(str(database_file()))
+
+    try:
+        step = manager.session.get(Todo, 2)
+        assert step is not None
+        assert step.recurrence is None
+        assert not step.pending
+    finally:
+        manager.session.close()
+        manager.engine.dispose()
+
+
 # --------------------------------------------------------------------------
 # What is never touched
 

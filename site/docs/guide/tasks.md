@@ -22,22 +22,23 @@ finished; the Bin swaps them for the day it was thrown away.
 | `n` | New task, as a sibling |
 | `N` | New task, as a child of this one |
 | `C` | [Quick add](/guide/quick-add) — a whole task in one line |
-| `i` | Edit the description |
+| `e` | Edit the description, with [vim keys](/guide/vim#task-descriptions) |
 | `s` | Edit the scheduled date |
 | `d` | Edit the due date |
 | `r` | Edit the recurrence |
 | `space` | Open the note |
 | `enter` | Keep an edit |
-| `escape` | Throw an edit away |
+| `escape` | Throw a date or recurrence edit away |
 
-A brand new task thrown away without a name is dropped entirely.
+A brand new task left without a name is dropped entirely.
 
 ## Steps
 
 `N` files a task under the one the cursor is on, and steps nest as deep as you
 want them to. `h` folds a task shut again, so a pane can show the work without
-showing the detail of all of it at once. A folded task shows how many open
-steps it hides, e.g. `plan trip (4)`; an unfolded one drops the count.
+showing the detail of all of it at once. A folded task shows how many
+steps it hides, e.g. `plan trip (4)`; an unfolded one drops the count. Whether
+a task is folded is remembered across restarts.
 
 | Key | What it does |
 | --- | --- |
@@ -63,7 +64,7 @@ but any step may be planned for a later day.
 | Move a task while a step is ticked off | The ticked-off step keeps its day |
 | Reopen that step | It moves up to the task's day again, if it is earlier |
 
-Whenever planning one row moves others, the status bar says so, and `ctrl+z` takes
+Whenever planning one row moves others, the status bar says so, and `u` takes
 it all back.
 
 ### A task's deadline is the latest its steps are due
@@ -95,7 +96,7 @@ is fitted to the tasks it now sits inside instead:
 | A due date after the task's | The task's due date, and so do its own steps due later |
 | A repeat, under a task that repeats or has a due date | No repeat, and nor does anything under it |
 
-Whatever had to give way is named in the status bar, and one `ctrl+z` takes
+Whatever had to give way is named in the status bar, and one `u` takes
 back the move and all of it together. Pulling a step back out with `U`, or
 moving it to another project, changes nothing but where it sits.
 
@@ -122,7 +123,7 @@ deep that work sits. Un-ticking a task hands back the steps that were ticked
 off with it; steps you had finished on their own stay in Completed.
 
 Ticking a task also ends every recurrence inside it: once the task is done,
-none of its steps come back. Un-ticking doesn't restore them — undo (`ctrl+z`) is
+none of its steps come back. Un-ticking doesn't restore them — undo (`u`) is
 the way back from a task ticked by mistake. Ticking a recurring task doesn't
 finish it at all; see [Recurrence](/guide/dates#recurrence).
 
@@ -147,7 +148,7 @@ a shell completes a filename. See
 ## Links
 
 `o` opens a link. On a task row it opens the first link in the description;
-inside a note it opens the one under the cursor. A long URL is shortened when
+inside a note `gx` opens the one under the cursor. A long URL is shortened when
 it is drawn; the address behind it is what gets opened.
 
 ## Throwing away
@@ -155,7 +156,7 @@ it is drawn; the address behind it is what gets opened.
 | Key | What it does |
 | --- | --- |
 | `xx` | Move it to the Bin |
-| `u` | Restore it out of the Bin |
+| `R` | Restore it out of the Bin |
 | `yy` | Delete it for good (asks first) |
 | `YY` | In the Bin or Completed: delete everything there for good (asks first, and says how much will go) |
 

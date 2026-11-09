@@ -54,7 +54,7 @@ api.keys.set("x", api.remove_node, group="Editing")
 
 | Argument | Meaning |
 | --- | --- |
-| `keys` | One key, a chord like `"gg"`, `"<ctrl+z>"`, or a list of them |
+| `keys` | One key, a chord like `"gg"`, `"<ctrl+r>"`, or a list of them |
 | `callback` | Usually a `TodooitAPI` method |
 | `description` | The help screen text; defaults to the callback's docstring |
 | `group` | The help screen section. Sections appear in the order they are first used |
@@ -83,6 +83,31 @@ direction keys from whichever single keys are bound to `api.focus_projects`
 `api.motion_keys()` returns all four.
 
 The [Keybindings](/guide/keybindings) page lists every default.
+
+## Vim keys
+
+The keys inside a note — and inside a description edited with `e` — are a
+keymap of their own, `api.vim.keys`, bound to the engine's actions rather than
+to API methods:
+
+```python
+from todooit.vim_engine import VimCommand, VimMotion, VimOperator, VimTextObject
+
+api.vim.keys.set("0", VimMotion.LINE_START)
+api.vim.keys.set(" ?", VimCommand.HELP)          # space, then ?
+api.vim.keys.set("<ctrl+u>", VimMotion.HALF_PAGE_UP)
+api.vim.keys.remap({"?": "/", "h": ";", "H": ","})
+```
+
+`set` and `remap` work as they do on `api.keys`. The actions are the members
+of `VimMotion`, `VimCommand`, `VimOperator` and `VimTextObject`; an operator's
+key is followed by a motion or a text object, and a text object's keys only
+mean something after an operator or in VISUAL. The note's `space` `?` help is
+built from this keymap, so it always lists what is really bound.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `api.vim.descriptions` | `True` | `e` edits descriptions with these keys; `False` types straight over the text |
 
 ## Columns
 
@@ -204,3 +229,9 @@ them but `cyan` are also written out as stylesheet variables (`$primary`, …).
 | `always_expand_projects` | `False` | Draw projects expanded |
 | `always_expand_todos` | `False` | Draw tasks expanded |
 | `show_confirm` | `True` | Ask before a delete that cannot be undone |
+| `projects_pane_auto_width` | `True` | Size the projects pane to its widest name |
+| `projects_pane_max_width` | `0.25` | The most of the screen it may take |
+| `flash_alphabet` | `"asdfghjklöqwertzuiopyxcvbnm"` | Label letters for [flash](/guide/search-move#flash) in the panes, nearest rows first |
+| `vim_flash_alphabet` | the same | Label letters for flash (`s`) inside a note |
+| `note_line_numbers` | `True` | Hybrid line numbers in a note's gutter |
+| `note_hints` | `False` | A line of key hints under the note (`space` `?` lists them all instead) |

@@ -27,13 +27,13 @@ config.color_scheme = 'Tokyo Night'
 
 Leave `enable_kitty_keyboard` off. With it on, WezTerm also reports the text of
 a `ctrl+<letter>` chord, and the note editor reads that as a printable
-character — so `ctrl+e` types an `e` instead of running the binding.
+character — so a `ctrl` chord types its letter instead of running the binding.
 :::
 
 ## Cmd shortcuts on macOS
 
 On a Mac every `ctrl` binding also answers to `cmd`: `cmd+c` copies, `cmd+v`
-pastes, `cmd+z` takes back, `cmd+q` quits, and so on. The terminal has to pass
+pastes, `cmd+n` copies a note, `cmd+r` redoes, and so on. The terminal has to pass
 those keys on first, and WezTerm doesn't by default. It keeps `cmd+c`, `cmd+v`,
 `cmd+n` and `cmd+q` for itself (copy, paste, new window, quit), and it sends any
 other `cmd` chord as the bare letter, since `enable_kitty_keyboard` stays off.

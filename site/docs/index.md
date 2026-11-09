@@ -4,7 +4,7 @@ layout: home
 hero:
   name: todooit
   text: A smart todo list that lives in your terminal
-  tagline: A dooit fork with Todoist's habits — quick add, natural-language dates, Today/Upcoming, notes and a Bin. Keyboard only.
+  tagline: A dooit fork with Todoist's habits — quick add, natural-language dates, Today/Upcoming, markdown notes with vim editing, flash jumps and a Bin. Keyboard only, and ? lists every key.
   actions:
     - theme: brand
       text: Get started
