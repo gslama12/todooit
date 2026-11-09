@@ -239,6 +239,10 @@ async def test_a_raw_heading_keeps_its_wash_and_shows_the_cursor():
     async with run_pilot() as pilot:
         _, editor = await load(pilot, "# Plan\nbelow")
 
+        # NORMAL's block: INSERT's cursor is the terminal's own
+        await pilot.press("escape")
+        await pilot.pause()
+
         assert text_at(editor, 0).rstrip() == "# Plan"
 
         strip = body_of(editor, 0)

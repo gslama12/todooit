@@ -8,6 +8,7 @@ from textual.widgets import ContentSwitcher
 from todooit.ui.api.events import ModeChanged, ModeType, QuitApp, Startup, TodooitEvent
 from todooit.ui.api.events.events import ShutDown
 from todooit.ui.screens import MainScreen
+from todooit.ui.slim_cursor import slim_cursor
 from todooit.ui.widgets import BarSwitcher
 from todooit.ui.widgets.bars import StatusBar
 from todooit.ui.widgets.trees import ProjectsTree, TodosTree
@@ -45,6 +46,9 @@ class Todooit(App):
 
     def on_mount(self):
         self.base_setup()
+
+    def on_unmount(self) -> None:
+        slim_cursor(self).restore()
 
     async def action_quit(self) -> None:
         drop_blank_models()

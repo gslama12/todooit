@@ -250,7 +250,7 @@ async def test_a_field_that_is_no_date_reads_the_word_as_a_word():
         await create_and_move_to_todo(pilot)
         await new_todo(pilot, "file taxes")
 
-        await pilot.press("i")
+        await pilot.press("e", "c", "c")
         await pilot.press(*list("cal"))
         await pilot.pause()
 

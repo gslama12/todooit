@@ -881,7 +881,7 @@ async def test_a_new_step_goes_under_a_scheduled_step_too():
 
 
 async def test_a_new_step_left_unnamed_is_dropped():
-    """Escape throws away a step never given a name, as it does anywhere else"""
+    """Leaving a step never given a name throws it away, as it does anywhere else"""
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -896,8 +896,9 @@ async def test_a_new_step_left_unnamed_is_dropped():
 
         today = visible_todos(app)
 
+        # Out of INSERT, then out of the edit
         await pilot.press("N")
-        await pilot.press("escape")
+        await pilot.press("escape", "escape")
         await settle(pilot)
 
         assert descriptions(today) == ["task"]

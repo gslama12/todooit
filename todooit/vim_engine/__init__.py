@@ -14,6 +14,7 @@ whatever text host implements `Buffer`. Imports nothing from the UI.
 
 from .buffer import Buffer
 from .engine import (
+    DESCRIPTION_ACTIONS,
     MODE_FLASH,
     MODE_INSERT,
     MODE_NORMAL,
@@ -36,6 +37,7 @@ from .search import Search, SearchMemory
 from .vim_flash import VIM_FLASH_ALPHABET, VimFlashMatch, VimFlashView
 
 __all__ = [
+    "DESCRIPTION_ACTIONS",
     "MODE_FLASH",
     "MODE_INSERT",
     "MODE_NORMAL",

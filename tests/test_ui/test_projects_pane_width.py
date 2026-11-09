@@ -62,13 +62,13 @@ async def test_pane_narrows_when_widest_row_goes():
 
         # A rename starts from an empty field, so the whole name is typed
         longer = "short, now longer"
-        await pilot.press("i")
+        await pilot.press("e", "c", "c")
         await commit_line(pilot, longer)
         await settle(pilot)
 
         assert pane_width(tree) == row_width(longer)
 
-        await pilot.press("i")
+        await pilot.press("e", "c", "c")
         await commit_line(pilot, "short")
         await settle(pilot)
 

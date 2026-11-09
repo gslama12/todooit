@@ -169,8 +169,7 @@ async def test_a_nameless_row_is_called_after_its_pane():
         await pilot.press("j")
 
         # Empty the description and commit it
-        await pilot.press("i")
-        await pilot.press("ctrl+l")
+        await pilot.press("e", "c", "c")
         await pilot.press("enter")
         await pilot.pause()
 

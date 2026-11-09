@@ -56,13 +56,13 @@ async def test_add_todo_via_keys():
         assert highlighted_index(tree) == 1
 
 
-async def test_escape_discards_a_new_todo():
+async def test_a_new_todo_left_without_a_name_is_dropped():
     async with run_pilot() as pilot:
         tree = await create_and_move_to_todo(pilot)
 
+        # Out of INSERT, then out of the edit with nothing in it
         await pilot.press("n")
-        await pilot.press(*list("never kept"))
-        await pilot.press("escape")
+        await pilot.press("escape", "escape")
         await pilot.pause()
 
         assert Todo.all() == []
@@ -94,7 +94,7 @@ async def test_blanking_a_todo_with_steps_asks_first():
 
         # Blank the parent's name and commit
         await pilot.press("k")  # up to the parent
-        await pilot.press("i", "ctrl+l")
+        await pilot.press("e", "c", "c")
         await pilot.press("enter")
         await pilot.pause()
 
@@ -171,7 +171,7 @@ async def test_edit_description():
         await pilot.press("n")
         await commit_line(pilot, "old")
 
-        await pilot.press("i", "ctrl+l")
+        await pilot.press("e", "c", "c")
         await commit_line(pilot, "new")
 
         assert Todo.all()[0].description == "new"

@@ -83,7 +83,7 @@ async def test_an_edited_description_goes_back_to_what_it_was():
 
         todo = await new_todo(pilot, "first name")
 
-        await pilot.press("i")
+        await pilot.press("e", "c", "c")
         await commit_line(pilot, "second name")
 
         assert todo.description == "second name"

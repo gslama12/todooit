@@ -153,6 +153,12 @@ class TodooitAPI:
             focused.handle_flash_key(key)
             return
 
+        # Mid-edit every key is the field's, whatever mode the bar shows: a
+        # description's vim NORMAL is not the panes' NORMAL
+        if isinstance(focused, ModelTree) and focused.is_editing:
+            focused.handle_keypress(key)
+            return
+
         keymatch = self.keys.register_key(key)
 
         if keymatch.match_type == KeyMatchType.NoMatchFound:
@@ -307,6 +313,11 @@ class TodooitAPI:
     def edit_description(self):
         """Start editing the description of the focused item"""
         return self.edit("description")
+
+    def edit_description_vim(self):
+        """Edit the description with the note's vim keys"""
+
+        self.focused.start_vim_edit("description")
 
     def edit_due(self):
         """Start editing the due date of the todo"""

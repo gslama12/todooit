@@ -14,6 +14,7 @@ import pytest
 
 import todooit.vim_engine
 from todooit.vim_engine import (
+    DESCRIPTION_ACTIONS,
     MODE_FLASH,
     MODE_INSERT,
     MODE_NORMAL,
@@ -34,6 +35,7 @@ from todooit.vim_engine import (
     VimTextObject,
     YankedRange,
 )
+from todooit.vim_engine.engine import LINE_ONLY
 
 
 class MemoryBuffer:
@@ -4900,3 +4902,103 @@ def test_space_alone_waits_for_the_question_mark():
     feed(engine, "w")
     assert engine.pending == ""
     assert buffer_of(engine).helps_shown == 0
+
+
+# --- Only some of vim, for a host that wants no more ---------------------------
+
+
+def test_an_action_left_out_is_left_to_the_host_as_if_unbound():
+    engine = visual_on(
+        "abc def", (0, 1), actions=frozenset({VimMotion.RIGHT, VimOperator.DELETE})
+    )
+
+    assert engine.feed("y") is False
+    assert engine.feed("v") is False
+    assert engine.mode == MODE_NORMAL
+    assert engine.pending == ""
+
+    # What is in still works
+    assert engine.feed("ö") is True
+    assert buffer_of(engine).cursor == (0, 2)
+
+
+def test_an_action_left_out_behind_an_operator_only_cancels_it():
+    engine = visual_on(
+        "abc def", (0, 0), actions=frozenset({VimOperator.DELETE, VimMotion.WORD_FORWARD})
+    )
+
+    feed(engine, "d")
+    assert engine.pending == "d"
+
+    # `e`, `iw` and `dd` all mean something, but not to this host
+    feed(engine, "e")
+    assert engine.pending == ""
+    feed(engine, "diw")
+    feed(engine, "dd")
+
+    assert buffer_of(engine).text == "abc def"
+    assert engine.register is None
+
+    feed(engine, "dw")
+    assert buffer_of(engine).text == "def"
+
+
+def test_with_no_actions_given_everything_is_bound():
+    engine = visual_on("abc def")
+
+    feed(engine, "yw")
+    assert engine.register == Register("abc ", linewise=False)
+
+    feed(engine, "v")
+    assert engine.mode == MODE_VISUAL
+
+
+def test_the_description_actions_leave_out_yank_visual_search_and_undo():
+    left_out = {
+        VimOperator.YANK,
+        VimCommand.YANK_LINE,
+        VimCommand.VISUAL,
+        VimCommand.VISUAL_LINE,
+        VimCommand.SEARCH,
+        VimCommand.SEARCH_WORD,
+        VimCommand.REPLACE_MATCHES,
+        VimMotion.SEARCH_NEXT,
+        VimMotion.SEARCH_PREVIOUS,
+        VimMotion.VIM_FLASH,
+        VimCommand.INSERT_AT_LAST,
+        VimCommand.OPEN_LINK,
+        VimCommand.PICK_FILES,
+        VimCommand.HELP,
+        VimCommand.UNDO,
+        VimCommand.REDO,
+    }
+
+    assert not DESCRIPTION_ACTIONS & (left_out | LINE_ONLY)
+
+
+def lines_in_register(text: str) -> RegisterMemory:
+    return RegisterMemory(Register(text, linewise=True), known_clipboard="")
+
+
+@pytest.mark.parametrize(
+    "keys, after, cursor",
+    [("p", "abone two cd", (0, 8)), ("P", "aone twob cd", (0, 7))],
+)
+def test_a_single_line_host_pastes_lines_as_one_line_of_characters(keys, after, cursor):
+    engine = yanking_on(
+        "ab cd", (0, 1), multiline=False, register_memory=lines_in_register("one\ntwo")
+    )
+
+    feed(engine, keys)
+
+    assert buffer_of(engine).text == after
+    assert buffer_of(engine).cursor == cursor
+
+
+def test_a_note_still_pastes_lines_as_lines():
+    engine = yanking_on("ab cd", (0, 1), register_memory=lines_in_register("one\ntwo"))
+
+    feed(engine, "p")
+
+    assert buffer_of(engine).text == "ab cd\none\ntwo"
+    assert buffer_of(engine).cursor == (1, 0)

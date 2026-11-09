@@ -3,7 +3,7 @@ The engine: takes keys one at a time and acts on a buffer
 """
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Tuple
+from typing import Callable, Dict, FrozenSet, Optional, Tuple
 
 from . import motions, text_objects
 from .buffer import Buffer
@@ -72,6 +72,59 @@ LINE_ONLY = frozenset(
         VimOperator.UNINDENT,
         VimTextObject.INNER_PARAGRAPH,
         VimTextObject.AROUND_PARAGRAPH,
+    }
+)
+
+# What a todo's or a project's description can do: one line, and only as much
+# of vim as a name needs. No yank, so the system clipboard only ever changes
+# through the field's own copy
+DESCRIPTION_ACTIONS: FrozenSet[VimAction] = frozenset(
+    {
+        VimMotion.LEFT,
+        VimMotion.RIGHT,
+        VimMotion.WORD_FORWARD,
+        VimMotion.WORD_BACKWARD,
+        VimMotion.WORD_END,
+        VimMotion.LINE_START,
+        VimMotion.FIRST_NON_BLANK,
+        VimMotion.LAST_CHARACTER,
+        VimMotion.FIND_FORWARD,
+        VimMotion.FIND_BACKWARD,
+        VimMotion.TILL_FORWARD,
+        VimMotion.TILL_BACKWARD,
+        VimMotion.REPEAT_FIND,
+        VimMotion.REVERSE_FIND,
+        VimCommand.INSERT,
+        VimCommand.INSERT_AFTER,
+        VimCommand.INSERT_FIRST_NON_BLANK,
+        VimCommand.INSERT_LINE_END,
+        VimCommand.CHANGE_TO_LINE_END,
+        VimCommand.CHANGE_LINE,
+        VimCommand.REPLACE_CHAR,
+        VimCommand.DELETE_TO_LINE_END,
+        VimCommand.DELETE_CHAR,
+        VimCommand.PASTE_AFTER,
+        VimCommand.PASTE_BEFORE,
+        VimOperator.DELETE,
+        VimOperator.CHANGE,
+        VimTextObject.INNER_WORD,
+        VimTextObject.AROUND_WORD,
+        VimTextObject.INNER_BIG_WORD,
+        VimTextObject.AROUND_BIG_WORD,
+        VimTextObject.INNER_PARENS,
+        VimTextObject.AROUND_PARENS,
+        VimTextObject.INNER_BRACKETS,
+        VimTextObject.AROUND_BRACKETS,
+        VimTextObject.INNER_BRACES,
+        VimTextObject.AROUND_BRACES,
+        VimTextObject.INNER_ANGLES,
+        VimTextObject.AROUND_ANGLES,
+        VimTextObject.INNER_DOUBLE_QUOTES,
+        VimTextObject.AROUND_DOUBLE_QUOTES,
+        VimTextObject.INNER_SINGLE_QUOTES,
+        VimTextObject.AROUND_SINGLE_QUOTES,
+        VimTextObject.INNER_BACKTICKS,
+        VimTextObject.AROUND_BACKTICKS,
     }
 )
 
@@ -162,7 +215,12 @@ class VimEngine:
     One editing session on one buffer. Always starts in NORMAL.
 
     `multiline=False` switches off `LINE_ONLY`, for a host with one line: their
-    keys are left to the host, as if unbound.
+    keys are left to the host, as if unbound. With it, a linewise register
+    pastes as its lines joined by spaces, there being no line to put it on.
+
+    `actions` is everything the host wants the keys to reach, for a host that
+    has a use for only some of vim; any other is left to it the same way.
+    None means all of them.
 
     `search_memory` holds the last search, for a host that wants it to outlive
     this engine by handing the same one to the next. `register_memory` is the
@@ -177,6 +235,7 @@ class VimEngine:
         keys: VimKeymap,
         *,
         multiline: bool = True,
+        actions: Optional[FrozenSet[VimAction]] = None,
         search_memory: Optional[SearchMemory] = None,
         register_memory: Optional[RegisterMemory] = None,
         vim_flash_alphabet: str = VIM_FLASH_ALPHABET,
@@ -184,6 +243,7 @@ class VimEngine:
         self.buffer = buffer
         self.keys = keys
         self.multiline = multiline
+        self.actions = actions
         self.mode = MODE_NORMAL
 
         # A partial command: its count, and its keys so far
@@ -429,7 +489,11 @@ class VimEngine:
                 if not isinstance(action, (VimMotion, VimTextObject)):
                     action = None
 
-        if action is None or (action in LINE_ONLY and not self.multiline):
+        if (
+            action is None
+            or (action in LINE_ONLY and not self.multiline)
+            or (self.actions is not None and action not in self.actions)
+        ):
             # In the middle of a command, a wrong key only cancels it
             self._cancel()
             self._shown_find = None
@@ -1471,6 +1535,9 @@ class VimEngine:
             self.buffer.report("Nothing to paste")
         elif register.from_clipboard:
             self._paste_clipboard_text(register.text, count, self._paste_place(before))
+        elif register.linewise and not self.multiline:
+            flat = " ".join(register.text.split("\n"))
+            self._paste_characters(flat, count, before)
         elif register.linewise:
             self._paste_lines(register.text, count, before)
         else:

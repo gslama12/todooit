@@ -109,6 +109,7 @@ async def test_the_config_bar_is_built_from_these_widgets():
         app = await boot(pilot)
         rendered = [widget.render().plain for widget in app.bar.bar_widgets]
 
-        assert any("NORMAL" in plain for plain in rendered)
+        # The panes' NORMAL, named apart from a description's vim NORMAL
+        assert any("NAV" in plain for plain in rendered)
         # The project the app opens on, named by `current_project`
         assert any("Today" in plain for plain in rendered)

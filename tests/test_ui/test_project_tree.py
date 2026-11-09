@@ -107,25 +107,44 @@ async def test_add_and_commit_with_enter():
         assert highlighted_index(ptree) == 1
 
 
-async def test_escape_discards_a_new_project():
+async def test_a_new_project_left_without_a_name_is_dropped():
     """A project left without a name is nothing to keep"""
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
         ptree = app.project_tree
 
+        # Typed, then taken back: escape only goes on to NORMAL, and the
+        # second leaves the edit with nothing in it
         await pilot.press("j", "n")
-        await pilot.press(*list("never kept"))
-        await pilot.press("escape")
+        await pilot.press(*list("never kept"), "ctrl+u")
+        await pilot.press("escape", "escape")
         await pilot.pause()
 
         assert Project.all() == []
         assert tree_options(ptree) == []
 
 
+async def test_escape_on_a_new_project_goes_to_normal_and_keeps_the_name():
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+        ptree = app.project_tree
+
+        await pilot.press("j", "n", *list("kept"), "escape")
+        await pilot.pause()
+
+        assert ptree.is_editing
+        assert app.todooit_mode == "NORMAL"
+
+        await pilot.press("escape")
+        await pilot.pause()
+
+        assert [p.description for p in Project.all()] == ["kept"]
+
+
 async def _discard_then_add_again(pilot, key: str) -> Project:
     """
-    Adds a project with `key`, escapes it unnamed, adds one again from the
+    Adds a project with `key`, leaves it unnamed, adds one again from the
     same row and opens its tasks pane. The second add reuses the discarded
     row's id.
     """
@@ -134,9 +153,9 @@ async def _discard_then_add_again(pilot, key: str) -> Project:
     ptree = app.project_tree
     start = ptree.current_model.uuid
 
-    await pilot.press(key, *list("never kept"))
+    await pilot.press(key)
     discarded = ptree.current_model.id
-    await pilot.press("escape")
+    await pilot.press("escape", "escape")
     await pilot.pause()
 
     ptree.highlight_id(start)
@@ -197,9 +216,9 @@ async def test_renaming_a_project():
         await boot(pilot)
         await new_project(pilot, "old name")
 
-        await pilot.press("i")
+        await pilot.press("e")
         # A fresh edit starts with the old name in the buffer; wipe it
-        await pilot.press("ctrl+l")
+        await pilot.press("c", "c")
         await commit_line(pilot, "new name")
 
         assert [p.description for p in Project.all()] == ["new name"]
@@ -264,7 +283,7 @@ async def test_fixed_projects_cannot_be_edited():
         await pilot.press("j")
         assert ptree.current_model is TODAY
 
-        for key in ("i",):
+        for key in ("e",):
             await pilot.press(key)
             await pilot.pause()
             assert not ptree.is_editing
@@ -470,9 +489,9 @@ async def test_paste_as_sibling():
         # A description is one line, whatever the clipboard was
         assert ptree.current_model.description == "pasted project"
 
-        # And it is a description like any other: `i` opens the edit on the
+        # And it is a description like any other: `e` opens the edit on the
         # pasted text rather than on the empty string the node was made as
-        await pilot.press("i")
+        await pilot.press("e")
         await pilot.pause()
         assert ptree.current.description.value == "pasted project"
 

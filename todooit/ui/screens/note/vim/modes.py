@@ -11,6 +11,7 @@ from textual.timer import Timer
 from textual.widgets import TextArea
 from textual.widgets.text_area import Selection
 
+from todooit.ui.slim_cursor import slim_cursor
 from todooit.vim_engine import (
     MODE_INSERT,
     MODE_NORMAL,
@@ -136,6 +137,7 @@ class ModalEditor(NoteView):
         """Take on the mode the engine has just moved to."""
 
         self.read_only = mode != MODE_INSERT
+        self._show_slim_cursor()
 
         if mode not in VISUAL_MODES:
             self._visual_selection = None
@@ -145,6 +147,32 @@ class ModalEditor(NoteView):
                 self.show_overlay(self.overlay)
 
         self.host.mode_changed()
+
+    @property
+    def _draw_cursor(self) -> bool:
+        # INSERT's cursor is the terminal's own, slim, between characters
+        return self.read_only and super()._draw_cursor
+
+    def _show_slim_cursor(self) -> None:
+        """The terminal's cursor, for INSERT, while this has the keyboard."""
+
+        cursor = slim_cursor(self.app)
+        block = self._theme.cursor_style if self._theme else None
+
+        if self.has_focus and not self.read_only:
+            # The block's own color, so the cursor looks the same in both modes
+            if block is not None and block.bgcolor is not None:
+                cursor.show(block.bgcolor.name)
+            self.app.cursor_position = self.cursor_screen_offset
+        else:
+            cursor.hide()
+
+    def _watch_has_focus(self, focus: bool) -> None:
+        super()._watch_has_focus(focus)
+        self._show_slim_cursor()
+
+    def on_unmount(self) -> None:
+        slim_cursor(self.app).hide()
 
     def show_selection(self, anchor: Tuple[int, int], linewise: bool) -> None:
         """

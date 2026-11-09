@@ -55,6 +55,18 @@ MODE_COLORS = {
 }
 
 
+def backdrop_style(theme: TodooitThemeBase) -> Style:
+    """Text a character jump looks across, put aside; a description's too."""
+
+    return Style(color=blend(theme.foreground1, theme.background2, 0.6))
+
+
+def target_style(theme: TodooitThemeBase) -> Style:
+    """Where a character jump can land."""
+
+    return Style(color=theme.background1, bgcolor=theme.red, bold=True)
+
+
 def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
     """
     Editor theme painted in the todooit palette rather than TextArea's default
@@ -105,8 +117,8 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             # Same underline+italic a link wears on the todo rows.
             LINK: Style(color=theme.primary, underline=True, italic=True),
             # Text put aside, so the places to go stand out from it.
-            BACKDROP: Style(color=blend(theme.foreground1, theme.background2, 0.6)),
-            TARGET: Style(color=theme.background1, bgcolor=theme.red, bold=True),
+            BACKDROP: backdrop_style(theme),
+            TARGET: target_style(theme),
             SEARCH_MATCH: Style(color=theme.background1, bgcolor=theme.yellow),
             MARKED: Style(color=theme.background1, bgcolor=theme.blue),
             MARKED_FIRST: Style(color=theme.background1, bgcolor=theme.cyan),

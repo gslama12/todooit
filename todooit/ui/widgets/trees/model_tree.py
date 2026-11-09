@@ -14,6 +14,7 @@ from typing import (
     Tuple,
     TypeVar,
     Union,
+    cast,
 )
 
 from rich.cells import cell_len
@@ -26,6 +27,7 @@ from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.color import Color
+from textual.geometry import Offset
 from textual.strip import Strip
 from textual.style import Style
 from textual.timer import Timer
@@ -39,10 +41,13 @@ from todooit.api.model import Tellable
 from todooit.ui.api.events import (
     BarNotification,
     ModeChanged,
+    ModeType,
     SpawnCalendar,
 )
 from todooit.ui.pane_layout import PaneRow, plain_row, tree_rows
+from todooit.ui.slim_cursor import slim_cursor
 from todooit.ui.widgets.inputs.model_inputs import DateInput
+from todooit.ui.widgets.inputs.vim_input import SLIM_CURSOR, VimDescription
 from todooit.ui.widgets.renderers import (
     COLUMN_PADDING,
     DESCRIPTION_OVERFLOW,
@@ -597,6 +602,39 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
             self.update_current_prompt()
         return res
 
+    def start_vim_edit(self, property: str) -> bool:
+        """
+        Starts editing `property` with the note's vim keys, where the field has
+        them and `api.vim.descriptions` is on; anywhere else, `start_edit`.
+        """
+
+        if not self.start_edit(property):
+            return False
+
+        component = self.current._get_component(property)
+
+        if self.api.vim.descriptions and isinstance(component, VimDescription):
+            component.start_vim(
+                self.api.vim, announce=self._announce_vim_mode, report=self._report
+            )
+            self.update_current_prompt()
+
+        return True
+
+    def _announce_vim_mode(self, mode: str, pending: str) -> None:
+        if mode == "INSERT":
+            slim_cursor(self.app).show(self.api.vars.theme.primary)
+        else:
+            slim_cursor(self.app).hide()
+
+        # Only NORMAL and INSERT get this far: the rest are switched off
+        self.app.post_message(
+            ModeChanged(cast(ModeType, mode), vim=True, pending=pending)
+        )
+
+    def _report(self, message: str) -> None:
+        self.post_message(BarNotification(message, "info"))
+
     def stop_edit(self, cancel: bool = False):
         """
         Ends the edit, keeping what was typed unless cancelled. A cancelled edit still
@@ -616,6 +654,7 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
             # What a lifecycle column's change did to other todos
             self.tell_outcome(outcome)
 
+        slim_cursor(self.app).hide()
         self.app.post_message(ModeChanged("NORMAL"))
         self.get_column_width.cache_clear()
 
@@ -671,9 +710,42 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
 
         return True
 
+    def render_line(self, y: int) -> Strip:
+        strip = super().render_line(y)
+
+        if self.is_editing and slim_cursor(self.app).shown:
+            self._place_slim_cursor(strip, y)
+
+        return strip
+
+    def _place_slim_cursor(self, strip: Strip, y: int) -> None:
+        """
+        Where the field marked INSERT's cursor, as it came out in the row:
+        only drawing it says how far in the column and the guides put it.
+        """
+
+        x = 0
+
+        for segment in strip:
+            style = segment.style
+
+            if style is not None and style.meta.get(SLIM_CURSOR):
+                region = self.content_region
+                self.app.cursor_position = Offset(region.x + x, region.y + y)
+                return
+
+            x += segment.cell_length
+
     def handle_keypress(self, key: str) -> bool:
         if self.is_editing:
-            if key in ["escape", "enter"]:
+            component = self.current._get_component(self.current.editing)
+
+            if isinstance(component, VimDescription) and component.engine is not None:
+                # A vim edit has no key that throws it away: escape leaves
+                # NORMAL by keeping the text, which the panes' `u` takes back
+                if component.vim_keypress(key):
+                    self.stop_edit()
+            elif key in ["escape", "enter"]:
                 # enter keeps the typed text; escape reverts the field
                 self.stop_edit(cancel=key == "escape")
             else:
@@ -755,7 +827,9 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
 
         self.expand_node()
         self.highlight_id(node.uuid)
-        self.start_edit("description")
+
+        # Empty, so INSERT; escape goes on to NORMAL rather than throwing it away
+        self.start_vim_edit("description")
 
     def _create_sibling_node(self) -> ModelType:
         return self.current_model.add_sibling()
@@ -808,7 +882,9 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
             return
 
         self.highlight_id(node.uuid)
-        self.start_edit("description")
+
+        # Empty, so INSERT; escape goes on to NORMAL rather than throwing it away
+        self.start_vim_edit("description")
 
     def _describe_node(self, node: ModelType, description: str) -> None:
         node.description = description

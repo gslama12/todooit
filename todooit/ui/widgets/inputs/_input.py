@@ -55,6 +55,12 @@ class Input:
     def cursor_position(self) -> int:
         return self._cursor_position
 
+    def move_cursor(self, position: int) -> None:
+        """Put the cursor at `position`, which ends any selection."""
+
+        self._cursor_position = max(0, min(position, len(self._value)))
+        self._selection_anchor = None
+
     def replace(self, start: int, end: int, text: str) -> None:
         """Swap a span of the buffer for `text`, cursor left after it (used by completion)."""
 
@@ -95,6 +101,7 @@ class Input:
 
         # Buffer, not `value`, and unstripped: leading/trailing spaces are live content while editing.
         text = Text(self._value + CURSOR_REST)
+        self.editing_marks(text, theme)
 
         span = self.selection
 
@@ -104,7 +111,7 @@ class Input:
         else:
             # Style the character under the cursor instead of inserting a glyph, so columns don't shift.
             text.stylize(
-                self.cursor_style(theme),
+                self.editing_cursor_style(theme),
                 self._cursor_position,
                 self._cursor_position + 1,
             )
@@ -122,6 +129,14 @@ class Input:
         """A terminal-style block cursor with the character punched back out."""
 
         return Style(color=theme.background1, bgcolor=theme.primary)
+
+    def editing_marks(self, text: Text, theme) -> None:
+        """Anything to show on the buffer beneath the cursor; nothing, for a plain field."""
+
+    def editing_cursor_style(self, theme) -> Style:
+        """The cursor as it's drawn right now, which a mode of its own may change."""
+
+        return self.cursor_style(theme)
 
     def start_edit(self) -> None:
         self.is_editing = True

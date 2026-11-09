@@ -100,7 +100,9 @@ async def editing_field(pilot: Pilot, cursor: int) -> Input:
     await pilot.press("n")
     await commit_line(pilot, TEXT)
 
-    await pilot.press("i")
+    # The plain field, as every column but a description always has it
+    tree.api.vim.descriptions = False
+    await pilot.press("e")
     await pilot.pause()
 
     field = tree.current._get_component(tree.current.editing)

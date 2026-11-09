@@ -16,6 +16,7 @@ from todooit.ui.api.formatter_presets import (
 )
 from todooit.ui.api.todooit_api import SORT_LABELS
 from todooit.ui.api.widgets import ProjectWidget, TodoWidget
+from todooit.ui.screens.note.disp.theme import MODE_COLORS as NOTE_MODE_COLORS
 from todooit.ui.widgets.bars import StatusBarWidget
 from todooit.utils import DATE_FORMAT, WEEKDAY_NAMES, blend, day_label
 from todooit.vim_engine import VimCommand, VimMotion, VimOperator, VimTextObject
@@ -475,7 +476,10 @@ def project_color_formatter(name: str, project, api: TodooitAPI) -> Optional[str
 
 @subscribe(Startup)
 def vim_key_setup(api: TodooitAPI, _):
-    # The keys inside a note's text, apart from the panes' own
+    # The keys inside a note's text, apart from the panes' own. A todo's or a
+    # project's description takes the same ones under `e`, as far as one line
+    # has a use for them (`DESCRIPTION_ACTIONS`); turn that off with
+    # `api.vim.descriptions = False`, and `e` is the same as `i`.
     api.vim.keys.set("j", VimMotion.LEFT)
     api.vim.keys.set("ö", VimMotion.RIGHT)
     api.vim.keys.set("k", VimMotion.UP)
@@ -594,7 +598,9 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("<ctrl+end>", api.go_to_bottom, group=NAVIGATION, hidden=True)
     api.keys.set("h", api.toggle_expand, group=NAVIGATION)
 
-    api.keys.set("i", api.edit_description, group=EDITING)
+    # With the note's vim keys, in NORMAL on the last character; with
+    # `api.vim.descriptions = False`, typing straight over all of it
+    api.keys.set("e", api.edit_description_vim, group=EDITING)
     api.keys.set("d", api.edit_due, group=EDITING)
     # Lowercase, matching the other date: the sorting chords below moved up to
     # the shifted "S" to leave this one free, since a key that is the start of
@@ -863,38 +869,59 @@ MODE_COLORS = {
 }
 
 
-def mode_color(api: TodooitAPI, mode: str) -> str:
+# How far the panes' own NORMAL is faded towards the bar: moving between rows,
+# not editing anything, so it stands back for a description's vim NORMAL
+NAV_FADE = 0.6
+
+
+def is_nav(event: ModeChanged) -> bool:
+    """The panes' NORMAL, as opposed to the NORMAL of a description's vim edit"""
+
+    return event.mode == "NORMAL" and not event.vim
+
+
+# A description edited with vim's keys wears the note's colors for its modes
+def mode_color(api: TodooitAPI, event: ModeChanged) -> str:
     theme = api.vars.theme
-    return getattr(theme, MODE_COLORS.get(mode, "primary"))
+
+    if is_nav(event):
+        return blend(theme.foreground1, theme.background2, NAV_FADE)
+
+    colors = NOTE_MODE_COLORS if event.vim else MODE_COLORS
+    return getattr(theme, colors.get(event.mode, "primary"))
 
 
 # The mode block takes its color from the mode itself, so the two caps around it
 # have to be repainted whenever it changes. A `text` widget is fixed at
 # startup and can't follow along, so all three pieces are built here, each one
 # its own widget listening to the same event.
-def mode_widget(render: Callable[[TodooitAPI, str], Text]) -> StatusBarWidget:
+def mode_widget(render: Callable[[TodooitAPI, ModeChanged], Text]) -> StatusBarWidget:
     @subscribe(ModeChanged)
     def wrapper(api: TodooitAPI, event: ModeChanged) -> Text:
-        return render(api, event.mode)
+        return render(api, event)
 
     return StatusBarWidget(wrapper)
 
 
 def mode_cap(glyph: str) -> StatusBarWidget:
     return mode_widget(
-        lambda api, mode: Text(
+        lambda api, event: Text(
             glyph,
-            style=Style(color=mode_color(api, mode), bgcolor=bar_background(api)),
+            style=Style(color=mode_color(api, event), bgcolor=bar_background(api)),
         )
     )
 
 
-def mode_label(api: TodooitAPI, mode: str) -> Text:
+# A vim command half typed (`d2`, `ci`) shows beside the mode, as in a note
+def mode_label(api: TodooitAPI, event: ModeChanged) -> Text:
+    name = "NAV" if is_nav(event) else event.mode
+    pending = f" {event.pending}" if event.pending else ""
+
     return Text(
-        f" {mode} ",
+        f" {name}{pending} ",
         style=Style(
             color=api.vars.theme.background1,
-            bgcolor=mode_color(api, mode),
+            bgcolor=mode_color(api, event),
             bold=True,
         ),
     )

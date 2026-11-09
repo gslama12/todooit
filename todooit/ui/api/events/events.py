@@ -84,11 +84,18 @@ class SpawnCalendar(TodooitEvent):
 
 
 class ModeChanged(TodooitEvent):
-    """Emitted when there is a change in the `status`."""
+    """
+    Emitted when there is a change in the `status`.
 
-    def __init__(self, mode: ModeType) -> None:
+    `vim` marks a mode of the vim editor inside a description, which the bar
+    paints as the note paints its own; `pending` is its partial command so far.
+    """
+
+    def __init__(self, mode: ModeType, *, vim: bool = False, pending: str = "") -> None:
         super().__init__()
         self.mode: ModeType = mode
+        self.vim = vim
+        self.pending = pending
 
 
 class SpawnSearch(TodooitEvent):

@@ -10,6 +10,7 @@ from todooit.api.theme import TodooitThemeBase
 from todooit.utils import parse
 
 from .simple_input import SimpleInput
+from .vim_input import VimDescription
 
 # Typed into a date field, opens the calendar instead of being parsed as a
 # date (no date expression starts with "cal"). A plain word rather than a
@@ -17,13 +18,13 @@ from .simple_input import SimpleInput
 CALENDAR_WORD = "cal"
 
 
-class TodoDescription(SimpleInput[Todo, str]):
+class TodoDescription(VimDescription[Todo]):
     @property
     def _property(self) -> str:
         return "description"
 
 
-class ProjectDescription(SimpleInput[Project, str]):
+class ProjectDescription(VimDescription[Project]):
     @property
     def _property(self) -> str:
         return "description"
