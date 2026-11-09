@@ -55,10 +55,21 @@ MODE_COLORS = {
 }
 
 
+# How far the text a character jump looks across is faded towards the
+# background: put aside, but still easy to read
+BACKDROP_FADE = 0.35
+
+
 def backdrop_style(theme: TodooitThemeBase) -> Style:
     """Text a character jump looks across, put aside; a description's too."""
 
-    return Style(color=blend(theme.foreground1, theme.background2, 0.6))
+    return Style(color=blend(theme.foreground1, theme.background2, BACKDROP_FADE))
+
+
+def selection_style(theme: TodooitThemeBase) -> Style:
+    """A selection, as a field being edited draws one: the inverted accent."""
+
+    return Style(color=theme.background1, bgcolor=theme.secondary)
 
 
 def target_style(theme: TodooitThemeBase) -> Style:
@@ -85,7 +96,7 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
         cursor_style=Style(color=theme.background1, bgcolor=theme.primary),
         # One block of text; a highlighted cursor line would cut it in two.
         cursor_line_style=Style(),
-        selection_style=Style(bgcolor=theme.background3),
+        selection_style=selection_style(theme),
         syntax_styles={
             # The only emphasis kind; orange since it's otherwise unused here.
             EMPH: Style(color=theme.orange, bold=True),
@@ -123,7 +134,7 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
             MARKED: Style(color=theme.background1, bgcolor=theme.blue),
             MARKED_FIRST: Style(color=theme.background1, bgcolor=theme.cyan),
             # V-LINE's whole lines, as the selection itself looks.
-            SELECTED: Style(bgcolor=theme.background3),
+            SELECTED: selection_style(theme),
             # Line numbers: the cursor's own stands out, as in LazyVim.
             GUTTER: Style(
                 color=blend(theme.foreground1, theme.background2, GUTTER_FADE)

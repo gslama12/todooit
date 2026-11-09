@@ -1,4 +1,4 @@
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from rich.console import Group, RenderableType
 from rich.rule import Rule
@@ -11,6 +11,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from todooit.ui.api.api_components.keys import KeyManager
+from todooit.vim_engine import VimCommand
 
 from .base import BaseScreen
 from .panel import HINT_GAP
@@ -32,9 +33,16 @@ class TodooitKeyTable(Static):
         "table-title",
         "separator",
     }
-    def __init__(self, keybinds: KeyManager):
+    def __init__(
+        self,
+        keybinds: KeyManager,
+        extra: Optional[Dict[str, List[Tuple[str, str]]]] = None,
+    ):
         super().__init__()
         self.keybinds = keybinds
+
+        # Sections that aren't the config's keybinds, listed after them
+        self.extra = extra or {}
 
     # Keys with no visible character need an explicit name
     KEY_LABELS = {" ": "space"}
@@ -44,6 +52,9 @@ class TodooitKeyTable(Static):
 
         Bindings sharing a label collapse into one row instead of repeating it.
         """
+
+        if group in self.extra:
+            return self.extra[group]
 
         rows: List[Tuple[str, str]] = []
 
@@ -63,6 +74,10 @@ class TodooitKeyTable(Static):
         if keybind in cls.KEY_LABELS:
             return cls.KEY_LABELS[keybind]
 
+        # A chord with a space in it, LazyVim's leader: ` ?` as `space ?`
+        if len(keybind) > 1 and " " in keybind:
+            return " ".join("space" if char == " " else char for char in keybind)
+
         # Strip the `<...>` markup used to distinguish a named key from literal characters
         if keybind.startswith("<") and keybind.endswith(">"):
             return keybind[1:-1]
@@ -72,7 +87,7 @@ class TodooitKeyTable(Static):
     def _groups(self) -> List[str]:
         """The sections, in order."""
 
-        return self.keybinds.groups
+        return self.keybinds.groups + list(self.extra)
 
     def _title_style(self, group: str) -> Style:
         """How a section's heading is drawn."""
@@ -133,6 +148,9 @@ class TodooitKeyTable(Static):
 # Panel border title
 PANEL_TITLE = "Key Bindings"
 
+# The section pointing at the note's own help, which lists the keys a note knows
+NOTES_SECTION = "Notes"
+
 
 # Hint bar: just navigation/exit, not the keybind listing itself
 def hint(up: str, down: str) -> str:
@@ -165,10 +183,21 @@ class HelpScreen(BaseScreen, ModalScreen):
     def compose(self) -> ComposeResult:
         # can_focus=False: a focused scroll view has its own arrow bindings, which would steal keys from the screen
         with VerticalScroll(id="help-panel", can_focus=False):
-            yield TodooitKeyTable(self.api.keys)
+            yield TodooitKeyTable(self.api.keys, self.extra_sections())
 
         motions = self.api.motion_keys()
         yield Static(hint(motions.up, motions.down), id="help-hint")
+
+    def extra_sections(self) -> Dict[str, List[Tuple[str, str]]]:
+        """Sections after the config's own: where the note's keys are listed."""
+
+        key = self.api.vim.keys.key_for(VimCommand.HELP)
+
+        if key is None:
+            return {}
+
+        row = (TodooitKeyTable.key_label(key), "List every key a note knows (pressed inside a note)")
+        return {NOTES_SECTION: [row]}
 
     def on_mount(self) -> None:
         self.panel.border_title = self.panel_title

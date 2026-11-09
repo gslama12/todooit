@@ -82,6 +82,12 @@ DooitKeyTable {
   }
 }
 
+/* The screen behind a note wears the note's own background: a round border's
+   cells are painted in it, so on any other color it shows outside the curve */
+NoteScreenBase {
+  background: $background2;
+}
+
 /* Wraps the whole note (text + files) in one border */
 NoteFrame {
   background: $background2;

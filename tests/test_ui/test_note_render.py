@@ -512,3 +512,25 @@ async def test_a_long_rule_wraps_once_the_cursor_stands_on_it():
 
 def test_three_stars_are_no_markup():
     assert list(scan_note(["***x***"])) == [[]]
+
+
+async def test_a_selection_is_lit_like_a_field_being_edited():
+    """Inverted accent, as a description being edited draws one, not a faint wash"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        theme = pilot.app.api.vars.theme
+        style = screen.editor._theme.selection_style
+
+        assert style.bgcolor.name == theme.secondary.lower()
+        assert style.color.name == theme.background1.lower()
+
+
+async def test_the_note_sits_flush_on_a_screen_of_its_own_color():
+    """A round border's cells wear the note's background; the screen does too"""
+
+    async with run_pilot() as pilot:
+        screen = await open_note(pilot)
+        frame = screen.query_one("NoteFrame")
+
+        assert screen.styles.background == frame.styles.background

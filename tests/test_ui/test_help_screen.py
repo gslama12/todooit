@@ -195,3 +195,17 @@ async def test_help_scrolls_with_the_navigation_keys():
         await pilot.press("g")
         await pilot.pause()
         assert screen.scroll_target_y == 0
+
+
+async def test_the_help_says_how_to_reach_the_notes_own_help():
+    """The note's keys live in a help of their own, so the app's help points there"""
+
+    async with run_pilot() as pilot:
+        app = await boot(pilot)
+
+        await pilot.press("?")
+        await pilot.pause()
+
+        table = app.screen.query_one(TodooitKeyTable)
+        assert table._groups()[-1] == "Notes"
+        assert [key for key, _ in table._rows("Notes")] == ["space ?"]

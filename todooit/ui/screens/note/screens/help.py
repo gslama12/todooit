@@ -173,9 +173,6 @@ SECTION_MODES = {
 def key_label(key: str) -> str:
     """A key as the help writes it: `<ctrl+u>` as `ctrl+u`, ` ?` as `space ?`."""
 
-    if len(key) > 1 and " " in key:
-        return " ".join("space" if char == " " else char for char in key)
-
     return TodooitKeyTable.key_label(key)
 
 
