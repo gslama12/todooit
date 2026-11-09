@@ -598,6 +598,7 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
         res = self.current.start_edit(property)
         self.update_current_prompt()
         if res:
+            self._show_mode("INSERT")
             self.app.post_message(ModeChanged("INSERT"))
             self.update_current_prompt()
         return res
@@ -627,10 +628,22 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
         else:
             slim_cursor(self.app).hide()
 
+        self._show_mode(mode)
+
         # Only NORMAL and INSERT get this far: the rest are switched off
         self.app.post_message(
             ModeChanged(cast(ModeType, mode), vim=True, pending=pending)
         )
+
+    def _show_mode(self, mode: Optional[str]) -> None:
+        """
+        The highlighted row takes the color of the edit's mode: the panes' own
+        NORMAL (`None`) keeps the plain highlight, a vim edit's NORMAL goes
+        blue, INSERT green, as the note's frame does.
+        """
+
+        self.set_class(mode == "NORMAL", "-mode-normal")
+        self.set_class(mode == "INSERT", "-mode-insert")
 
     def _report(self, message: str) -> None:
         self.post_message(BarNotification(message, "info"))
@@ -655,6 +668,7 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
             self.tell_outcome(outcome)
 
         slim_cursor(self.app).hide()
+        self._show_mode(None)
         self.app.post_message(ModeChanged("NORMAL"))
         self.get_column_width.cache_clear()
 

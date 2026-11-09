@@ -31,6 +31,15 @@ ModelTree {
             background: $secondary 40%;
             color: $foreground3;
         }
+
+        /* Mid-edit the row wears the mode's color, as the note's frame does */
+        &.-mode-normal .option-list--option-highlighted {
+            background: $blue 40%;
+        }
+
+        &.-mode-insert .option-list--option-highlighted {
+            background: $green 40%;
+        }
     }
 
     # --------- Options ------------------

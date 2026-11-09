@@ -77,4 +77,5 @@ FEATURE_BY_MODULE = {
     "test_vim_note": "vim",
     "test_note_lazyvim": "vim",
     "test_vim_description": "vim",
+    "test_mode_highlight": "vim",
 }
