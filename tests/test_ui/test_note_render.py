@@ -9,9 +9,12 @@ from tests.test_ui.test_note_ui import open_note
 from tests.test_ui.ui_base import run_pilot, set_clipboard
 from todooit.api import Todo
 from todooit.ui.screens.note.disp.markup import (
+    BOLD,
+    BOLD_ITALIC,
     BULLET_SPANS,
-    EMPH,
     HEADER_SPANS,
+    HIGHLIGHT,
+    ITALIC,
     MARKER,
     RULE,
     RULE_SPAN,
@@ -177,7 +180,16 @@ def test_each_level_has_its_color_up_to_the_third():
     assert list(scan_note(["## a"])) == [[(0, 1, HEADER_SPANS[1])]]
     assert list(scan_note(["### a"])) == [[(0, 1, HEADER_SPANS[2])]]
     assert list(scan_note(["#### a"])) == [[(0, 1, HEADER_SPANS[2])]]
-    assert list(scan_note(["###### a *b*"])) == [[(0, 3, HEADER_SPANS[2])]]
+    assert list(scan_note(["###### a b"])) == [[(0, 3, HEADER_SPANS[2])]]
+
+
+def test_emphasis_is_read_inside_a_title():
+    assert list(scan_note(["## a *b*"])) == [[(0, 3, HEADER_SPANS[1]), (2, 3, ITALIC)]]
+    assert list(scan_note(["# **a** b"])) == [[(0, 3, HEADER_SPANS[0]), (0, 1, BOLD)]]
+
+
+def test_a_rule_reads_no_emphasis():
+    assert list(scan_note(["---"])) == [[(0, 3, RULE_SPAN)]]
 
 
 async def test_the_three_levels_look_different_and_the_first_is_blue():
@@ -301,17 +313,64 @@ def test_a_raw_rule_is_still_faint():
     assert list(scan_note(["---"], raw_rows=(0,))) == [[(0, 3, RULE_SPAN)]]
 
 
-@pytest.mark.parametrize("line", ["say *this* twice", "say **this** twice"])
-def test_emphasis_is_lit_with_its_marks_off_the_page(line):
-    assert list(scan_note([line])) == [[(4, 8, EMPH)]]
+@pytest.mark.parametrize(
+    "line, span",
+    [
+        ("say *this* twice", ITALIC),
+        ("say _this_ twice", ITALIC),
+        ("say **this** twice", BOLD),
+        ("say __this__ twice", BOLD),
+        ("say ***this*** twice", BOLD_ITALIC),
+        ("say ___this___ twice", BOLD_ITALIC),
+        ("say ==this== twice", HIGHLIGHT),
+    ],
+)
+def test_emphasis_is_lit_with_its_marks_off_the_page(line, span):
+    assert list(scan_note([line])) == [[(4, 8, span)]]
+    assert draw_line(line) == "say this twice"
 
 
-def test_emphasis_on_the_cursor_line_keeps_its_marks():
-    spans = list(scan_note(["a **b**"], raw_rows=(0,)))[0]
+def test_bold_and_italic_on_one_line_keep_apart():
+    assert list(scan_note(["*a* **b** _c_"])) == [[(0, 1, ITALIC), (2, 3, BOLD), (4, 5, ITALIC)]]
 
-    assert (4, 5, EMPH) in spans
+
+@pytest.mark.parametrize(
+    "line, raw, span",
+    [("a **b**", 4, BOLD), ("a *b*", 3, ITALIC), ("a _b_", 3, ITALIC)],
+)
+def test_emphasis_on_the_cursor_line_keeps_its_marks(line, raw, span):
+    marks = len(line) - raw - 1
+    spans = list(scan_note([line], raw_rows=(0,)))[0]
+
+    assert (raw, raw + 1, span) in spans
+    assert (2, 2 + marks, MARKER) in spans
+    assert (raw + 1, len(line), MARKER) in spans
+
+
+def test_a_highlight_on_the_cursor_line_keeps_its_marks():
+    spans = list(scan_note(["a ==b=="], raw_rows=(0,)))[0]
+
+    assert (4, 5, HIGHLIGHT) in spans
     assert (2, 4, MARKER) in spans
     assert (5, 7, MARKER) in spans
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["a == b == c", "a==b and c==d", "=== x", "==open", "====x====", "x ==y==z"],
+)
+def test_equals_signs_that_highlight_nothing_stay_on_the_page(line):
+    assert list(scan_note([line])) == [[]]
+    assert draw_line(line) == line
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["snake_case_name", "a_b_ c", "_open", "a _ b _ c", "__init__x"],
+)
+def test_underscores_inside_words_are_no_markup(line):
+    assert list(scan_note([line])) == [[]]
+    assert draw_line(line) == line
 
 
 async def test_stars_that_pair_nothing_stay_on_the_page():
@@ -328,7 +387,7 @@ async def test_stars_that_pair_nothing_stay_on_the_page():
 
 
 async def test_no_new_markup_is_read():
-    lines = ["top", "- [ ] box", "```", "`code`", "__under__", "=== x"]
+    lines = ["top", "- [ ] box", "```", "`code`", "=== x"]
 
     async with run_pilot() as pilot:
         _, editor = await load(pilot, "\n".join(lines))
@@ -510,8 +569,8 @@ async def test_a_long_rule_wraps_once_the_cursor_stands_on_it():
         await leave(pilot)
 
 
-def test_three_stars_are_no_markup():
-    assert list(scan_note(["***x***"])) == [[]]
+def test_four_stars_are_no_markup():
+    assert list(scan_note(["****x****"])) == [[]]
 
 
 async def test_a_selection_is_lit_like_a_field_being_edited():

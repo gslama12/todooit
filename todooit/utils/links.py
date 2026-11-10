@@ -9,8 +9,8 @@ is written behind it.
 
 This is also where the note's *folding* lives - the one translation between
 the text as it is stored and the text as it is drawn - so the other things a
-note writes into a line and does not want drawn are folded here too: the stars
-either side of an emphasised phrase, and the `#` a heading opens with.
+note writes into a line and does not want drawn are folded here too: the marks
+(stars, underscores, `==`) either side of an emphasised phrase, and the `#` a heading opens with.
 """
 
 import os
@@ -198,33 +198,52 @@ def link_title(url: str) -> str:
     return drawn
 
 
-# An emphasised phrase in a note, by markdown's own rule: a run of stars either
-# side, with something between them and neither side touching a space, so that
-# `a * b * c` stays arithmetic and `* item` stays a bullet.
-STAR_PAIR_RE = re.compile(r"(?<!\*)(\*{1,2})(?![\s*])(.+?)(?<![\s*])\1(?!\*)")
+# An emphasised phrase in a note, by markdown's own rule: a run of one to three
+# stars or underscores either side, with something between them and neither
+# side touching a space, so that `a * b * c` stays arithmetic and `* item`
+# stays a bullet. Stars may sit inside a word; underscores may not, so a
+# `snake_case_name` stays as written. How many marks the run has says what the
+# phrase is: one italic, two bold, three both. `==` either side highlights a
+# phrase (not every markdown reads it); like underscores it can't sit inside a
+# word, so `a==b and c==d` stays a comparison.
+EMPH_PAIR_RE = re.compile(
+    r"(?<!\*)(?P<stars>\*{1,3})(?![\s*])(?P<starred>.+?)(?<![\s*])(?P=stars)(?!\*)"
+    r"|(?<![\w])(?P<unders>_{1,3})(?![\s_])(?P<underlined>.+?)(?<![\s_])(?P=unders)(?![\w])"
+    r"|(?<![\w=])(?P<equals>==)(?![\s=])(?P<marked>.+?)(?<![\s=])(?P=equals)(?![\w=])"
+)
+
+# The groups above holding a pair's opening run of marks, one per kind of mark
+EMPH_MARKS = ("stars", "unders", "equals")
 
 # A heading: the marks only, which is what comes off the page. Any level, since
 # a note has the one heading style.
 HEADING_RE = re.compile(r"#{1,6} ")
 
 
-def star_pairs(text: str) -> List[Tuple[int, int, int, int]]:
+def emph_pairs(text: str) -> List[Tuple[int, int, int, int]]:
     """
-    Where each emphasised phrase's stars are written, in the line as it is
-    *stored*: (opening start, opening end, closing start, closing end). A star
-    inside a link belongs to the link, so the links are masked out first.
+    Where each emphasised phrase's marks are written, in the line as it is
+    *stored*: (opening start, opening end, closing start, closing end). A mark
+    inside a link belongs to the link, so the links are masked out first. The
+    opening run says what the phrase is (see `EMPH_PAIR_RE`).
     """
 
     masked = text
 
     for link in find_links(text):
-        filler = "x" * (link.end - link.start)
+        # Neither a mark, a space nor a word character, so it neither opens,
+        # closes nor blocks a pair beside it
+        filler = "\x00" * (link.end - link.start)
         masked = masked[: link.start] + filler + masked[link.end :]
 
-    return [
-        (match.start(1), match.end(1), match.start(2) + len(match.group(2)), match.end())
-        for match in STAR_PAIR_RE.finditer(masked)
-    ]
+    pairs = []
+
+    for match in EMPH_PAIR_RE.finditer(masked):
+        marks = next(name for name in EMPH_MARKS if match.group(name))
+        opens, words = match.span(marks)
+        pairs.append((opens, words, match.end() - (words - opens), match.end()))
+
+    return pairs
 
 
 @dataclass(frozen=True)
@@ -288,7 +307,7 @@ def _fold(text: str, raw: bool = False) -> Folded:
     reaching into a link swallow the whole link instead of cutting an address
     in half.
 
-    The stars of an emphasised phrase are folded out on the same pass and are
+    The marks of an emphasised phrase are folded out on the same pass and are
     the other kind of hidden markup: not an atom standing in for a run, but
     characters worth no column that belong to the words beside them. An opening
     run goes with the phrase it opens, so what is inserted at the head of one
@@ -307,7 +326,7 @@ def _fold(text: str, raw: bool = False) -> Folded:
     at = 0
     width = 0
 
-    pairs = [] if raw else star_pairs(text)
+    pairs = [] if raw else emph_pairs(text)
 
     # Each hidden column, and whether a run of marks starts or ends the phrase there
     opening = {
@@ -446,7 +465,7 @@ def folded_emph(text: str, raw: bool = False) -> List[Tuple[int, int]]:
     Where the emphasised phrases of `text` land on the page: one (start, end)
     per finished pair, in drawn columns, with the marks themselves nowhere in
     it because they are nowhere on the page. None on a raw line, which has its
-    marks on the page and is lit from `star_pairs` instead.
+    marks on the page and is lit from `emph_pairs` instead.
     """
 
     return list(_fold(text, raw).emph)
@@ -522,7 +541,7 @@ def stored_range(
         opening = min(opening, written_start)
         closing = max(closing, written_end)
 
-    for (phrase_start, phrase_end), pair in zip(folded.emph, star_pairs(text)):
+    for (phrase_start, phrase_end), pair in zip(folded.emph, emph_pairs(text)):
         if start <= phrase_start and end >= phrase_end:
             opening = min(opening, pair[0])
             closing = max(closing, pair[3])
