@@ -10,8 +10,8 @@ from rich.cells import cell_len
 from todooit.utils import fold_links
 from todooit.utils.links import (
     HEADING_RE,
+    emph_pairs,
     folded_emph,
-    star_pairs,
 )
 
 # What a bullet is drawn as, off the cursor line. One glyph per nesting level;
@@ -32,7 +32,14 @@ RULE = "─"
 QUOTE_GLYPH = "▎ "
 
 # What the styled spans are tagged with; the theme below maps them to styles
-EMPH = "note-emph"
+# Emphasis, by how many marks open it: `*x*` italic, `**x**` bold, `***x***` both
+ITALIC = "note-italic"
+BOLD = "note-bold"
+BOLD_ITALIC = "note-bold-italic"
+EMPH_SPANS = (ITALIC, BOLD, BOLD_ITALIC)
+# `==x==`: picked out in color rather than weight
+HIGHLIGHT = "note-highlight"
+HIGHLIGHT_MARK = "="
 MARKER = "note-marker"
 BULLET_SPANS = tuple(f"note-bullet-{depth}" for depth in range(len(BULLET_GLYPHS)))
 RULE_SPAN = "note-rule"
@@ -288,6 +295,35 @@ def capitals(text: str) -> str:
     )
 
 
+def emph_span(line: str, opens: int, words: int) -> str:
+    """The span a phrase of `line` wears, from where its opening run of marks starts and ends."""
+
+    if line[opens] == HIGHLIGHT_MARK:
+        return HIGHLIGHT
+
+    return EMPH_SPANS[min(words - opens, len(EMPH_SPANS)) - 1]
+
+
+def _emph_spans(line: str, raw: bool) -> Iterator[Tuple[int, int, str]]:
+    """Emphasised phrases of a stored line, in characters of the line as drawn."""
+
+    pairs = emph_pairs(line)
+
+    if raw:
+        # The marks are real columns here, so they're marked around the words
+        for opens, words, closes, end in pairs:
+            yield words, closes, emph_span(line, opens, words)
+            yield opens, words, MARKER
+            yield closes, end, MARKER
+
+        return
+
+    # Off the cursor line the marks are off the page; only the words need
+    # styling. The folded phrases come in the order their pairs do.
+    for (start, end), (opens, words, _, _) in zip(folded_emph(line), pairs):
+        yield start, end, emph_span(line, opens, words)
+
+
 def block_kind(line: str) -> Optional[str]:
     """The span of a line drawn whole across the window (heading, rule), else None."""
 
@@ -345,8 +381,13 @@ def scan_markup(line: str, raw: bool = False) -> Iterator[Tuple[int, int, str]]:
     block = block_kind(line)
 
     if block:
-        # Whole line, in one style; nothing is parsed inside a title
+        # Whole line, in one style; only emphasis is read inside a title
         yield 0, byte(len(drawn)), block
+
+        if block != RULE_SPAN:
+            for start, end, span in _emph_spans(line, raw):
+                yield byte(start), byte(end), span
+
         return
 
     bar, body = split_quote(line)
@@ -374,16 +415,8 @@ def scan_markup(line: str, raw: bool = False) -> Iterator[Tuple[int, int, str]]:
     for link in fold_links(line, raw)[1]:
         yield byte(link.start), byte(link.end), LINK
 
-    # Off the cursor line the marks are off the page; only the words need styling
-    for start, end in folded_emph(line, raw):
-        yield byte(start), byte(end), EMPH
-
-    if raw:
-        # The stars are real columns here, so they're marked around the words
-        for opens, words, closes, end in star_pairs(line):
-            yield byte(words), byte(closes), EMPH
-            yield byte(opens), byte(words), MARKER
-            yield byte(closes), byte(end), MARKER
+    for start, end, span in _emph_spans(line, raw):
+        yield byte(start), byte(end), span
 
 
 def scan_note(lines, raw_rows: Container[int] = ()) -> Iterator[list]:

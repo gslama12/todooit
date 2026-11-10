@@ -5,13 +5,13 @@ The links inside a description or a note
 from todooit.utils.links import (
     TITLE_MAX,
     drawn_column,
+    emph_pairs,
     find_links,
     first_link,
     fold_links,
     folded_emph,
     link_label,
     link_title,
-    star_pairs,
     stored_range,
 )
 
@@ -264,7 +264,7 @@ def test_a_mark_is_drawn_as_nothing():
 
     assert drawn == "abcdef"
     assert folded_emph(EMPHASISED) == [(2, 4)]
-    assert star_pairs(EMPHASISED) == [(2, 3, 5, 6)]
+    assert emph_pairs(EMPHASISED) == [(2, 3, 5, 6)]
 
 
 def test_a_stored_column_comes_back_past_the_mark_it_is_hidden_behind():
@@ -353,7 +353,7 @@ def test_a_raw_line_keeps_its_stars():
 def test_a_star_inside_a_link_pairs_nothing():
     text = "*a [n](https://x.io/b*c) d"
 
-    assert star_pairs(text) == []
+    assert emph_pairs(text) == []
 
 
 def test_a_heading_mark_is_folded_off_the_page():

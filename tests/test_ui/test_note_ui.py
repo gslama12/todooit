@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 from rich.cells import cell_len
+from rich.style import Style
 from textual.geometry import Offset
 from textual.widgets.text_area import Selection
 
@@ -23,8 +24,12 @@ from todooit.ui.screens.index import MainScreen
 from todooit.ui.screens.note import NoteScreen, NoteScreenBase, PinnedNoteScreen
 from todooit.ui.screens.note.disp.document import FoldedDocument, HangingDocument
 from todooit.ui.screens.note.disp.markup import (
-    EMPH,
+    BOLD,
+    BOLD_ITALIC,
+    HEADER_SPANS,
+    HIGHLIGHT,
     INDENT,
+    ITALIC,
     LINK,
     MARKER,
     QUOTE,
@@ -415,7 +420,7 @@ async def test_note_opened_from_the_finder_shows_the_icon_on_close():
         assert icon_drawn(pilot)
 
 
-async def test_emph_is_drawn_in_its_own_color():
+async def test_emph_is_lit_on_the_words_only():
     """
     The words between the marks are what is lit, and the spans land on the
     line as it is *drawn* - which is the line with the marks folded out of it
@@ -426,7 +431,7 @@ async def test_emph_is_drawn_in_its_own_color():
     spans = list(scan_note([line]))[0]
 
     assert drawn == "say this twice"
-    assert (EMPH, "this") in [
+    assert (BOLD, "this") in [
         (name, drawn.encode()[start:end].decode())
         for start, end, name in spans
     ]
@@ -483,7 +488,7 @@ async def test_markdown_stars_still_read_as_emphasis():
 
     spans = list(scan_note(["old *style* text"]))[0]
 
-    assert EMPH in [name for _, _, name in spans]
+    assert ITALIC in [name for _, _, name in spans]
 
 
 async def test_star_markers_are_faint_but_not_hidden():
@@ -497,7 +502,32 @@ async def test_star_markers_are_faint_but_not_hidden():
     marker = theme.syntax_styles[MARKER].color.triplet
 
     assert marker != theme.base_style.bgcolor.triplet
-    assert marker != theme.syntax_styles[EMPH].color.triplet
+    assert marker != theme.base_style.color.triplet
+
+
+async def test_emphasis_is_real_weight_and_slant_in_the_text_color():
+    """Bold and italic are the terminal's own, not a color standing in for them"""
+
+    theme = build_theme(TodooitThemeBase)
+    styles = theme.syntax_styles
+
+    assert styles[ITALIC] == Style(italic=True)
+    assert styles[BOLD] == Style(bold=True)
+    assert styles[BOLD_ITALIC] == Style(bold=True, italic=True)
+
+
+async def test_a_highlight_is_bold_in_the_theme_orange():
+    theme = build_theme(TodooitThemeBase)
+    style = theme.syntax_styles[HIGHLIGHT]
+
+    assert style.bold
+    assert style.color.name == TodooitThemeBase.orange.lower()
+
+
+async def test_every_heading_level_is_bold():
+    theme = build_theme(TodooitThemeBase)
+
+    assert all(theme.syntax_styles[span].bold for span in HEADER_SPANS)
 
 
 async def test_a_quote_marker_mid_line_stays_a_greater_than_sign():
@@ -1469,7 +1499,7 @@ async def test_a_quote_still_holds_markup():
     names = [name for _, _, name in list(scan_note([line]))[0]]
 
     assert names[:2] == [QUOTE, QUOTE_BAR]
-    assert EMPH in names
+    assert BOLD in names
 
 
 async def test_tab_nests_a_bullet():

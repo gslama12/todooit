@@ -24,7 +24,7 @@ PASTE_INLINE = "inline"  # cursor mid-line: only emphasis is converted
 MD_BULLET = "- "
 MD_QUOTE = "> "
 MD_RULE = "---"
-MD_EMPH = "**"
+MD_EMPH = "*"  # one per mark: `_x_` is `*x*`, `__x__` is `**x**`
 
 # Markdown's block markup, as it may open a pasted line
 FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
@@ -49,7 +49,7 @@ PARKED = 0xE000
 
 
 def _emph_in(text: str) -> str:
-    """A run of plain text (no code, no links) with its underscore emphasis as stars."""
+    """A run of plain text (no code, no links) with its underscore emphasis as stars, mark for mark."""
 
     parked = {}
 
@@ -61,7 +61,9 @@ def _emph_in(text: str) -> str:
     text = ESCAPE_RE.sub(park, text)
 
     def mark(match: re.Match) -> str:
-        return MD_EMPH + match.group(2) + MD_EMPH
+        marks = MD_EMPH * len(match.group(1))
+
+        return marks + match.group(2) + marks
 
     text = UNDER_EMPH_RE.sub(mark, text)
 
@@ -144,8 +146,8 @@ def from_markdown(
 
     Headings keep their level, and underlined ones (`===`/`---`) become `# `
     and `## `; a thematic break becomes `---`; `-`, `*` and `+` bullets `- `
-    at their depth; `1.` and `1)` items `1. `; `>` (nested or not) `> `; `_` and
-    `__` emphasis `**`. Code blocks, code spans and links pass through.
+    at their depth; `1.` and `1)` items `1. `; `>` (nested or not) `> `; `_`, `__`
+    and `___` emphasis `*`, `**` and `***`. Code blocks, code spans and links pass through.
 
     `first` says how much of the first line's markup applies (see the PASTE_
     constants); `above` is the note's line above it, so a rule pasted under

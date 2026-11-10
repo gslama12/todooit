@@ -102,11 +102,20 @@ rather than once at the end:
 uv run --with pillow python site/scripts/demo.py
 ```
 
-The workflow it plays is the `SCRIPT` and `SCRIPT_FROM_HOME` lists in
-`site/scripts/demo.py`, each entry a key and the milliseconds the frame it
-produces is held; `hold()`, `press()` and `type_()` build them. A key that
-draws nothing new holds the frame already up rather than costing one of its
-own.
+The workflow it plays is the `SCRIPT` list in `site/scripts/demo.py`, each
+entry a key and the milliseconds the frame it produces is held; `hold()`,
+`press()` and `type_()` build them. A key that draws nothing new holds the
+frame already up rather than costing one of its own. Recording starts only
+once two renders in a row come out the same, so the first frame is never the
+half-painted screen from before the theme lands.
+
+The flash labels the script types (`FLASH_*`) depend on the rows on screen,
+so a change to the seed can move them. `--frames <dir>` writes every frame
+out as a PNG to check them against:
+
+```bash
+uv run --with pillow python site/scripts/demo.py --frames /tmp/demo-frames
+```
 
 The frames are drawn with Pillow, one cell at a time, straight out of the Nerd
 Font file: no SVG rasterizer available offline honours a font embedded with

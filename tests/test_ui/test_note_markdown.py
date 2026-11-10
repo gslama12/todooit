@@ -30,11 +30,12 @@ from todooit.ui.screens.note.disp.markdown import (
         ("Title\n===", "# Title"),
         ("Title\n---", "## Title"),
         ("#hashtag", "#hashtag"),
-        # Stars are read as they are, underscores become stars
+        # Stars are read as they are, underscores become stars mark for mark
         ("**bold** and *it*", "**bold** and *it*"),
-        ("***both*** __u__ _x_", "***both*** **u** **x**"),
+        ("***both*** __u__ _x_ ___t___", "***both*** **u** *x* ***t***"),
         ("snake_case_name", "snake_case_name"),
         ("a * b * c", "a * b * c"),
+        ("==marked==", "==marked=="),
         (r"\*not\* emphasis", "*not* emphasis"),
         # Every bullet is a dash, nested by however the file indents
         ("- a\n* b\n+ c", "- a\n- b\n- c"),
@@ -71,7 +72,7 @@ def test_a_rule_pasted_under_text_keeps_off_it():
 
 def test_the_first_line_mid_line_is_left_as_words():
     assert from_markdown("# not _here_\n- but here", PASTE_INLINE) == (
-        "# not **here**\n- but here"
+        "# not *here*\n- but here"
     )
 
 

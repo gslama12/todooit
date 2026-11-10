@@ -17,11 +17,14 @@ from todooit.vim_engine import (
 
 from .markup import (
     BACKDROP,
+    BOLD,
+    BOLD_ITALIC,
     BULLET_SPANS,
-    EMPH,
     GUTTER,
     GUTTER_CURSOR,
     HEADER_SPANS,
+    HIGHLIGHT,
+    ITALIC,
     LINK,
     MARKED,
     MARKED_FIRST,
@@ -98,11 +101,15 @@ def build_theme(theme: TodooitThemeBase) -> TextAreaTheme:
         cursor_line_style=Style(),
         selection_style=selection_style(theme),
         syntax_styles={
-            # The only emphasis kind; orange since it's otherwise unused here.
-            EMPH: Style(color=theme.orange, bold=True),
-            # Stray `*` (pasted markdown / unfinished pair): faint, not
-            # hidden - invisible at line-start would look like a missing indent.
-            MARKER: Style(color=blend(theme.orange, theme.background2, 0.55)),
+            # Real weight and slant, in whatever color the text around has
+            ITALIC: Style(italic=True),
+            BOLD: Style(bold=True),
+            BOLD_ITALIC: Style(bold=True, italic=True),
+            # `==x==`: picked out in orange, since it's otherwise unused here
+            HIGHLIGHT: Style(color=theme.orange, bold=True),
+            # The marks of a pair on the cursor line (`*`, `_`, `=`): faint, not hidden -
+            # invisible at line-start would look like a missing indent.
+            MARKER: Style(color=blend(theme.foreground3, theme.background2, 0.55)),
             # Quoted line drawn like markdown: green text + bar; a marker
             # inside also goes green+bold.
             QUOTE: Style(color=theme.green),
