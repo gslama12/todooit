@@ -1052,7 +1052,7 @@ class ModelTree(FlashJump, Generic[ModelType, RenderDictType]):
         """
         The row this pane draws directly above/below one, or None. Read off the pane's
         own drawn order, not the filing, since a pane can reorder or omit rows (e.g.
-        completed/binned todos still filed here but drawn elsewhere).
+        hidden completed or binned todos still filed here).
         """
 
         parent = model.parent

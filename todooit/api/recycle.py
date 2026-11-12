@@ -3,14 +3,15 @@ The Bin: throwing work away and getting it back
 
 Dropping a todo moves it (with its children) to the Bin until it is restored
 or the Bin is emptied. Dropping a project deletes only the project row: its
-todos go to the Bin carrying their `origin_path`, which is used to rebuild the
-project if one of them is restored later.
+todos, open or completed, go to the Bin carrying their `origin_path`, which is
+used to rebuild the project if one of them is restored later. An orphan is
+always binned, so restoring one always gives it a project again.
 """
 
 from datetime import datetime
 from typing import List, Optional
 
-from .fixed_projects import binned_tasks, completed_tasks, project_path, split_path
+from .fixed_projects import binned_tasks, project_path, split_path
 from .manager import manager
 from .placement import bin_row_of
 from .project import Project
@@ -38,9 +39,8 @@ def move_todo_to_bin(todo: Todo) -> None:
 
 def restore_todo(todo: Todo) -> List[Project]:
     """
-    Restore a binned todo's whole task; returns any projects that had to be rebuilt
-
-    Completed tasks stay orphaned (they live in the Completed log) until unticked.
+    Restore a binned todo's whole task to its project; returns any projects
+    that had to be rebuilt. A completed task stays completed, hidden in it.
     """
 
     todo = bin_row_of(todo)
@@ -50,10 +50,7 @@ def restore_todo(todo: Todo) -> List[Project]:
 
     todo.save()
 
-    if todo.pending:
-        return revive_home(todo)
-
-    return []
+    return revive_home(todo)
 
 
 def revive_home(todo: Todo) -> List[Project]:
@@ -143,25 +140,7 @@ def empty_bin() -> List[str]:
     Permanently delete everything in the Bin; returns the uuids of all deleted rows
     """
 
-    return _delete_tasks(binned_tasks())
-
-
-def empty_completed() -> List[str]:
-    """
-    Permanently delete every task in Completed; returns the uuids of all deleted rows
-
-    A step finished under a parent that is still open goes on its own; the
-    parent stays in its project.
-    """
-
-    return _delete_tasks(completed_tasks())
-
-
-def _delete_tasks(tasks: List[Todo]) -> List[str]:
-    """
-    Delete tasks for good, steps and all; returns the uuids of all deleted rows
-    """
-
+    tasks = binned_tasks()
     gone = [node.uuid for todo in tasks for node in todo.family]
 
     # Deleting the task cascades to its children

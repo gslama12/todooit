@@ -167,50 +167,38 @@ async def test_goto_item_on_a_row_at_home_says_so():
         assert home.current_model is todo
 
 
-async def test_the_log_and_the_bin_turn_goto_item_away():
+async def test_the_bin_turns_goto_item_away():
     """
-    Neither of them is somewhere a row was gathered from: it is where it is
+    The Bin is not somewhere a row was gathered from: it is where it is
 
-    A finished task has left the pane of the project it was filed under and a
-    thrown away one has too, so there is no row over there to walk to — and
-    the key that gives it one back already takes the cursor with it.
+    A thrown away task has left the pane of the project it was filed under, so
+    there is no row over there to walk to — and the key that gives it one back
+    already takes the cursor with it.
     """
 
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
         await new_project(pilot, "home")
-
-        await new_todo(pilot, "done deal")
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("n")
-        await commit_line(pilot, "dropped")
+        await new_todo(pilot, "dropped")
         await pilot.press("x", "x")
         await pilot.pause()
 
-        refusals = (
-            (("g", "c"), "Completed", "c"),
-            (("g", "b"), "Bin", "R"),
-        )
+        await pilot.press("g", "b")
+        await settle(pilot)
 
-        for keys, title, instead in refusals:
-            await pilot.press(*keys)
-            await settle(pilot)
+        pane = visible_todos(app)
 
-            pane = visible_todos(app)
+        await pilot.press("g", "i")
+        await settle(pilot)
 
-            await pilot.press("g", "i")
-            await settle(pilot)
+        message = notification_message(app)
+        assert message is not None
+        assert "Tasks can't be gone to in [b]Bin[/b]" in message
+        assert "[b]R[/b]" in message
 
-            message = notification_message(app)
-            assert message is not None, title
-            assert f"Tasks can't be gone to in [b]{title}[/b]" in message, title
-            assert f"[b]{instead}[/b]" in message, title
-
-            # And nothing moved: the pane is still the one that was in front
-            assert visible_todos(app) is pane, title
+        # And nothing moved: the pane is still the one that was in front
+        assert visible_todos(app) is pane
 
 
 async def test_goto_item_is_the_tasks_pane_alone():

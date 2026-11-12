@@ -261,18 +261,6 @@ async def test_empty_bin_notifies_when_empty():
         assert notification_message(app) == "The Bin is already empty"
 
 
-async def test_empty_completed_notifies_when_empty():
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-        await pilot.press("Y", "Y")
-        await pilot.pause()
-
-        assert notification_message(app) == "Completed is already empty"
-
-
 async def test_fixed_projects_cannot_be_edited():
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -431,7 +419,7 @@ async def test_cursor_movement_spans_fixed_and_stored_rows():
         assert highlighted_index(ptree) == 0
 
         await pilot.press("l")
-        assert ptree.current_model.uuid == "FixedProject_completed"
+        assert ptree.current_model.uuid == "FixedProject_bin"
 
 
 async def test_go_to_top_and_bottom_stay_on_stored_projects():
@@ -529,14 +517,14 @@ async def test_pane_that_fits_has_no_scrollbar(monkeypatch):
     """
     The scrollbar keeps off a projects pane whose rows fit in it
 
-    Completed and Bin are held against the floor by a run of blank lines over
+    The Bin is held against the floor by a run of blank lines over
     their rule, and that run is measured off the pane's own height. On the
     first window opened in a process the measurement can be taken before the
     app's stylesheet has been applied, while the pane is still wearing
     OptionList's own padding -- a column either side rather than a line above
     and below -- and so reports two rows of floor it is not going to have.
     The gap that comes out of that is two lines too long, which is exactly
-    enough to push the pinned block past the bottom and leave a scrollbar
+    enough to push the pinned Bin past the bottom and leave a scrollbar
     standing over a pane that fits.
 
     The measurement is taken again when the styles land, so a gap worked out

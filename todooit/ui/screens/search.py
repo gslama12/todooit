@@ -18,9 +18,9 @@ from rich.table import Table
 from rich.text import Text
 from sqlalchemy import select
 
-from todooit.api import BIN, COMPLETED, Todo, manager
+from todooit.api import BIN, Todo, manager
 from todooit.api.fixed_projects import project_path
-from todooit.api.placement import home_of, project_of
+from todooit.api.placement import project_of
 from todooit.ui.widgets.trees.model_tree import GroupHeading
 from todooit.utils import blend, day_label
 
@@ -66,21 +66,19 @@ EMPTY_NOTE_QUERY = "Type to find in notes"
 NO_NOTE_MATCHES = "No note matches"
 
 # Draw order of match blocks: pending tasks first and unheaded (what the
-# finder is for), then completed/binned, each headed by its pane's name
+# finder is for), then completed and binned, each under a heading saying so
 LIVE, DONE, BINNED = 0, 1, 2
 
-SECTION_LABELS = {DONE: COMPLETED.title, BINNED: BIN.title}
+SECTION_LABELS = {DONE: "Completed", BINNED: BIN.title}
 
 
 def section_of(todo: Todo) -> int:
-    """Which block a todo is drawn in: the one matching its home (see placement)."""
+    """Which block a todo is drawn in: the Bin's, else completed or open."""
 
-    home = home_of(todo)
-
-    if home is BIN:
+    if todo.is_binned:
         return BINNED
 
-    if home is COMPLETED:
+    if todo.is_completed:
         return DONE
 
     return LIVE

@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Callable, Iterator, List, Optional, Union
 
 from todooit.api import (
     BIN,
-    COMPLETED,
     TODAY,
     UPCOMING,
     History,
@@ -12,9 +11,7 @@ from todooit.api import (
     Todo,
     TodoSortModeType,
     binned_tasks,
-    completed_tasks,
     empty_bin,
-    empty_completed,
 )
 from todooit.ui.api.events import BarNotification, NotificationType
 from todooit.ui.api.plug import ConfigManager
@@ -241,11 +238,6 @@ class TodooitAPI:
 
         self.goto_fixed_project(UPCOMING.key)
 
-    def goto_completed(self):
-        """Jump to Completed and start on the task finished last"""
-
-        self.goto_fixed_project(COMPLETED.key)
-
     def goto_bin(self):
         """Jump to the Bin and start on the task thrown away last"""
 
@@ -379,92 +371,42 @@ class TodooitAPI:
         self.focused.restore_node()
 
     def empty_pane(self):
-        """Empty the Bin or Completed, whichever is open (asks first)"""
+        """Delete everything in the Bin for good, if it is open (asks first)"""
 
         if self.app.bar_switcher.is_focused:
             return
 
         tree = self.vars.todos_tree
-        model = tree.model if tree is not None else None
 
-        if model is BIN:
-            self.empty_bin()
-        elif model is COMPLETED:
-            self.empty_completed()
-        else:
-            # Far too much to lose to a chord typed in the wrong pane, so it
-            # only works where what it empties is right there on screen.
-            self.notify(
-                "[b]YY[/b] only empties the Bin ([b]gb[/b]) or Completed ([b]gc[/b])",
-                "warning",
-            )
-
-    def empty_bin(self):
-        """Delete everything in the Bin for good (asks first)"""
-
-        self._empty(
-            count=len(binned_tasks()),
-            where="in the Bin",
-            already="The Bin is already empty",
-            done="Bin emptied",
-            cancelled="Bin left as it was",
-            empty=self._empty_bin,
-        )
-
-    def empty_completed(self):
-        """Delete every completed task for good (asks first)"""
-
-        self._empty(
-            count=len(completed_tasks()),
-            where="in Completed",
-            already="Completed is already empty",
-            done="Completed emptied",
-            cancelled="Completed left as it was",
-            empty=self._empty_completed,
-        )
-
-    def _empty(
-        self,
-        count: int,
-        where: str,
-        already: str,
-        done: str,
-        cancelled: str,
-        empty: Callable[[], None],
-    ) -> None:
-        """Asks before emptying a fixed pane, counting what is about to go"""
-
-        if self.app.bar_switcher.is_focused:
+        # Far too much to lose to a chord typed in the wrong pane, so it only
+        # works where what it empties is right there on screen.
+        if tree is None or tree.model is not BIN:
+            self.notify("[b]YY[/b] only works in the Bin ([b]gb[/b])", "warning")
             return
 
-        # Notify rather than confirm on an empty pane, so there's nothing to
+        count = len(binned_tasks())
+
+        # Notify rather than confirm on an empty Bin, so there's nothing to
         # dismiss for no reason.
         if not count:
-            self.notify(already)
+            self.notify("The Bin is already empty")
             return
 
         # Unlike other deletes, this isn't tied to the cursor's row, so the
         # confirmation counts what's about to go instead of pointing at it.
         label = "task" if count == 1 else "tasks"
-        message = rf"Delete {count} {label} {where} for good? \[y/N]"
-        confirmed = f"{done} — {count} {label} deleted"
+        message = rf"Delete {count} {label} in the Bin for good? \[y/N]"
+        confirmed = f"Bin emptied — {count} {label} deleted"
 
+        # The panes drop the deleted rows from the change signal
         if not self.vars.show_confirm:
-            empty()
+            empty_bin()
             self.notify(confirmed, "warning")
             return
 
-        self.app.screen.post_message(ShowConfirm(empty, message, confirmed, cancelled))
-
-    def _empty_bin(self) -> None:
-        """Empties the Bin; the panes drop the deleted rows from the change signal."""
-
-        empty_bin()
-
-    def _empty_completed(self) -> None:
-        """Empties Completed; the panes drop the deleted rows from the change signal."""
-
-        empty_completed()
+        self.app.screen.post_message(
+            ShowConfirm(empty_bin, message, confirmed, "Bin left as it was")
+        )
 
     def undo(self):
         """Take back the last change made in the panes"""
@@ -497,6 +439,26 @@ class TodooitAPI:
         # Posted at the screen like quick add: it walks the cursor to whatever
         # gets picked.
         self.app.screen.post_message(SpawnSearch())
+
+    def toggle_show_completed(self):
+        """Show or hide completed tasks in their projects"""
+
+        self.show_completed(not self.vars.show_completed)
+
+    def show_completed(self, show: bool) -> None:
+        """
+        Turns the session's switch for completed tasks, redrawing every
+        project pane with the cursor kept on its row (a pane out of sight
+        redraws when it is next shown)
+        """
+
+        if show == self.vars.show_completed:
+            return
+
+        self.vars.show_completed = show
+
+        for tree in self.app.screen.query(TodosTree):
+            tree.force_refresh()
 
     def toggle_complete(self):
         """Toggle the completion of the todo"""

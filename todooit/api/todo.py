@@ -182,7 +182,8 @@ class Todo(TodooitModel["Outcome"]):
     @property
     def is_orphan(self) -> bool:
         """
-        Whether this todo's project was deleted (only happens to binned or completed todos)
+        Whether this todo's project was deleted. An orphan is always binned:
+        every todo outside the Bin has a project.
         """
 
         return self.parent_project is None and self.parent_todo is None

@@ -14,7 +14,8 @@ it was missing.
 
 ## Features
 
-- **Fixed views** — Today, Upcoming, Completed and a Bin, built from your real projects and jumped to with `gt` / `gu` / `gc` / `gb`.
+- **Fixed views** — Today, Upcoming and a Bin, built from your real projects and jumped to with `gt` / `gu` / `gb`.
+- **Done stays put** — a ticked task stays in its project, hidden; `.` shows completed tasks in place, struck through.
 - **Nested projects and tasks** — both nest as deep as you want; `h` folds, `I` / `U` indent. A task's dates hold its steps: planning a task plans its steps, and no step is due after its task.
 - **Dates in words** — scheduled (`s`) and due (`d`) typed as `tom`, `next friday`, `in 2w`, `eom`, `19.07.`, or picked off a calendar (`cal`).
 - **Smart recurrence** — `r` repeats a task every `3d`, `2w`, `1m`, or on the last *working* day of the month with `eom`.

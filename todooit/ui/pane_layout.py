@@ -86,21 +86,28 @@ def context_id(block: int, todo: Todo) -> str:
     return f"todooit-todo-context-{block}-{todo.id}"
 
 
-def drawn_children(model: Union[Project, Todo], sort_mode: Optional[str]) -> List[Todo]:
+def drawn_children(
+    model: Union[Project, Todo], sort_mode: Optional[str], show_completed: bool = True
+) -> List[Todo]:
     """
     The todos a pane draws under a project or a row: those living where their
-    parent does (see placement), in the pane's order. A step completed or
-    binned on its own leaves for Completed or the Bin.
+    parent does (see placement), in the pane's order. A step binned on its own
+    leaves for the Bin. Completed todos stay where they are, drawn only while
+    `show_completed` is on: the one place they are hidden.
     """
 
     home = model if isinstance(model, Project) else home_of(model)
-    todos = [todo for todo in model.todos if home_of(todo) is home]
+    todos = [
+        todo
+        for todo in model.todos
+        if home_of(todo) is home and (show_completed or todo.is_pending)
+    ]
 
     return sort_todos(todos, sort_mode)
 
 
 def project_groups(
-    model: Union[Project, Todo], sort_mode: Optional[str]
+    model: Union[Project, Todo], sort_mode: Optional[str], show_completed: bool = True
 ) -> List[TodoGroup]:
     """
     The blocks a stored project's pane draws: its own todos first (unlabelled),
@@ -109,10 +116,10 @@ def project_groups(
     dropped.
     """
 
-    groups = [TodoGroup(todos=drawn_children(model, sort_mode))]
+    groups = [TodoGroup(todos=drawn_children(model, sort_mode, show_completed))]
 
     if isinstance(model, Project):
-        groups += _sub_project_groups(model, "", sort_mode)
+        groups += _sub_project_groups(model, "", sort_mode, show_completed)
 
     return [group for group in groups if group.todos]
 
@@ -123,14 +130,17 @@ def project_groups(
 
 
 def _sub_project_groups(
-    parent: Project, prefix: str, sort_mode: Optional[str]
+    parent: Project, prefix: str, sort_mode: Optional[str], show_completed: bool
 ) -> List[TodoGroup]:
     groups: List[TodoGroup] = []
 
     for child in parent.projects:
         label = f"{prefix}{child.description}"
-        groups.append(TodoGroup(todos=drawn_children(child, sort_mode), label=label))
-        groups += _sub_project_groups(child, f"{label}{PATH_SEPARATOR}", sort_mode)
+        todos = drawn_children(child, sort_mode, show_completed)
+        groups.append(TodoGroup(todos=todos, label=label))
+        groups += _sub_project_groups(
+            child, f"{label}{PATH_SEPARATOR}", sort_mode, show_completed
+        )
 
     return groups
 

@@ -124,9 +124,8 @@ api.layouts.project_layout = [
 ]
 ```
 
-`TodoWidget`: `status`, `description`, `due`, `scheduled`, `completed`,
-`binned`, `priority`, `recurrence`, `note`. `completed` is only drawn
-by the Completed pane and `binned` only by the Bin.
+`TodoWidget`: `status`, `description`, `due`, `scheduled`, `binned`,
+`priority`, `recurrence`, `note`. `binned` is only drawn by the Bin.
 
 `ProjectWidget`: `description`.
 

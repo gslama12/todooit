@@ -20,6 +20,7 @@ class VarManager(ApiComponent):
         self._always_expand_projects = False
         self._always_expand_todos = False
         self._todo_sort: Optional[TodoSortModeType] = "priority"
+        self._show_completed = False
         self._projects_pane_auto_width = True
         self._projects_pane_max_width = 0.25
         self._flash_alphabet = FLASH_ALPHABET
@@ -42,6 +43,20 @@ class VarManager(ApiComponent):
     @todo_sort.setter
     def todo_sort(self, value: Optional[TodoSortModeType]):
         self._todo_sort = value
+
+    @property
+    def show_completed(self) -> bool:
+        """
+        Whether project panes draw completed tasks. One switch for the whole
+        session, off at every launch and never saved: it changes the view, not
+        the data. Flip it with `TodooitAPI.show_completed`, which redraws.
+        """
+
+        return self._show_completed
+
+    @show_completed.setter
+    def show_completed(self, value: bool):
+        self._show_completed = value
 
     @property
     def always_expand_projects(self) -> bool:

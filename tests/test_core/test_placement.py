@@ -1,14 +1,14 @@
 """
 Placement: where a todo lives (its home), its root, its bin row and its project
 
-Rules R1-R5 of the placement glossary, plus the tripwire that keeps the
-Completed and Bin panes' own gathering in step with placement.
+Rules R1-R4 of the placement glossary, the rule that an orphan is always
+binned, and the tripwire that keeps the Bin's own gathering in step with
+placement.
 """
 
 from tests.test_core.core_base import *  # noqa
 from todooit.api import (
     BIN,
-    COMPLETED,
     Todo,
     move_project_to_bin,
     move_todo_to_bin,
@@ -17,7 +17,6 @@ from todooit.api import (
 from todooit.ui.pane_layout import drawn_children
 from todooit.api.placement import (
     bin_row_of,
-    completed_row_of,
     home_of,
     project_of,
     root_of,
@@ -51,7 +50,7 @@ def test_a_step_binned_on_its_own_lives_in_the_bin_as_its_own_bin_row(
     assert home_of(root) is p
 
 
-def test_a_completed_root_lives_in_completed_with_its_steps(create_project):
+def test_a_completed_root_stays_in_its_project_with_its_steps(create_project):
     """R2"""
 
     p = create_project("work")
@@ -61,15 +60,13 @@ def test_a_completed_root_lives_in_completed_with_its_steps(create_project):
 
     root.toggle_complete()
 
-    assert home_of(root) is COMPLETED
-    assert home_of(step) is COMPLETED
-    assert home_of(sub_step) is COMPLETED
+    assert home_of(root) is p
+    assert home_of(step) is p
+    assert home_of(sub_step) is p
 
 
-def test_a_completed_step_under_an_open_root_lives_in_completed_as_its_own_row(
-    create_project,
-):
-    """R3: a step finished on its own leaves its project like any task"""
+def test_a_completed_step_under_an_open_root_stays_under_it(create_project):
+    """R3: a step finished on its own stays where it is, drawn only when shown"""
 
     p = create_project("work")
     root = p.add_todo()
@@ -80,30 +77,9 @@ def test_a_completed_step_under_an_open_root_lives_in_completed_as_its_own_row(
 
     assert root.is_pending
     assert home_of(root) is p
-    assert home_of(done) is COMPLETED
-    assert completed_row_of(done) is done
-    assert done not in drawn_children(root, None)
-
-
-def test_a_step_finished_before_its_parent_is_drawn_in_the_parent_s_row(
-    create_project,
-):
-    """R2: once the parent is completed too, the step is drawn under it"""
-
-    p = create_project("work")
-    root = p.add_todo()
-    early = root.add_todo()
-    sub_step = early.add_todo()
-    root.add_todo()
-
-    early.toggle_complete()
-    assert completed_row_of(sub_step) is early
-
-    root.toggle_complete()
-
-    assert completed_row_of(early) is root
-    assert completed_row_of(sub_step) is root
-    assert [t.id for t in COMPLETED.todos] == [root.id]
+    assert home_of(done) is p
+    assert done in drawn_children(root, None, show_completed=True)
+    assert done not in drawn_children(root, None, show_completed=False)
 
 
 def test_an_open_todo_in_a_nested_project_lives_in_that_project(create_project):
@@ -151,10 +127,10 @@ def test_an_open_orphan_restored_gets_its_project_back(create_project):
     assert home is not None and home.description.endswith("work")
 
 
-def test_a_restored_completed_orphan_lives_in_completed_without_a_project(
+def test_a_restored_completed_orphan_gets_its_project_back_still_completed(
     create_project,
 ):
-    """R5"""
+    """R4: open or completed, a restored task goes home"""
 
     work = create_project("work")
     root = work.add_todo()
@@ -164,69 +140,55 @@ def test_a_restored_completed_orphan_lives_in_completed_without_a_project(
     move_project_to_bin(work)
     restore_todo(step)
 
-    assert home_of(root) is COMPLETED
-    assert home_of(step) is COMPLETED
-    assert project_of(root) is None
-    assert root.origin_path == "work"
-
-
-def test_reopening_a_completed_orphan_gets_its_project_back(create_project):
-    """R4: through the API, not just the Completed pane"""
-
-    work = create_project("work")
-    root = work.add_todo()
-    root.toggle_complete()
-
-    move_project_to_bin(work)
-    restore_todo(root)
-
-    outcome = root.toggle_complete()
-
     home = project_of(root)
-    assert home is not None
+    assert home is not None and home.description == "revived - work"
     assert home_of(root) is home
-    assert home.description == "revived - work"
-    assert outcome.revived == [home]
+    assert home_of(step) is home
+    assert root.is_completed and step.is_completed
     assert root.origin_path == ""
 
 
-def test_reopening_a_step_of_a_completed_orphan_gets_its_root_a_project(
-    create_project,
-):
-    """R4: reopening a step reopens its root, which needs somewhere to live"""
+def assert_orphans_are_binned() -> None:
+    for todo in Todo.all():
+        if todo.is_orphan:
+            assert todo.is_binned, todo.description
+
+
+def test_an_orphan_is_always_binned(create_project):
+    """The rule: every todo outside the Bin has a project, after every move"""
 
     work = create_project("work")
-    root = work.add_todo()
-    step = root.add_todo()
-    root.toggle_complete()
+    done = work.add_todo()
+    done.description = "done"
+    done.add_todo()
+    open_one = work.add_todo()
+    open_one.description = "open"
+    open_one.add_todo()
+
+    done.toggle_complete()
+    assert_orphans_are_binned()
 
     move_project_to_bin(work)
-    restore_todo(root)
+    assert_orphans_are_binned()
 
-    step.toggle_complete()
+    restore_todo(done)
+    assert_orphans_are_binned()
 
-    assert root.is_pending
-    assert project_of(step) is not None
-    assert home_of(step) is project_of(step)
+    done.toggle_complete()
+    assert_orphans_are_binned()
 
+    done.toggle_complete()
+    restore_todo(open_one)
+    assert_orphans_are_binned()
 
-def test_reopening_a_todo_with_a_project_rebuilds_nothing(create_project):
-    p = create_project("work")
-    todo = p.add_todo()
-    todo.toggle_complete()
-
-    outcome = todo.toggle_complete()
-
-    assert outcome.revived == []
-    assert home_of(todo) is p
+    assert all(t.is_binned or project_of(t) is not None for t in Todo.all())
 
 
-def test_completed_and_the_bin_gather_exactly_what_lives_there(create_project):
+def test_the_bin_gathers_exactly_what_lives_there(create_project):
     """
-    The tripwire: Completed and the Bin keep their own fast gathering, and it
-    must agree with placement over a tree of every kind of todo
+    The tripwire: the Bin keeps its own fast gathering, and it must agree with
+    placement over a tree of every kind of todo
     """
-
     work = create_project("work")
     api = create_project("api", parent_project=work)
     house = create_project("my house")
@@ -269,19 +231,12 @@ def test_completed_and_the_bin_gather_exactly_what_lives_there(create_project):
 
     everything = Todo.all()
 
-    # No todo is left without a home: an open orphan never outlives its call
+    # No todo is left without a home: an orphan is always binned
     assert all(home_of(t) is not None for t in everything)
 
-    completed_rows = {
-        t.id
-        for t in everything
-        if home_of(t) is COMPLETED and completed_row_of(t) is t
-    }
     bin_rows = {t.id for t in everything if home_of(t) is BIN and bin_row_of(t) is t}
 
-    assert {t.id for t in COMPLETED.todos} == completed_rows
     assert {t.id for t in BIN.todos} == bin_rows
 
     # Every kind made it in, so the agreement above means something
-    assert completed_rows == {done_root.id, done_orphan.id, open_done.id}
     assert len(bin_rows) == 6

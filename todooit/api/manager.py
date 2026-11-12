@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from todooit.paths import database_file
 
 from .note_migration import back_up_database, migrate_notes, migration_due
+from .orphan_migration import bin_completed_orphans, orphans_due
 
 
 class Manager:
@@ -56,6 +57,9 @@ class Manager:
 
         if notes_due:
             migrate_notes(self.engine)
+
+        if orphans_due(self.engine):
+            bin_completed_orphans(self.engine)
 
     # Columns the model no longer has. Left in place they would break every
     # insert, since they were created NOT NULL with only a Python-side default.

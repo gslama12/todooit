@@ -7,8 +7,14 @@ project it is filed under and whether or not it is still to be done.
 
 ![The finder](/screenshots/search.svg)
 
+Completed tasks are found too, listed after the open ones under a
+**Completed** heading and drawn ticked and grayed; binned ones come last,
+under **Bin**.
+
 `enter` walks the cursor over to the task that was picked, in the project it
-actually lives in. `escape` leaves everything where it was.
+actually lives in. A completed task is hidden there, so picking one switches
+completed tasks on (as `.` does) and the cursor lands on its row. `escape`
+leaves everything where it was.
 
 ### Searching notes
 
@@ -70,5 +76,5 @@ An error in the status bar can be copied too: click it.
 | --- | --- |
 | `gg` / `G` | Top / bottom of the pane |
 | `f` | Flash to any row on screen |
-| `gt` `gu` `gc` `gb` | Today / Upcoming / Completed / Bin |
+| `gt` `gu` `gb` | Today / Upcoming / Bin |
 | `gi` | From a fixed pane, to the task in its own project |

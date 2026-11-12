@@ -25,7 +25,7 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
-from todooit.api import TODAY, UPCOMING, Todo, move_project_to_bin, restore_todo
+from todooit.api import TODAY, UPCOMING, Todo
 from todooit.ui.api.events import GotoFixedProject, SpawnHelp
 from todooit.ui.pane_layout import GUIDE_BLANK, GUIDE_LAST_BRANCH, context_id
 from todooit.ui.widgets.trees.fixed_todos_tree import reschedule_mark
@@ -35,9 +35,9 @@ async def settle(pilot):
     """
     Waits out the jump a key sends the app on
 
-    Unticking in the log and restoring from the Bin both post the task on to
-    the screen, which opens the pane it went to and puts the cursor there. The
-    pane can have to be built first, so more than one beat passes before the
+    Restoring from the Bin posts the task on to the screen, which opens the
+    pane it went to and puts the cursor there. The pane can have to be built
+    first, so more than one beat passes before the
     screen is the one the user ends up looking at.
     """
 
@@ -485,213 +485,6 @@ async def test_upcoming_carries_a_slipped_row_into_today():
         assert "project" in upcoming.row_note(missed, upcoming._rows[missed.uuid]).plain
 
 
-async def test_a_step_finished_on_its_own_is_labelled_with_its_project_only():
-    """A lone step in the log names the project it came from, never its parent"""
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "move house")
-        await pilot.press("N")
-        await commit_line(pilot, "book van")
-
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-        assert descriptions(completed) == ["book van"]
-
-        row_id = tree_options(completed)[0].id
-        assert row_id is not None
-
-        step = completed._renderers[row_id].model
-        note = completed.row_note(step, completed._rows[step.uuid]).plain
-
-        assert "project" in note
-        assert "move house" not in note
-        assert step.parent_todo is not None and step.parent_todo.is_pending
-
-
-async def test_completing_a_task_moves_it_to_completed():
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        tree = await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "done deal")
-
-        await pilot.press("c")
-        await pilot.pause()
-
-        # Gone from its own pane
-        assert tree_options(tree) == []
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-        rows = tree_options(completed)
-        assert len(rows) == 1
-        assert completed.current_model.description == "done deal"
-
-
-async def test_unticking_in_completed_goes_to_the_task_at_home():
-    """The row leaves the log at once, and the cursor goes where it went"""
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        tree = await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "not quite done")
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-
-        with flashed() as flashes:
-            await pilot.press("c")  # untick it right there
-            await settle(pilot)
-
-        todo = Todo.all()[0]
-        assert todo.is_pending
-
-        # Nothing left of it in the log
-        assert tree_options(completed) == []
-
-        # The pane in front is the project it came out of, focused, with the
-        # cursor on the row and the row flashed the way a found task is
-        assert visible_todos(app) is tree
-        assert app.focused is tree
-        assert tree.current_model is todo
-        assert (tree.id, todo.uuid) in flashes
-
-        # And the projects pane came along, so the two sides agree
-        assert app.project_tree.current_model is tree.model
-
-
-async def test_unticking_a_step_in_completed_goes_to_the_step():
-    """Unticking a step sends the whole task back, and points at the step"""
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        tree = await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "the task")
-        await pilot.press("N")
-        await commit_line(pilot, "the step")
-
-        # The task is what gets ticked; the step goes with it
-        await pilot.press("k")
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-
-        # The log draws the task with its step under it already open: the
-        # cursor starts on the task, and one row down is the step
-        await settle(pilot)
-        assert completed.current_model.description == "the task"
-
-        await pilot.press("l")
-        await pilot.pause()
-        assert completed.current_model.description == "the step"
-
-        with flashed() as flashes:
-            await pilot.press("c")
-            await settle(pilot)
-
-        step = [todo for todo in Todo.all() if todo.description == "the step"][0]
-
-        # The whole family is back among the work to be done
-        assert all(todo.is_pending for todo in Todo.all())
-        assert tree_options(completed) == []
-
-        assert visible_todos(app) is tree
-        assert tree.current_model is step
-        assert (tree.id, step.uuid) in flashes
-
-
-async def test_unticking_a_task_whose_project_was_dropped_rebuilds_it():
-    """
-    The log can hold a task whose project has since gone to the Bin;
-    unticking it rebuilds the project, says so, and goes there
-    """
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        project = app.api.vars.projects_tree.model.add_project()
-        project.description = "abandoned"
-        project.save()
-        todo = project.add_todo()
-        todo.description = "not quite done"
-        todo.save()
-        todo.toggle_complete()
-
-        move_project_to_bin(project)
-        restore_todo(todo)
-        app.api.vars.projects_tree.force_refresh()
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        await pilot.press("c")
-        await settle(pilot)
-
-        revived = todo.parent_project
-        assert todo.is_pending
-        assert revived is not None
-        assert revived.description == "revived - abandoned"
-
-        assert visible_todos(app).model is revived
-        assert visible_todos(app).current_model is todo
-
-        message = notification_message(app)
-        assert message is not None and "abandoned" in message
-
-
-async def test_reticking_in_completed_stays_put():
-    """A row that never left the log is not followed anywhere"""
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "done deal")
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-        await pilot.press("c")  # untick: off to its own project
-        await settle(pilot)
-
-        await pilot.press("c")  # and tick it again, from over there
-        await settle(pilot)
-
-        assert Todo.all()[0].is_completed
-
-        # Ticking is not unticking: the cursor stayed in the project's pane
-        assert visible_todos(app) is not completed
-
-
 async def test_fixed_panes_refuse_reordering_and_new_tasks():
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -936,12 +729,10 @@ async def test_the_refusal_points_at_the_key_that_does_work():
         assert len(Todo.all()) == 1
 
 
-async def test_the_log_and_the_bin_refuse_new_steps():
+async def test_the_bin_refuses_new_steps():
     """
-    Nothing in either of them is being worked on, so nothing in them is broken
-    down: a step written into a finished task would leave the log holding a row
-    with work left in it, and one written into a binned task would be out of
-    reach until the task came back.
+    Nothing in it is being worked on, so nothing in it is broken down: a step
+    written into a binned task would be out of reach until the task came back.
     """
 
     async with run_pilot() as pilot:
@@ -949,35 +740,27 @@ async def test_the_log_and_the_bin_refuse_new_steps():
 
         await create_and_move_to_todo(pilot)
         await pilot.press("n")
-        await commit_line(pilot, "done deal")
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("n")
         await commit_line(pilot, "dropped")
         await pilot.press("x", "x")
         await pilot.pause()
 
-        for keys, title in ((("g", "c"), "Completed"), (("g", "b"), "Bin")):
-            await pilot.press(*keys)
-            await settle(pilot)
+        await pilot.press("g", "b")
+        await settle(pilot)
 
-            await pilot.press("N")
-            await pilot.pause()
+        await pilot.press("N")
+        await pilot.pause()
 
-            message = notification_message(app)
-            assert message is not None, title
-            assert f"Steps can't be added in [b]{title}[/b]" in message, title
+        message = notification_message(app)
+        assert message is not None
+        assert "Steps can't be added in [b]Bin[/b]" in message
 
-            # And a task of its own is turned away with nothing to point at
-            # instead, since there is nothing here that does work
-            await pilot.press("n")
-            await pilot.pause()
+        # And a task of its own is turned away with nothing to point at
+        # instead, since there is nothing here that does work
+        await pilot.press("n")
+        await pilot.pause()
 
-            message = notification_message(app)
-            assert message == f"Tasks can't be added in [b]{title}[/b]", title
-
-        assert len(Todo.all()) == 2
+        assert notification_message(app) == "Tasks can't be added in [b]Bin[/b]"
+        assert len(Todo.all()) == 1
 
 
 async def test_binning_from_today_removes_it_everywhere():
@@ -1125,52 +908,6 @@ async def test_restoring_a_step_from_the_bin_brings_the_task_with_it():
         assert (tree.id, step.uuid) in flashes
 
 
-async def test_restoring_a_finished_task_from_the_bin_goes_to_the_log():
-    """
-    Restoring does not untick: a task that was done goes back to the log
-
-    The Bin and the completion log are two different things to have become,
-    and coming out of one is not coming out of the other.
-    """
-
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await create_and_move_to_todo(pilot)
-        await pilot.press("n")
-        await commit_line(pilot, "done, then dropped")
-
-        await pilot.press("c")
-        await pilot.pause()
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        completed = visible_todos(app)
-        await settle(pilot)
-
-        await pilot.press("x", "x")
-        await pilot.pause()
-
-        await pilot.press("g", "b")
-        await pilot.pause()
-
-        bin_tree = visible_todos(app)
-        await settle(pilot)
-
-        with flashed() as flashes:
-            await pilot.press("R")
-            await settle(pilot)
-
-        todo = Todo.all()[0]
-        assert not todo.is_binned
-        assert todo.is_completed
-
-        assert tree_options(bin_tree) == []
-        assert visible_todos(app) is completed
-        assert completed.current_model is todo
-        assert (completed.id, todo.uuid) in flashes
-
-
 async def test_empty_bin_via_chord():
     async with run_pilot() as pilot:
         app = await boot(pilot)
@@ -1197,7 +934,7 @@ async def test_empty_bin_via_chord():
         assert Todo.all() == []
 
 
-async def test_empty_chord_does_nothing_outside_bin_and_completed():
+async def test_empty_chord_only_works_in_the_bin():
     async with run_pilot() as pilot:
         app = await boot(pilot)
 
@@ -1211,7 +948,11 @@ async def test_empty_chord_does_nothing_outside_bin_and_completed():
         await pilot.press("c")
         await pilot.pause()
 
-        # Neither a project's pane nor another fixed one empties anything
+        # Neither a project's pane, shown completed tasks and all, nor another
+        # fixed one empties anything
+        await pilot.press(".")
+        await pilot.pause()
+
         for jump in (None, ("g", "t"), ("g", "u")):
             if jump:
                 await pilot.press(*jump)
@@ -1222,40 +963,8 @@ async def test_empty_chord_does_nothing_outside_bin_and_completed():
 
             assert app.bar_switcher.current != "confirm_bar"
             message = notification_message(app)
-            assert message is not None and "only empties" in message
+            assert message == "[b]YY[/b] only works in the Bin ([b]gb[/b])"
             assert len(Todo.all()) == 3
-
-
-async def test_empty_completed_via_chord():
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await create_and_move_to_todo(pilot)
-        for name in ("open", "done", "binned"):
-            await pilot.press("n")
-            await commit_line(pilot, name)
-
-        # "binned" to the Bin, "done" ticked off; "open" stays open
-        await pilot.press("x", "x")
-        await pilot.pause()
-        await pilot.press("c")
-        await pilot.pause()
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-        await pilot.press("Y", "Y")
-        await pilot.pause()
-
-        assert app.bar_switcher.current == "confirm_bar"
-        assert "1 task in Completed" in app.bar_switcher.visible_content.message
-
-        await pilot.press("y")
-        await pilot.pause()
-
-        # Only the completed task went; the Bin and the open one are untouched
-        left = sorted(t.description for t in Todo.all())
-        assert left == ["binned", "open"]
-        assert tree_options(visible_todos(app)) == []
 
 
 async def test_deleting_from_the_bin_leaves_no_ghost_row():

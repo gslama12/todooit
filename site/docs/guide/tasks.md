@@ -12,8 +12,7 @@ note icon. The checkbox and note columns go untitled: what they draw says what
 they are, so they stay only as wide as that. The two date columns carry their
 calendar icon once, in the header, rather than on every row.
 
-The Completed pane swaps the two date columns for the day the task was
-finished; the Bin swaps them for the day it was thrown away.
+The Bin swaps the two date columns for the day the task was thrown away.
 
 ## Adding and editing
 
@@ -108,19 +107,22 @@ moving it to another project, changes nothing but where it sits.
 | `p0`–`p3` | Priority: `p1` most urgent, `p3` least, `p0` clears it |
 
 The status checkbox carries the priority color, so urgency reads from the
-first column. A ticked task is struck through and grayed out, and moves to the
-[Completed](/guide/projects#completed) pane.
+first column. A ticked task stays in its project and is hidden: its row
+disappears and the cursor drops to the row below. `.` shows completed tasks in
+their place, struck through and grayed out (see
+[Sorting & view](/guide/projects#sorting-view)); `u` takes a tick back.
 
-A step ticked off on its own moves to Completed like any task, as a single
-row labelled with its project. Its parent stays open until you
-tick it off yourself, even once every step under it is done.
+A step ticked off on its own stays under its parent and is hidden the same
+way. A folded task's count, as in `plan trip (4)`, counts only the steps still
+open. The parent stays open until you tick it off yourself, even once every
+step under it is done.
 
 Ticking runs down the tree and un-ticking runs up it: ticking a task ticks
 every step still open under it at every depth (steps finished earlier keep
 the day they were finished), and un-ticking a step hands back every task it
 sits inside, since something with work left in it is not finished however
 deep that work sits. Un-ticking a task hands back the steps that were ticked
-off with it; steps you had finished on their own stay in Completed.
+off with it; steps you had finished on their own stay completed.
 
 Ticking a task also ends every recurrence inside it: once the task is done,
 none of its steps come back. Un-ticking doesn't restore them — undo (`u`) is
@@ -158,6 +160,6 @@ it is drawn; the address behind it is what gets opened.
 | `xx` | Move it to the Bin |
 | `R` | Restore it out of the Bin |
 | `yy` | Delete it for good (asks first) |
-| `YY` | In the Bin or Completed: delete everything there for good (asks first, and says how much will go) |
+| `YY` | In the Bin: delete everything there for good (asks first, and says how much will go) |
 
 See [Undo & the Bin](/guide/undo-bin).

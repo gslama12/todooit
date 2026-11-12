@@ -19,11 +19,13 @@ A task arrives whole, with its steps under it, and goes back out whole. It
 stays in the Bin until it is restored or deleted for good — nothing expires on
 its own.
 
-Dropping a project scatters its work into the Bin along with it.
+Dropping a project scatters all of its work into the Bin, open and completed
+alike. Restoring a task puts it back in its project; if that project is gone,
+it is rebuilt along the task's path with a `revived - ` prefix, holding only
+the tasks you restore. A completed task comes back still completed, so it is
+hidden in its project (`.` shows it), and the bar says where it went.
 
-`YY` works in the Bin and in Completed: in Completed it deletes every
-completed task for good instead. Anywhere else it does nothing but say where
-it works.
+`YY` only works in the Bin. Anywhere else it does nothing but say so.
 
 The Bin pane shows the project each row came out of and the day it landed
 there, instead of the dates it was working to.

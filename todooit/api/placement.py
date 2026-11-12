@@ -1,9 +1,12 @@
 """
 Placement: where a todo lives
 
-A todo's home is the one pane it lives in: its project, Completed or the Bin.
-Day panes (Today, Upcoming) gather todos but are never their home. This is
-the only module that decides a todo's home.
+A todo's home is the one pane it lives in: its project or the Bin. A
+completed todo stays home in its project, hidden until shown. Day panes
+(Today, Upcoming) gather todos but are never their home. This is the only
+module that decides a todo's home.
+
+An orphan is always binned: every todo that isn't in the Bin has a project.
 """
 
 from typing import TYPE_CHECKING, Optional, Union
@@ -49,43 +52,17 @@ def bin_row_of(todo: Todo) -> Todo:
     return row
 
 
-def completed_row_of(todo: Todo) -> Todo:
-    """
-    The row Completed draws a completed todo in: the highest completed todo
-    in its line. A step finished under an open parent is a row of its own; one
-    under a completed parent is drawn in its parent's row.
-    """
-
-    row = todo
-
-    for ancestor in todo.ancestors:
-        if not ancestor.is_completed:
-            break
-
-        row = ancestor
-
-    return row
-
-
 def home_of(todo: Todo) -> Optional[Home]:
     """
-    The pane a todo lives in, as a project a screen can open directly
-
-    The Bin for a binned todo, even a step whose parent is not binned; else
-    Completed if it or anything it is nested under is completed, so a step
-    finished under an open parent leaves for Completed like any task; else its
-    project. None only for an open
-    orphan, which never outlives the call that reopened it: reopening or
-    restoring one rebuilds its project from its origin path.
+    The pane a todo lives in: the Bin if it is binned, even a step whose
+    parent is not, else its project. None only for a todo not placed yet, since an
+    orphan is always binned.
     """
 
     # Imported here: fixed_projects imports this module
-    from .fixed_projects import BIN, COMPLETED
+    from .fixed_projects import BIN
 
     if todo.is_binned:
         return BIN
-
-    if completed_row_of(todo).is_completed:
-        return COMPLETED
 
     return project_of(todo)
