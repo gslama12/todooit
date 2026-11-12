@@ -17,14 +17,14 @@ from tests.test_ui.ui_base import (
     tree_options,
     visible_todos,
 )
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING, Cadence, Project, Todo
+from todooit.api import BIN, TODAY, UPCOMING, Cadence, Project, Todo
 from todooit.ui.screens.search import SearchScreen
 
 
 async def test_a_task_s_whole_life():
     """
     Create, describe, prioritize, size, date, annotate, finish: every column
-    of a row touched once, and the row ends up in the completion log.
+    of a row touched once, and the row ends up hidden in its project.
     """
 
     async with run_pilot() as pilot:
@@ -43,7 +43,8 @@ async def test_a_task_s_whole_life():
 
         await pilot.press(" ")
         await pilot.pause()
-        await pilot.press("i", *list("remember the changelog"))
+        # An empty note opens in INSERT
+        await pilot.press(*list("remember the changelog"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 
@@ -55,17 +56,18 @@ async def test_a_task_s_whole_life():
         assert todo.scheduled.date() == date.today() + timedelta(days=1)
         assert todo.note == "remember the changelog"
 
-        # Finish it: the row leaves the project pane for the log
+        # Finish it: the row is hidden in its project
         await pilot.press("c")
         await pilot.pause()
 
         assert todo.is_completed
         assert tree_options(tree) == []
-        assert COMPLETED.todos == [todo]
 
-        # And unticking it in the log hands it back
-        await pilot.press("g", "c")
+        # Shown again with ".", and unticking it right there hands it back
+        await pilot.press(".")
         await pilot.pause()
+        assert tree.current_model is todo
+
         await pilot.press("c")
         await pilot.pause()
 
@@ -128,9 +130,10 @@ async def test_planning_a_day_across_projects():
 
 async def test_steps_of_a_task_leave_the_task_to_be_ticked():
     """
-    Steps added with N, finished one by one from the pane: each leaves for the
-    log on its own, the parent waits to be ticked itself even with no steps
-    left, and once it is, the steps finished earlier are drawn under it there.
+    Steps added with N, finished one by one from the pane: each is hidden
+    under its parent, the parent waits to be ticked itself even with no steps
+    left, and once it is, it is hidden too. Shown, they are all still there,
+    in place.
     """
 
     async with run_pilot() as pilot:
@@ -149,13 +152,12 @@ async def test_steps_of_a_task_leave_the_task_to_be_ticked():
         steps = list(parent.todos)
         assert descriptions(tree) == ["move house", "pack boxes", "book van"]
 
-        # Finish "book van", where the cursor sits: it leaves for the log alone
+        # Finish "book van", where the cursor sits: hidden, its parent stays
         await pilot.press("c")
         await pilot.pause()
 
         assert parent.is_pending
         assert descriptions(tree) == ["move house", "pack boxes"]
-        assert [t.description for t in COMPLETED.todos] == ["book van"]
 
         # Finish the other step too
         while tree.current_model.description != "pack boxes":
@@ -168,31 +170,28 @@ async def test_steps_of_a_task_leave_the_task_to_be_ticked():
         assert all(step.is_completed for step in steps)
         assert parent.is_pending
         assert descriptions(tree) == ["move house"]
-        assert len(COMPLETED.todos) == 2
 
-        # Tick it, and it gathers its steps under it in the log
+        # Tick it, and it is hidden with its steps
         await pilot.press("c")
         await pilot.pause()
 
         assert parent.is_completed
         assert tree_options(tree) == []
-        assert COMPLETED.todos == [parent]
 
-        # Unticking one step in the log hands the task back with that step
-        await pilot.press("g", "c")
+        # Shown, the whole family is where it was
+        await pilot.press(".")
         await pilot.pause()
+        assert descriptions(tree) == ["move house", "pack boxes", "book van"]
 
-        completed_tree = visible_todos(app)
-
-        # The task with its steps under it
-        assert len(tree_options(completed_tree)) == 3
-
-        await pilot.press("l")  # down onto a step
+        # Unticking one step hands the task back with that step
+        tree.highlight_id(steps[0].uuid)
+        await pilot.pause()
         await pilot.press("c")
         await pilot.pause()
 
         assert parent.is_pending
         assert sum(step.is_pending for step in steps) == 1
+        assert app.api.vars.show_completed
 
 
 async def test_bin_round_trip_with_a_dropped_project():

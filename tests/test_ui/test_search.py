@@ -5,7 +5,7 @@ from textual.pilot import Pilot
 from textual.widgets import ContentSwitcher
 
 from tests.test_ui.ui_base import run_pilot
-from todooit.api import COMPLETED, Project, Todo
+from todooit.api import Project, Todo
 from todooit.ui.screens.note import NoteScreen
 from todooit.ui.screens.search import (
     BINNED,
@@ -155,7 +155,9 @@ async def test_search_puts_finished_and_binned_last():
         assert found[binned.description] == BINNED
 
 
-async def test_search_jumps_to_the_pane_a_finished_task_moved_to():
+async def test_search_jumps_to_a_hidden_finished_task_and_shows_completed():
+    """A finished task is hidden in its project, so jumping to it shows completed tasks"""
+
     async with run_pilot() as pilot:
         await seed(pilot)
 
@@ -164,6 +166,10 @@ async def test_search_jumps_to_the_pane_a_finished_task_moved_to():
         completed.toggle_complete()
         completed.save()
 
+        app = pilot.app
+        assert isinstance(app, Todooit)
+        assert not app.api.vars.show_completed
+
         await open_search(pilot)
         await pilot.press(*list("singular"))
         await pilot.pause()
@@ -171,12 +177,10 @@ async def test_search_jumps_to_the_pane_a_finished_task_moved_to():
         await pilot.pause()
         await pilot.pause()
 
-        app = pilot.app
-        assert isinstance(app, Todooit)
-
         todos = visible_todos(app)
-        assert todos.model is COMPLETED
-        assert todos.current_model.description == completed.description
+        assert app.api.vars.show_completed
+        assert todos.model is completed.parent_project
+        assert todos.current_model is completed
 
 
 async def test_search_scrolls_through_the_matches():

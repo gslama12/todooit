@@ -243,6 +243,11 @@ class NoteScreenBase(BaseScreen):
         self.files.show(read_attachments(self.load_attachments()), self.api.vars.theme)
 
         editor.focus()
+
+        # Nothing to read yet, so it opens ready to be written, as a new todo does
+        if not editor.text.strip() and self._at is None:
+            editor.enter_insert()
+
         self.mode_changed()
 
         if self._at is not None:

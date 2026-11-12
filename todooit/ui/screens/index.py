@@ -406,8 +406,8 @@ class MainScreen(BaseScreen):
 
     @on(RevealTodo)
     async def reveal_moved_todo(self, event: RevealTodo) -> None:
-        """Follow a task that just left its only pane (e.g. untick in completion log,
-        restore from Bin) by revealing it where it landed, same as the finder does.
+        """Follow a task that just left its only pane (e.g. restore from Bin) by
+        revealing it where it landed, same as the finder does.
         """
 
         await self.reveal_todo(event.todo)
@@ -418,12 +418,19 @@ class MainScreen(BaseScreen):
 
         Projects pane is moved to the project first: it re-emits `ProjectSelected`
         on redraw, which would otherwise snap the tasks pane back to a stale project.
+        A completed task is hidden in its project, so completed tasks are shown
+        first: the cursor always lands on a visible row.
         """
 
         project = home_of(todo)
 
         if project is None:  # pragma: no cover
             return
+
+        hidden = any(node.is_completed for node in [todo, *todo.ancestors])
+
+        if hidden and not todo.is_binned:
+            self.api.show_completed(True)
 
         projects_tree = self.api.vars.projects_tree
         parent = project.parent_project

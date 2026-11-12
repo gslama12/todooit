@@ -45,8 +45,8 @@ c        tick it off
 - `e` edits a description with vim keys — see [Vim editing](/guide/vim).
 - `space` opens the task's note, `m` a note pinned to nothing at all — see
   [Notes](/guide/notes).
-- `gt` `gu` `gc` `gb` jump to Today, Upcoming, Completed and the Bin — see
-  [Projects & panes](/guide/projects#the-four-fixed-projects).
+- `gt` `gu` `gb` jump to Today, Upcoming and the Bin — see
+  [Projects & panes](/guide/projects#the-three-fixed-projects).
 - `f` labels every row on screen to jump to, `/` finds any task in the
   database — see [Search, flash & move](/guide/search-move).
 - `xx` throws a task away and `u` undoes the last change — see

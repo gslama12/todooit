@@ -74,7 +74,9 @@ async def note_holding(pilot, text: str) -> NoteScreen:
     return screen
 
 
-async def test_an_empty_note_opens_in_normal():
+async def test_an_empty_note_opens_in_insert():
+    """Nothing to read yet, so it opens ready to type, as `n` does a todo"""
+
     async with run_pilot() as pilot:
         await create_and_move_to_todo(pilot)
         await pilot.press("n")
@@ -84,16 +86,15 @@ async def test_an_empty_note_opens_in_normal():
 
         screen = pilot.app.screen
         assert isinstance(screen, NoteScreen)
-        assert screen.editor.mode == MODE_NORMAL
-        assert screen.editor.read_only
-
-        # Letters are commands here, so nothing gets written
-        await pilot.press("z", "q")
-        assert screen.editor.text == ""
-
-        await pilot.press("i", "a")
         assert screen.editor.mode == MODE_INSERT
-        assert screen.editor.text == "a"
+        assert not screen.editor.read_only
+
+        # Letters type straight away
+        await pilot.press("z", "q")
+        assert screen.editor.text == "zq"
+
+        await pilot.press("escape")
+        assert screen.editor.mode == MODE_NORMAL
 
 
 async def test_a_written_note_opens_in_normal():

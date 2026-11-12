@@ -45,7 +45,7 @@ time. What is still possible is listed underneath.
 ## Where the task lands
 
 With no `#name`, the task is filed in the project the cursor is already in. In
-a fixed pane — Today, Upcoming, Completed, Bin — there is no such project, so
+a fixed pane — Today, Upcoming, Bin — there is no such project, so
 the line has to name one.
 
 A `#name` that matches no project creates it. A name that matches more than

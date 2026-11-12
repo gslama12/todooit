@@ -27,10 +27,10 @@ interface Feature {
 
 const features: Feature[] = [
   {
-    title: 'The four fixed panes',
+    title: 'The three fixed panes',
     details:
-      'Today, Upcoming, Completed and the Bin are built out of your real projects every time they are drawn. <kbd>gt</kbd> <kbd>gu</kbd> <kbd>gc</kbd> <kbd>gb</kbd> jump to them, and <kbd>gi</kbd> walks back to where a task actually lives.',
-    link: '/guide/projects#the-four-fixed-projects',
+      'Today, Upcoming and the Bin are built out of your real projects every time they are drawn. <kbd>gt</kbd> <kbd>gu</kbd> <kbd>gb</kbd> jump to them, and <kbd>gi</kbd> walks back to where a task actually lives.',
+    link: '/guide/projects#the-three-fixed-projects',
     shot: 'today.svg',
     alt: 'The Today pane, a block per project',
   },

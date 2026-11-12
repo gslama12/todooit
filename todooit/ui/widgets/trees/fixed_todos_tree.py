@@ -64,8 +64,14 @@ class FixedTodosTree(TodosTree):
         return super()._get_parent(id)
 
     @property
+    def show_completed(self) -> bool:
+        """A fixed project gathers its own rows, so the session's switch is not its business (the Bin keeps completed steps)."""
+
+        return True
+
+    @property
     def sort_mode(self) -> None:
-        """A fixed project orders its own rows (e.g. Today by priority, Completed by date) and ignores the global sort."""
+        """A fixed project orders its own rows (e.g. Today by priority, the Bin by date) and ignores the global sort."""
 
         return None
 

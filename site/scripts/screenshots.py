@@ -405,11 +405,12 @@ def find(text: str) -> Tuple[str, ...]:
 SCENES: Sequence[Tuple[str, Optional[str], Sequence[str]]] = (
     # --- the workspace, for the README and the docs home ------------------
     ("workspace", "Work", ("ö",)),
-    # --- the four fixed projects ------------------------------------------
+    # --- the three fixed projects -----------------------------------------
     ("today", None, ()),
     ("upcoming", None, ("g", "u")),
-    ("completed", None, ("g", "c")),
     ("bin", None, ("g", "b")),
+    # Completed tasks stay in their project, hidden; `.` shows them in place
+    ("show-completed", "Work", ("ö", ".")),
     # --- projects and tasks -----------------------------------------------
     ("nested-projects", "Reading", ()),
     ("child-tasks", "Home", ("ö",)),

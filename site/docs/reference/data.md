@@ -44,6 +44,17 @@ migrations between todooit versions: a database has to match the current
 schema. The one exception is a dooit database,
 [migrated once](#migrating-from-dooit) into a new file.
 
+### Completed tasks without a project
+
+Every todo outside the Bin has a project. Completed tasks used to sit in a
+Completed pane of their own, so a project dropped back then could leave its
+completed tasks behind with no project at all. The first time an older
+database is opened, each such task goes to the Bin with its steps, keeping the
+path of the project it came from: restoring it rebuilds that project (with the
+`revived - ` prefix) and puts it back in, still completed. The fix-up runs
+once, marked in the database's `PRAGMA user_version`, and finds nothing to do
+if it ever runs again.
+
 ::: tip Writing to the database from outside
 The app reads the database when it starts and does not watch it afterwards.
 Rows written by another process while it is running (a script using
@@ -114,7 +125,7 @@ the app fits a task filed under another, and the summary counts every change:
   rounded up to whole hours (at least `1h`), and the script prints a warning
   naming each todo it changed.
 - **Completion dates.** dooit never recorded when a todo was completed, so
-  completed todos have none and sort last in Completed.
+  completed todos have none.
 - **Tags** were words starting with `@` in the description; they stay in the
   description as plain words.
 

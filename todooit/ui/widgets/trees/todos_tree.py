@@ -16,6 +16,7 @@ from todooit.api import (
     move_todo_to_bin,
     restore_todo,
 )
+from todooit.api.fixed_projects import project_path
 from todooit.api.placement import home_of
 from todooit.ui.api.events import (
     BarNotification,
@@ -77,7 +78,13 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def visible_children(self, model: Model) -> List[Todo]:
         """Children this pane has a row for, in its order (see pane_layout)."""
 
-        return drawn_children(model, self.sort_mode)
+        return drawn_children(model, self.sort_mode, self.show_completed)
+
+    @property
+    def show_completed(self) -> bool:
+        """Whether this pane draws completed tasks: a project pane follows the session's switch."""
+
+        return self.api.vars.show_completed
 
     @property
     def sort_mode(self) -> Optional[str]:
@@ -153,7 +160,7 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
     def todo_groups(self) -> List[TodoGroup]:
         """The blocks of rows the pane draws (see pane_layout.project_groups)."""
 
-        return project_groups(self.model, self.sort_mode)
+        return project_groups(self.model, self.sort_mode, self.show_completed)
 
     def pane_rows(self) -> List[PaneRow]:
         return todo_rows(self.todo_groups, self.visible_children, self.is_node_expanded)
@@ -227,19 +234,37 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             return
 
         revived = restore_todo(todo)
-        self.announce_revived(revived)
+        hidden = todo.is_completed and not self.api.vars.show_completed
+
+        if revived:
+            self._flash_revived(revived)
+
+        # Hidden where it landed, so the cursor stays in the Bin and the bar says where it went
+        if hidden:
+            project = home_of(todo)
+            assert isinstance(project, Project)
+
+            self.post_message(
+                BarNotification(
+                    f"Restored to [b]{escape(project_path(project))}[/b] (completed, hidden)",
+                    "info",
+                )
+            )
+            return
+
+        if revived:
+            # Named after the rebuilt project, not the task — the task itself
+            # is about to be visible with the cursor on it
+            home = escape(revived[-1].description)
+            self.post_message(
+                BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
+            )
 
         # Row is gone from the Bin pane, so go to wherever it landed
         self.post_message(RevealTodo(todo))
 
-    def announce_revived(self, projects: List[Project]) -> None:
-        """
-        Flashes and reports any projects that had to be rebuilt to give a restored
-        task (from the Bin or completion log) somewhere to land.
-        """
-
-        if not projects:
-            return
+    def _flash_revived(self, projects: List[Project]) -> None:
+        """Flashes the projects that had to be rebuilt to give a restored task somewhere to land."""
 
         tree = self.api.vars.projects_tree
 
@@ -255,13 +280,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
         for project in projects:
             tree.flash_row(project.uuid)
 
-        # Named after the rebuilt project, not the task — the task itself is
-        # already visible with the cursor on it
-        home = escape(projects[-1].description)
-        self.post_message(
-            BarNotification(f"Rebuilt [b]{home}[/b] to put it back", "info")
-        )
-
     def toggle_complete(self):
         todo = self.current_model
         assert isinstance(todo, Todo)
@@ -275,7 +293,6 @@ class TodosTree(ModelTree[Model, TodoRenderDict]):
             self.flash_row(todo.uuid)
 
         self.tell_outcome(outcome)
-        self.announce_revived(outcome.revived)
 
     def set_priority(self, priority: int):
         assert isinstance(self.current_model, Todo)

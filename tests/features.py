@@ -37,6 +37,7 @@ FEATURE_BY_MODULE = {
     "test_paths": "persistence",
     "test_sync": "persistence",
     "test_db_migration": "migration",
+    "test_orphan_migration": "migration",
     "test_vim_engine": "vim",
     # tests/test_ui
     "test_startup": "shell",
@@ -56,6 +57,7 @@ FEATURE_BY_MODULE = {
     "test_undo_redo": "undo",
     "test_refresh_signal": "lifecycle",
     "test_complete_ui": "lifecycle",
+    "test_hidden_completed": "lifecycle",
     "test_quick_add_ui": "quickadd",
     "test_quick_add_complete": "quickadd",
     "test_move_ui": "move",

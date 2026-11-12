@@ -116,41 +116,29 @@ def todo_date_formatter(value: Optional[datetime], _: Todo) -> str:
     return f"{WEEKDAY_NAMES[value.weekday()]}, {value.strftime(dt_format)}"
 
 
-# `date_icon` appends the value it is given to a Text as plain text, which
-# escapes whatever markup the value already carried, so one `from_markup` pass
-# hands that markup back as literal text rather than dropping it. A second pass
-# is what actually strips it.
+# `completed_date_icon` appends the value it is given to a Text as plain text,
+# which escapes whatever markup the value already carried, so one `from_markup`
+# pass hands that markup back as literal text rather than dropping it. A second
+# pass is what actually strips it.
 def _strip_markup(value: str) -> str:
     return Text.from_markup(Text.from_markup(value).plain).plain
 
 
 DATE_ICON_COMPLETED = "󰃯 "
-DATE_ICON_PENDING = "󰃰 "
-DATE_ICON_OVERDUE = " "
 
 
-# The calendar in front of a date, so a date column is recognisable as one from
-# across the row. Only the Completed pane's column carries it per row: the
-# scheduled and due columns have it once, in their header (TodosTree). It arrives with a status color of its own, which the color
-# formatter above it then drops in favor of one style over the whole column.
-def date_icon(field: str):
+# The scheduled and due columns carry their calendar once, in their header
+# (TodosTree). A completed row's dates carry a ticked one of their own, so a
+# shown completed task reads as done from its dates too. It arrives green,
+# which the color formatter below it keeps for the whole column.
+def completed_date_icon(field: str):
     @extra_formatter
     def wrapper(value: str, todo: Todo, api: TodooitAPI):
-        date = getattr(todo, field)
-
-        if not date:
+        if not todo.is_completed or not getattr(todo, field):
             return value
 
-        theme = api.vars.theme
-
-        if todo.is_completed:
-            icon, color = DATE_ICON_COMPLETED, theme.green
-        elif date < datetime.now():
-            icon, color = DATE_ICON_OVERDUE, theme.red
-        else:
-            icon, color = DATE_ICON_PENDING, theme.yellow
-
-        return Text() + Text.from_markup(icon, style=Style(color=color)) + value
+        icon = Text.from_markup(DATE_ICON_COMPLETED, style=Style(color=api.vars.theme.green))
+        return Text() + icon + value
 
     return wrapper
 
@@ -277,8 +265,7 @@ def gray_out_completed(strike: bool = False):
     return _gray_out(lambda todo: todo.is_completed, strike)
 
 
-# The Bin is read the way the completion log is, so the rows in it are drawn
-# the same way: struck through and sunk into the background, because they are
+# Rows in the Bin are drawn the way completed ones are: struck through and sunk into the background, because they are
 # not work any more either
 def gray_out_binned(strike: bool = False):
     return _gray_out(lambda todo: todo.is_binned, strike)
@@ -579,7 +566,6 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("gg", api.go_to_top, group=NAVIGATION)
     api.keys.set("gt", api.goto_today, group=NAVIGATION)
     api.keys.set("gu", api.goto_upcoming, group=NAVIGATION)
-    api.keys.set("gc", api.goto_completed, group=NAVIGATION)
     api.keys.set("gb", api.goto_bin, group=NAVIGATION)
     # The way back from a pane that gathered its rows from elsewhere: the task
     # under the cursor, in the project it actually lives in. Among the other
@@ -643,9 +629,8 @@ def key_setup(api: TodooitAPI, _):
     api.keys.set("yy", api.delete_node, group=EDITING)
     api.keys.set("R", api.restore_node, group=EDITING)
     # The shifted twin of the chord that deletes one task for good, and the
-    # same thing over a whole pane: in the Bin it empties the Bin, in
-    # Completed it clears out everything finished, and anywhere else it does
-    # nothing but say where it works. It says how much is about to go before
+    # same thing over a whole pane: in the Bin it empties the Bin, and
+    # anywhere else it does nothing but say where it works. It says how much is about to go before
     # it goes. A chord rather than the single shifted key, since a whole pane
     # is far too much to lose to a slip of the finger — it has to be typed
     # twice over, the way "yy" does
@@ -737,6 +722,9 @@ def key_setup(api: TodooitAPI, _):
     # front: what a search is for here is a task somewhere else in the tree,
     # and enter walks the cursor over to it
     api.keys.set("/", api.start_search, group=VIEW)
+    # Completed tasks stay in their project, hidden: "." shows them in place
+    # and hides them again. One switch for the session, off at every launch
+    api.keys.set(".", api.toggle_show_completed, group=VIEW)
     # The way out of todooit: ctrl+c is a copy here, as it is everywhere else
     api.keys.set("q", api.quit, group=VIEW)
 
@@ -822,14 +810,12 @@ def formatter_setup(api: TodooitAPI, _):
     # the child count appends its own markup: added last => runs first.
     api.formatter.todos.description.add(description_highlight_link())
 
-    # Every date column is built the same way, out of the same formatters. The
-    # completion date is only ever drawn in the Completed project, where it
-    # stands in for the two columns above: it comes out green throughout, since
-    # the row it is on is done and nothing about it can be late any more
+    # Every date column is built the same way, out of the same formatters. On
+    # a completed row it comes out green throughout, since the row is done and
+    # nothing about it can be late any more
     for column, field in (
         (api.formatter.todos.due, "due"),
         (api.formatter.todos.scheduled, "scheduled"),
-        (api.formatter.todos.completed, "completed_at"),
     ):
         column.add(todo_date_formatter)
         # Value formatters stop at the first one that returns something, so
@@ -838,14 +824,10 @@ def formatter_setup(api: TodooitAPI, _):
         # instead, and on any other day it declines and lets the date through.
         column.add(due_danger_today())
         column.add(date_color_formatter(field))
-
-        # The scheduled and due columns carry the calendar once, in their
-        # header, rather than on every row
-        if field == "completed_at":
-            column.add(date_icon(field))  # added last => runs first
+        column.add(completed_date_icon(field))  # added last => runs first
 
     # The Bin's own date column, built out of the same date formatter, read a
-    # day at a time the way the completion log is, and then marked and colored
+    # day at a time, and then marked and colored
     # by the one thing it has to say, which is that the row is in the Bin
     api.formatter.todos.binned.add(todo_date_formatter)
     api.formatter.todos.binned.add(due_danger_today())

@@ -1,5 +1,5 @@
 """
-The fixed projects: Today, Upcoming, Completed and the Bin
+The fixed projects: Today, Upcoming and the Bin
 
 What each one gathers, the blocks it gathers it into, and the order the
 blocks and their rows come in.
@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 from tests.test_core.core_base import *  # noqa
 from todooit.api import (
     BIN,
-    COMPLETED,
     TODAY,
     UPCOMING,
     lifecycle,
@@ -35,11 +34,10 @@ def today_at(hour: int = 10) -> datetime:
 # ------------------------------------------------------------------
 
 
-def test_the_four_fixed_projects_are_registered():
+def test_the_three_fixed_projects_are_registered():
     assert [p.key for p in fixed_projects()] == [
         "today",
         "upcoming",
-        "completed",
         "bin",
     ]
 
@@ -55,8 +53,8 @@ def test_fixed_project_lookups(create_project):
 
 def test_fixed_projects_cannot_be_mistaken_for_stored_ones():
     assert TODAY.is_fixed
-    assert COMPLETED.pinned_bottom and BIN.pinned_bottom
-    assert COMPLETED.muted and BIN.muted
+    assert BIN.pinned_bottom
+    assert BIN.muted
     assert not TODAY.pinned_bottom
 
 
@@ -629,57 +627,6 @@ def test_upcoming_draws_every_ancestor_of_a_later_step_as_context(create_project
         [("Tax return", True, [("step 0", False, [])])],
         [("Tax return", True, [("step 0", True, [("sign it", False, [])])])],
     ]
-
-
-# ------------------------------------------------------------------
-# Completed
-# ------------------------------------------------------------------
-
-
-def test_completed_is_a_log_of_finished_tasks(create_project):
-    p = create_project("work")
-
-    first_done = p.add_todo()
-    first_done.toggle_complete()
-    first_done.completed_at = datetime.now() - timedelta(hours=2)
-    first_done.save()
-
-    last_done = p.add_todo()
-    last_done.toggle_complete()
-
-    still_open = p.add_todo()
-    still_open.save()
-
-    # The most recently finished first, and nothing that is still open
-    assert COMPLETED.todos == [last_done, first_done]
-
-
-def test_completed_shows_a_step_finished_on_its_own_as_its_own_row(create_project):
-    """A finished step of an unfinished task leaves for the log like any task"""
-
-    p = create_project("work")
-    task = p.add_todo()
-    step = task.add_todo()
-    task.add_todo()
-
-    step.toggle_complete()
-
-    assert COMPLETED.todos == [step]
-    assert task.is_pending
-
-    # Once the task itself is ticked, it carries the step in its own row
-    task.toggle_complete()
-
-    assert COMPLETED.todos == [task]
-
-
-def test_completed_leaves_out_the_binned(create_project):
-    p = create_project("work")
-    t = p.add_todo()
-    t.toggle_complete()
-    move_todo_to_bin(t)
-
-    assert COMPLETED.todos == []
 
 
 # ------------------------------------------------------------------

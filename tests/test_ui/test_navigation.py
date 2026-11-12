@@ -14,7 +14,7 @@ from tests.test_ui.ui_base import (
     run_pilot,
     visible_todos,
 )
-from todooit.api import BIN, COMPLETED, TODAY, UPCOMING
+from todooit.api import BIN, TODAY, UPCOMING
 
 
 async def test_focus_keys():
@@ -98,17 +98,6 @@ async def test_goto_upcoming():
 
         assert visible_todos(app).model is UPCOMING
         assert app.project_tree.current_model is UPCOMING
-
-
-async def test_goto_completed():
-    async with run_pilot() as pilot:
-        app = await boot(pilot)
-
-        await pilot.press("g", "c")
-        await pilot.pause()
-
-        assert visible_todos(app).model is COMPLETED
-        assert app.project_tree.current_model is COMPLETED
 
 
 async def test_goto_bin():

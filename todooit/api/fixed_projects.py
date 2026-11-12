@@ -1,5 +1,5 @@
 """
-Built-in projects (Today, Upcoming, Completed, Bin) that aren't stored in the DB
+Built-in projects (Today, Upcoming, Bin) that aren't stored in the DB
 
 A fixed project can't be created, renamed, moved or deleted and owns no todos;
 its contents are gathered from the real projects on every read. It mimics the
@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from ..utils.day_names import day_label
 from .manager import manager
-from .placement import completed_row_of, project_of
+from .placement import project_of
 from .project import Project
 from .todo import Todo, priority_key
 
@@ -210,9 +210,6 @@ class FixedProject:
     # Date columns shown as a day without the time
     day_only_columns: Tuple[str, ...] = ()
 
-    # After unticking a row here, jump to its home project
-    sends_unticked_home: bool = False
-
     # Shows binned todos (every other pane hides them)
     gathers_binned: bool = False
 
@@ -273,24 +270,6 @@ def binned_tasks() -> List[Todo]:
         todo
         for todo in todos
         if todo.parent_todo is None or not todo.parent_todo.is_binned
-    ]
-
-
-def completed_tasks() -> List[Todo]:
-    """
-    Completed todos not drawn in a completed parent's row (one row per
-    task in Completed); binned ones belong to the Bin instead
-    """
-
-    query = select(Todo).where(
-        Todo.pending == False,
-        Todo.binned_at.is_(None),
-    )
-
-    return [
-        todo
-        for todo in manager.session.execute(query).scalars().all()
-        if completed_row_of(todo) is todo
     ]
 
 
@@ -384,38 +363,6 @@ class UpcomingProject(FixedProject):
         ]
 
 
-class CompletedProject(FixedProject):
-    """
-    Log of completed todos, most recently finished first
-
-    A step finished under an open parent is a row of its own, like any task;
-    a completed parent carries its steps under it. Unticking a row sends it
-    back to its project, reopening whatever it is nested under.
-    """
-
-    key = "completed"
-    title = "Completed"
-    icon = "󰄵"
-
-    pinned_bottom = True
-    muted = True
-    show_owning_project = True
-    sends_unticked_home = True
-    hidden_columns = ("scheduled", "due")
-    extra_columns = ("completed",)
-    day_only_columns = ("completed",)
-
-    @property
-    def todo_groups(self) -> List[TodoGroup]:
-        todos = sorted(
-            completed_tasks(),
-            key=lambda todo: todo.completed_at or datetime.min,
-            reverse=True,
-        )
-
-        return [TodoGroup(todos=todos)]
-
-
 class BinProject(FixedProject):
     """
     Binned tasks, most recently binned first, until restored or emptied
@@ -446,11 +393,10 @@ class BinProject(FixedProject):
 
 TODAY = TodayProject()
 UPCOMING = UpcomingProject()
-COMPLETED = CompletedProject()
 BIN = BinProject()
 
 # In pane order
-_FIXED_PROJECTS: List[FixedProject] = [TODAY, UPCOMING, COMPLETED, BIN]
+_FIXED_PROJECTS: List[FixedProject] = [TODAY, UPCOMING, BIN]
 
 
 def fixed_projects() -> List[FixedProject]:

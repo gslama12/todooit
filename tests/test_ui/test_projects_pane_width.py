@@ -145,8 +145,8 @@ async def test_expanding_never_puts_the_scrollbar_up():
     """
     Unfolding a project in a pane that still fits leaves no scrollbar to paint
 
-    The new rows go in before the blank run holding Completed and Bin to the
-    floor is shortened to make room, so for a moment the pane overflows. That
+    The new rows go in before the blank run holding the Bin to the floor is
+    shortened to make room, so for a moment the pane overflows. That
     moment has to be over before the frame is drawn, or the scrollbar flashes
     up (and the split widens a column to fit it) on every unfold.
     """

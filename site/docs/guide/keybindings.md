@@ -31,7 +31,6 @@ Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim
 | `h` | Fold / unfold the highlighted item | both |
 | `gt` | Jump to Today, on the first task scheduled for it | both |
 | `gu` | Jump to Upcoming, on the nearest day's first task | both |
-| `gc` | Jump to Completed, on the task finished last | both |
 | `gb` | Jump to the Bin, on the task thrown away last | both |
 | `gi` | Jump to the highlighted task in the project it is filed under | tasks |
 
@@ -54,7 +53,7 @@ Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim
 | `xx` | Move the highlighted item to the Bin | both |
 | `R` | Restore it out of the Bin | both |
 | `yy` | Delete it for good (asks first) | both |
-| `YY` | Delete everything in the Bin or Completed, whichever is open (asks first) | both |
+| `YY` | Delete everything in the Bin, when it is open (asks first) | both |
 | `u` | Undo the last change in the panes | both |
 | `ctrl+r` | Redo | both |
 
@@ -81,6 +80,7 @@ The color slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 | `/` | [Find](/guide/search-move#finder) a task anywhere and jump to it; `>` first searches notes | both |
 | `o` | Open the first link in the highlighted row | both |
 | `SP` / `SD` / `SS` | Sort the tasks by priority / due date / scheduled date | both |
+| `.` | Show / hide completed tasks in their projects | both |
 | `?` | Show every key | both |
 | `q` | Quit | both |
 

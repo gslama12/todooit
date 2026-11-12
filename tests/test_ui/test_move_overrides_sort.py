@@ -10,8 +10,8 @@ for again with one of the sort chords.
 
 The other half of the same idea is at the bottom of this file: a move goes by
 the row drawn beside the cursor, not by the row filed beside it. The pane
-leaves part of the run out — a task ticked off is drawn in Completed and one
-thrown away in the Bin, and both are still filed here — and a move that
+leaves part of the run out — a task ticked off is hidden and one thrown away
+is drawn in the Bin, and both are still filed here — and a move that
 stepped through the filing spent a press on each of those without anything on
 screen moving.
 """
@@ -239,10 +239,10 @@ async def test_sorting_again_rearranges_the_steps():
 
 async def seed_with_a_hidden_row(pilot, tree, hide: str):
     """
-    Four tasks filed a-b-c-d with "b" drawn somewhere else entirely
+    Four tasks filed a-b-c-d with "b" not drawn here
 
-    `hide` says how it leaves: ticked off, so it is drawn in Completed, or
-    thrown away, so it is drawn in the Bin. Either way it keeps its place in
+    `hide` says how it leaves: ticked off, so it is hidden, or thrown away, so
+    it is drawn in the Bin. Either way it keeps its place in
     the filing, sitting between the rows this pane does draw.
     """
 

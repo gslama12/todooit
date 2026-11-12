@@ -1,6 +1,6 @@
 # Projects & panes
 
-The left pane holds two kinds of row: the projects you make, and four fixed
+The left pane holds two kinds of row: the projects you make, and three fixed
 ones the app builds from them.
 
 ![The projects pane](/screenshots/nested-projects.svg)
@@ -28,7 +28,7 @@ The ten slots are `c0` red, `c1` blue, `c2` green, `c3` yellow, `c4` orange,
 
 Projects are not ticked off: `c` only works over the tasks pane.
 
-## The four fixed projects
+## The three fixed projects
 
 They cannot be created, renamed, moved or deleted, and they own nothing: what
 they show is gathered from your real projects every time they are drawn.
@@ -37,7 +37,6 @@ they show is gathered from your real projects every time they are drawn.
 | --- | --- | --- |
 | `gt` | Today | Everything scheduled for today or earlier, a block per project |
 | `gu` | Upcoming | Everything scheduled from today on, a block per day |
-| `gc` | Completed | Every finished task, most recently finished first |
 | `gb` | Bin | Everything thrown away and not yet emptied |
 
 Work whose day has already gone by is not dropped: it appears at the top of
@@ -64,16 +63,6 @@ project it is actually filed under.
 Grouped by the day the work is planned for, nearest first. This is the pane
 work is rescheduled in.
 
-### Completed
-
-![The Completed pane](/screenshots/completed.svg)
-
-Finishing a task moves it here, and so does finishing a step on its own: it
-gets a single row of its own, labelled with its project like any task. A
-finished task carries its steps under it. Unticking a row hands it back to the
-project it came from — it was never moved in the database, only shown here
-while it was done with.
-
 ### Bin
 
 ![The Bin](/screenshots/bin.svg)
@@ -85,6 +74,16 @@ See [Undo & the Bin](/guide/undo-bin).
 | Key | What it does |
 | --- | --- |
 | `SP` / `SD` / `SS` | Sort the tasks by priority / due date / scheduled date |
+| `.` | Show or hide completed tasks |
+
+![Completed tasks shown in their project with `.`](/screenshots/show-completed.svg)
+
+A finished task stays in its project, hidden. `.` shows every completed task
+in its own place among the open ones, grayed out and struck through, and hides
+them again. It is one switch for the whole session and starts hidden at every
+launch; it changes only what is drawn, so it is not saved and undo skips it.
+Nothing says how many tasks are hidden: a project whose tasks are all done
+simply looks empty.
 
 Tasks are read by priority to begin with. Moving a row by hand drops the pane
 out of any sort, so the row stays where you put it. Fixed projects order their

@@ -154,16 +154,6 @@ class Scheduled(DateInput):
         return lifecycle.schedule(self.model, value)
 
 
-class Completed(DateInput):
-    """The date the todo was ticked off; set by the app, not typed."""
-
-    editable = False
-
-    @property
-    def _property(self) -> str:
-        return "completed_at"
-
-
 class Binned(DateInput):
     """The date the todo was thrown away; set by the app, not typed."""
 
