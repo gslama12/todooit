@@ -74,7 +74,7 @@ async def open_note(pilot, description: str = "task with a note") -> NoteScreen:
     screen = pilot.app.screen
     assert isinstance(screen, NoteScreen)
 
-    await pilot.press("i")
+    # An empty note opens in INSERT
     return screen
 
 
@@ -1955,7 +1955,9 @@ async def test_pinned_note_via_m():
         assert isinstance(screen, PinnedNoteScreen)
         assert screen.frame.border_title == "Pinned Note"
 
-        await pilot.press("i", *list("a thought with no task yet"))
+        # Empty, so it opens in INSERT and the letters type straight away
+        assert screen.editor.mode == MODE_INSERT
+        await pilot.press(*list("a thought with no task yet"))
         await pilot.press("escape", "escape")
         await pilot.pause()
 

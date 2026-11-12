@@ -14,7 +14,7 @@ class NoteEditor(ClipboardEditing):
 
     Two modes: NORMAL (read-only to the keyboard, letters are commands) and
     INSERT (letters type). `i` enters INSERT; `escape` steps back to NORMAL, then to the todo.
-    Always opens in NORMAL. The vim engine takes each key first.
+    Opens in NORMAL, or in INSERT when the note is empty. The vim engine takes each key first.
 
     Selecting/copying/pasting work in both modes; cut/paste switch to INSERT.
     The clipboard speaks markdown, as the note itself does.
