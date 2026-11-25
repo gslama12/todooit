@@ -42,7 +42,7 @@ Laid out for a QWERTZ keyboard; for vim's `h` `j` `k` `l` see [Vim layouts](#vim
 | `d` | Edit the due date | both |
 | `s` | Edit the scheduled date | both |
 | `r` | Edit the recurrence | both |
-| `n` | Add a sibling | both |
+| `n` / `i` / `a` | Add a sibling | both |
 | `N` | Add a child | both |
 | `C` | [Quick add](/guide/quick-add): a whole task in one line | both |
 | `space` | Open the task's [note](/guide/notes) | both |
@@ -125,6 +125,9 @@ and a description, both switch to vim's own keys:
 | Line above / below (first non-blank) | `ü` / `ä` | `-` / `+` |
 | Repeat / reverse `f` `F` `t` `T` | `h` / `H` | `;` / `,` |
 | Search | `?` | `/` |
+
+Everything else stays on its default key: `i` and `a` add a task or project in
+the panes, the same as `n`, with or without a vim layout.
 
 ```bash
 mkdir -p "$(dirname "$(todooit config-loc)")"

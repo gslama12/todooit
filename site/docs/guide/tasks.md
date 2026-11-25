@@ -18,7 +18,7 @@ The Bin swaps the two date columns for the day the task was thrown away.
 
 | Key | What it does |
 | --- | --- |
-| `n` | New task, as a sibling |
+| `n` / `i` / `a` | New task, as a sibling |
 | `N` | New task, as a child of this one |
 | `C` | [Quick add](/guide/quick-add) — a whole task in one line |
 | `e` | Edit the description, with [vim keys](/guide/vim#task-descriptions) |

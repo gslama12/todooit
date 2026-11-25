@@ -272,13 +272,13 @@ async def test_the_strip_still_follows_the_panes_keys(tmp_path):
         screen = await open_note(pilot)
         await pilot.press("escape")
         screen.attach(files)
-        pilot.app.api.keys.remap({"j": "a", "ö": "w"})
+        pilot.app.api.keys.remap({"j": "b", "ö": "w"})
 
         screen.pick_files()
         await pilot.pause()
         assert screen.files.picked == 1
 
-        await pilot.press("a")
+        await pilot.press("b")
         assert screen.files.picked == 0
         await pilot.press("w")
         assert screen.files.picked == 1

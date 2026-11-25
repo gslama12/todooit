@@ -265,16 +265,16 @@ async def test_a_row_emptied_in_a_vim_edit_is_dropped_too():
 
 
 @pytest.mark.parametrize("vim", [True, False])
-async def test_i_does_nothing_on_a_task(vim):
+async def test_i_on_a_task_adds_one_rather_than_editing_it(vim):
     async with run_pilot() as pilot:
         tree = await a_todo(pilot, "old")
         pilot.app.api.vim.descriptions = vim
 
         await pilot.press("i")
-        await pilot.pause()
+        await commit_line(pilot, "new")
 
         assert not tree.is_editing
-        assert descriptions(tree) == ["old"]
+        assert descriptions(tree) == ["old", "new"]
 
 
 async def test_with_descriptions_switched_off_e_edits_as_i_used_to():

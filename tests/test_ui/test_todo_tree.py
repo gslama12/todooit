@@ -4,12 +4,14 @@ The tasks pane of a stored project: adding, editing, and every column
 
 from datetime import date, datetime, timedelta
 
+import pytest
 from pytest import raises
 
 from tests.test_ui.ui_base import (
     commit_line,
     create_and_move_to_todo,
     highlighted_index,
+    new_todo,
     notification_message,
     run_pilot,
     tree_options,
@@ -54,6 +56,29 @@ async def test_add_todo_via_keys():
         assert [t.description for t in Todo.all()] == ["first", "second"]
         assert len(tree_options(tree)) == 2
         assert highlighted_index(tree) == 1
+
+
+@pytest.mark.parametrize("key", ["n", "i", "a"])
+async def test_every_add_key_adds_a_sibling(key):
+    async with run_pilot() as pilot:
+        tree = await create_and_move_to_todo(pilot)
+        first = await new_todo(pilot, "first")
+        await new_todo(pilot, "last")
+        await pilot.press("k")
+
+        # The name holds the key itself: past the first press it is only text
+        await pilot.press(key)
+        await commit_line(pilot, f"nia {key}")
+
+        added = tree.current_model
+        assert isinstance(added, Todo)
+        assert added.description == f"nia {key}"
+        assert added.parent_project == first.parent_project
+        assert [todo.description for todo in added.siblings] == [
+            "first",
+            f"nia {key}",
+            "last",
+        ]
 
 
 async def test_a_new_todo_left_without_a_name_is_dropped():

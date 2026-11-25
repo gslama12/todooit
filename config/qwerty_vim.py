@@ -10,6 +10,9 @@ The calendar, the help screen and the attachment strip steer with whatever keys
 the panes move with, so they follow along on their own. A note's text has keys
 of its own, moved separately below.
 
+Adding a task or project is on `i` and `a`, vim's ways into INSERT, as well as
+`n`: the defaults already bind all three, so nothing is moved for them here.
+
 Use it as your config:
 
     mkdir -p "$(dirname "$(todooit config-loc)")"

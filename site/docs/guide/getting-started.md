@@ -36,6 +36,8 @@ n        add a task, type it, enter
 c        tick it off
 ```
 
+`i` and `a` add one too, the same as `n`.
+
 ## Then
 
 - `C` adds a whole task in one line — see [Quick add](/guide/quick-add).

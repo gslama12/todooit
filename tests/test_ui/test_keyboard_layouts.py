@@ -109,6 +109,9 @@ async def test_vim_layout_moves_the_panes(layout):
         if layout == "qwerty_vim.py":
             assert binds.get("ö") is None
         assert binds.get("L") is None
+        for key in ("n", "i", "a"):
+            func = binds[key]
+            assert func and func.callback == api.add_sibling, key
 
         await pilot.press("h")
         await pilot.pause()

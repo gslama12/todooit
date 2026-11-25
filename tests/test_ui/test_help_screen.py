@@ -98,8 +98,11 @@ async def test_every_visible_keybind_has_a_row():
         }
 
         # A spot check across the groups: one key per feature family
-        for label in ("j", "gt", "n", "C", "space", "xx", "YY", "/", "o", "q"):
+        for label in ("j", "gt", "n/i/a", "C", "space", "xx", "YY", "/", "o", "q"):
             assert label in rows, label
+
+        # Three keys for one thing are one row
+        assert not {"n", "i", "a"} & rows.keys()
 
         # The priority scale collapses to one row instead of four
         assert "p0-p3" in rows
