@@ -11,6 +11,7 @@ from todooit.ui.tui import Todooit
 from todooit.ui.widgets.trees.fixed_todos_tree import FixedTodosTree
 from todooit.ui.widgets.trees.model_tree import ModelTree
 from todooit.ui.widgets.trees.todos_tree import TodosTree
+from todooit.utils import clipboard
 
 TEMP_DB_PATH = ":memory:"
 
@@ -22,6 +23,11 @@ _clipboard = ""
 
 def set_clipboard(text: str) -> None:
     global _clipboard
+
+    # A delete reads what was there before, and this comes after it
+    if clipboard._reading is not None:
+        clipboard._reading.text()
+
     _clipboard = text
 
 

@@ -1,4 +1,4 @@
-from .clipboard import copy_text, paste_files, paste_text
+from .clipboard import copy_text, paste_files, paste_text, start_reading_text
 from .colors import blend
 from .css_manager import CssManager
 from .date_parser import looks_like_date_start, parse
@@ -49,6 +49,7 @@ __all__ = [
     "copy_text",
     "paste_files",
     "paste_text",
+    "start_reading_text",
     "Opened",
     "display_name",
     "file_icon",

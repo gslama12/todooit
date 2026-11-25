@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Callable, Optional, Tuple
 from rich.style import Style
 from rich.text import Text
 
-from todooit.utils.clipboard import copy_text, paste_text, running_app
+from todooit.utils.clipboard import (
+    copy_text,
+    paste_text,
+    running_app,
+    start_reading_text,
+)
 from todooit.vim_engine import DESCRIPTION_ACTIONS, MODE_INSERT, MODE_NORMAL, VimEngine
 
 from ._input import Input
@@ -128,6 +133,9 @@ class DescriptionBuffer:
 
     def clipboard_text(self) -> str:
         return paste_text(running_app())
+
+    def start_reading_clipboard(self) -> Callable[[], str]:
+        return start_reading_text(running_app()).text
 
     def paste_clipboard_text(self, text: str) -> None:
         # One line, as a plain paste into the field makes it

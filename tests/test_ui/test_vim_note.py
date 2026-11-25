@@ -2524,6 +2524,38 @@ async def test_y_reaches_the_system_clipboard_but_d_does_not():
         assert pilot.app.clipboard == "abc"
 
 
+@pytest.mark.parametrize("paste, after", [("p", "dabc ef"), ("P", "abc def")])
+async def test_p_after_d_pastes_what_it_took_over_an_older_copy(paste, after):
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc def")
+        set_clipboard("copied in a browser")
+
+        await pilot.press("d", "w", paste)
+        await pilot.pause()
+        assert screen.editor.text == after
+
+        # Copied since, so now it's the newer of the two
+        set_clipboard("X")
+        await pilot.press("=", "P")
+        await pilot.pause()
+        assert screen.editor.text == "X" + after
+
+
+async def test_p_after_a_change_pastes_right_after_what_was_typed():
+    set_clipboard("")
+
+    async with run_pilot() as pilot:
+        screen = await note_holding(pilot, "abc def")
+        set_clipboard("copied in a browser")
+
+        await pilot.press("c", "w", "x", "y", "escape", "p")
+        await pilot.pause()
+
+        assert screen.editor.text == "xyabc def"
+
+
 async def test_p_prefers_a_clipboard_changed_since_the_yank():
     set_clipboard("")
 

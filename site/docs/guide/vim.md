@@ -66,8 +66,9 @@ distance from it — so a count can be read straight off it.
 (WORD), `ip` `ap` (paragraph), and inside / around any pair — `i(` `a[`
 `i{` `a<` `i"` `a'` `` i` ``. Either half of a bracket names it.
 
-Yanking writes to the system clipboard, and `p` takes something copied
-elsewhere over the last yank, so the register and the desktop never disagree.
+Yanking writes to the system clipboard; deleting and changing leave it alone.
+`p` pastes whichever is newest: the last yank, delete or change, or something
+copied elsewhere since.
 
 ### Search, replace & flash
 

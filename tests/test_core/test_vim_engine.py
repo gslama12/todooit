@@ -8,7 +8,7 @@ any host would drive it.
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import pytest
 
@@ -174,6 +174,10 @@ class MemoryBuffer:
         self.clipboard_reads += 1
         return self.clipboard
 
+    def start_reading_clipboard(self) -> Callable[[], str]:
+        then = self.clipboard
+        return lambda: then
+
     def paste_clipboard_text(self, text: str) -> None:
         self.clipboard_pastes.append(text)
         row, column = self.cursor
@@ -324,6 +328,16 @@ def test_escape_leaves_insert_and_clamps_the_cursor():
     assert engine.mode == MODE_NORMAL
     assert buffer_of(engine).cursor == (0, 2)
     assert buffer_of(engine).modes == [MODE_INSERT, MODE_NORMAL]
+
+
+@pytest.mark.parametrize("column, after", [(0, 0), (1, 0), (2, 1)])
+def test_escape_leaves_insert_on_the_character_before(column, after):
+    engine = engine_on("abc", (0, column))
+    feed(engine, "i")
+
+    engine.feed("escape")
+
+    assert buffer_of(engine).cursor == (0, after)
 
 
 def test_escape_is_left_to_the_host_in_plain_normal():
@@ -3617,17 +3631,47 @@ def test_a_clipboard_older_than_the_engine_doesnt_stop_dd_p():
     assert buffer_of(engine).clipboard_pastes == []
 
 
-def test_a_clipboard_changed_before_the_first_delete_still_wins_over_it():
+@pytest.mark.parametrize("keys", ["x", "dw", "dd", "D", "cw", "cc", "C", "vd", "Vd"])
+@pytest.mark.parametrize("paste", ["p", "P"])
+def test_a_clipboard_changed_before_a_delete_is_older_than_it(keys, paste):
+    engine = VimEngine(MemoryBuffer("abc def\nghi"), visual_keys())
+    feed(engine, "yy")
+    buffer_of(engine).clipboard = "X"
+
+    feed(engine, keys)
+    engine.feed("escape")
+    deleted = engine.register
+    feed(engine, paste)
+
+    assert buffer_of(engine).clipboard_pastes == []
+    assert engine.register == deleted
+
+
+def test_every_delete_is_newer_than_the_clipboard_then():
     engine = yanking_on("abc")
+
+    for copied in ("X", "Y", "Z"):
+        buffer_of(engine).clipboard = copied
+        feed(engine, "x")
+        feed(engine, "P")
+
+    assert buffer_of(engine).text == "abc"
+    assert buffer_of(engine).clipboard_pastes == []
+
+
+def test_a_yank_after_a_delete_is_what_the_clipboard_is_measured_by():
+    engine = yanking_on("ab\ncd")
     buffer_of(engine).clipboard = "X"
 
     feed(engine, "x")
+    feed(engine, "yy")
+    buffer_of(engine).clipboard = "X"
     feed(engine, "p")
 
     assert buffer_of(engine).clipboard_pastes == ["X"]
 
 
-def test_a_delete_never_reads_the_clipboard():
+def test_a_delete_never_waits_for_the_clipboard():
     engine = yanking_on("a\nb\nc")
     reads = buffer_of(engine).clipboard_reads
 
@@ -3635,6 +3679,49 @@ def test_a_delete_never_reads_the_clipboard():
     feed(engine, "dd")
 
     assert buffer_of(engine).clipboard_reads == reads
+
+
+@pytest.mark.parametrize(
+    "start, paste, after",
+    [
+        ((0, 0), "p", "newfoo bar baz"),
+        ((0, 4), "p", "foo newbar baz"),
+        ((0, 4), "P", "foo nebarw baz"),
+        ((0, 8), "p", "foo bar newbaz"),
+    ],
+)
+def test_p_after_a_change_pastes_right_after_what_was_typed(start, paste, after):
+    engine = yanking_on("foo bar baz", start)
+
+    feed(engine, "cw")
+    typing(engine, "new")
+    engine.feed("escape")
+    feed(engine, paste)
+
+    assert buffer_of(engine).text == after
+
+
+@pytest.mark.parametrize("text, start", [("one\n\ntwo\nthree", (2, 0)), ("  a\nb", (0, 2))])
+def test_a_delete_that_leaves_nothing_of_its_lines_takes_them_whole(text, start):
+    """As vim's `d` does, so they paste as lines again."""
+
+    engine = yanking_on(text, start)
+    engine.keys.set("}", VimMotion.PARAGRAPH_DOWN)
+    taken = "\n".join(text.split("\n")[start[0] :])
+
+    feed(engine, "d}")
+
+    assert engine.register == Register(taken, linewise=True)
+
+
+def test_a_delete_over_lines_that_leaves_something_stays_characters():
+    engine = yanking_on("one\ntwo", (0, 1))
+    engine.keys.set("}", VimMotion.PARAGRAPH_DOWN)
+
+    feed(engine, "d}")
+
+    assert engine.register == Register("ne\ntwo", linewise=False)
+    assert buffer_of(engine).text == "o"
 
 
 def test_a_clipboard_changed_after_a_delete_wins_over_it():

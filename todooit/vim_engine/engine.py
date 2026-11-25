@@ -259,7 +259,7 @@ class VimEngine:
 
         # What's on the system clipboard by now is older than anything done here
         if self._register_memory.known_clipboard is None:
-            self._register_memory.known_clipboard = buffer.clipboard_text()
+            self._register_memory.know_clipboard(buffer.clipboard_text())
 
         # The `f F t T` waiting for its character
         self._finding: Optional[VimMotion] = None
@@ -646,6 +646,10 @@ class VimEngine:
             self._shown_find = None
             return True
 
+        if self.mode == MODE_INSERT:
+            self._leave_insert()
+            return True
+
         if self.mode != MODE_NORMAL:
             self.set_mode(MODE_NORMAL)
             return True
@@ -655,6 +659,16 @@ class VimEngine:
         self.lit_search = None
 
         return lit
+
+    def _leave_insert(self) -> None:
+        """
+        Back to NORMAL, on the character before: the last one typed. From there
+        `p` puts in right after what was typed, and `P` before its last character.
+        """
+
+        row, column = self.buffer.cursor
+        self.set_mode(MODE_NORMAL)
+        self.buffer.move_cursor(row, max(0, column - 1))
 
     def _run(self, action: VimAction, count: int, counted: bool) -> None:
         if isinstance(action, VimCommand):
@@ -1401,6 +1415,17 @@ class VimEngine:
 
             end = end[0] - 1, len(buffer.line(end[0] - 1))
 
+        # As in vim: a delete over lines that leaves nothing but blanks of the
+        # first and the last of them takes them whole
+        if (
+            operator is VimOperator.DELETE
+            and start[0] < end[0]
+            and not buffer.line(start[0])[: start[1]].strip()
+            and not buffer.line(end[0])[end[1] :].strip()
+        ):
+            self._take_lines(operator, start[0], end[0], column=origin[1])
+            return
+
         self._take_text(operator, start, end)
 
     def _take_text(
@@ -1420,7 +1445,7 @@ class VimEngine:
             if operator is VimOperator.YANK:
                 self._yank(text, YankedRange(start, end, linewise=False))
             else:
-                self._register_memory.register = Register(text, linewise=False)
+                self._keep_deleted(Register(text, linewise=False))
                 buffer.replace(start, end, "")
 
         if operator is VimOperator.CHANGE:
@@ -1459,9 +1484,7 @@ class VimEngine:
         if column is None:
             column = buffer.cursor[1]
 
-        self._register_memory.register = Register(
-            self._lines_between(top, bottom), linewise=True
-        )
+        self._keep_deleted(Register(self._lines_between(top, bottom), linewise=True))
 
         if bottom < last:
             buffer.replace((top, 0), (bottom + 1, 0), "")
@@ -1484,17 +1507,18 @@ class VimEngine:
         prefix = len(buffer.list_prefix(top))
         keep = first[: prefix + motions.indent_width(first[prefix:])]
 
-        self._register_memory.register = Register(
-            self._lines_between(top, bottom), linewise=True
-        )
+        self._keep_deleted(Register(self._lines_between(top, bottom), linewise=True))
         buffer.replace((top, 0), end, keep)
         self._insert_at_line_end(top)
 
+    def _keep_deleted(self, register: Register) -> None:
+        self._register_memory.keep_deleted(
+            register, self.buffer.start_reading_clipboard()
+        )
+
     def _yank(self, text: str, yanked: YankedRange) -> None:
-        memory = self._register_memory
-        memory.register = Register(text, yanked.linewise)
+        self._register_memory.keep_yanked(Register(text, yanked.linewise))
         self.yanked = yanked
-        memory.known_clipboard = text
         self.buffer.copy_to_clipboard(text)
 
     def _yank_lines(
@@ -1522,9 +1546,9 @@ class VimEngine:
         clipboard = self.buffer.clipboard_text()
 
         if memory.pastes_clipboard(clipboard):
-            # Taken up, so it only wins once: a later `ddp` moves its line again
+            # Taken up, so it only wins once
             memory.register = Register(clipboard, False, from_clipboard=True)
-            memory.known_clipboard = clipboard
+            memory.know_clipboard(clipboard)
 
         return memory.register
 

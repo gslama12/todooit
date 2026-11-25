@@ -14,6 +14,7 @@ import platform
 from contextlib import suppress
 from shutil import which
 from subprocess import DEVNULL, PIPE, SubprocessError, run
+from threading import Thread
 from typing import TYPE_CHECKING, List, Optional
 
 import pyperclip
@@ -43,7 +44,12 @@ def copy_text(app: Optional["App"], text: str) -> None:
     Put `text` on the clipboard, by both routes
     """
 
+    global _reading
+
     app = app or running_app()
+
+    # A read already running may have seen what was there before this
+    _reading = None
 
     if app is not None:
         app.copy_to_clipboard(text)
@@ -66,15 +72,67 @@ def paste_text(app: Optional["App"] = None) -> str:
 
     app = app or running_app()
 
+    return _host_text() or (app.clipboard if app is not None else "")
+
+
+def _host_text() -> str:
+    """
+    The text the host's own clipboard holds, "" if that can't be read
+    """
+
     try:
-        text = str(pyperclip.paste())
+        return str(pyperclip.paste())
     except Exception:
-        text = ""
+        return ""
 
-    if text:
-        return text
 
-    return app.clipboard if app is not None else ""
+class ClipboardRead:
+    """
+    What `paste_text` would have said when this was made, read in the background
+
+    Reading the clipboard is a whole process (under WSL a `powershell.exe`),
+    which is too slow for a key that only wants to know the answer later.
+    """
+
+    def __init__(self, app: Optional["App"]) -> None:
+        self._text = app.clipboard if app is not None else ""
+        # A daemon: a clipboard that hangs mustn't hold up leaving todooit
+        self._thread = Thread(target=self._read, daemon=True)
+        self._thread.start()
+
+    def _read(self) -> None:
+        self._text = _host_text() or self._text
+
+    @property
+    def running(self) -> bool:
+        return self._thread.is_alive()
+
+    def text(self) -> str:
+        """
+        The answer, once there is one
+        """
+
+        self._thread.join()
+        return self._text
+
+
+# The last background read, for as long as it can still answer for another
+_reading: Optional[ClipboardRead] = None
+
+
+def start_reading_text(app: Optional["App"] = None) -> ClipboardRead:
+    """
+    Start reading the clipboard as it stands now, without waiting for it
+
+    One still running is shared, so a key held down reads one at a time.
+    """
+
+    global _reading
+
+    if _reading is None or not _reading.running:
+        _reading = ClipboardRead(app or running_app())
+
+    return _reading
 
 
 # What is asked of the desktop to read a *file* off the clipboard, per

@@ -76,6 +76,7 @@ FEATURE_BY_MODULE = {
     "test_key_resolve": "config",
     "test_loader": "config",
     "test_keyboard_layouts": "config",
+    "test_clipboard_read": "vim",
     "test_vim_note": "vim",
     "test_note_lazyvim": "vim",
     "test_vim_description": "vim",

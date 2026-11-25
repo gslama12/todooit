@@ -2,7 +2,7 @@
 What the engine needs from the text it edits, so it never imports its host
 """
 
-from typing import Protocol, Tuple
+from typing import Callable, Protocol, Tuple
 
 
 class Buffer(Protocol):
@@ -111,6 +111,12 @@ class Buffer(Protocol):
 
     def clipboard_text(self) -> str:
         """What the system clipboard holds, or "" if nothing can be had."""
+
+    def start_reading_clipboard(self) -> Callable[[], str]:
+        """
+        Start reading `clipboard_text` as it stands now, without making the key
+        wait. What's returned gives the answer, waiting for it if need be.
+        """
 
     def paste_clipboard_text(self, text: str) -> None:
         """

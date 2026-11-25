@@ -2,11 +2,11 @@
 The note as the text the vim engine works on
 """
 
-from typing import TYPE_CHECKING, Tuple
+from typing import TYPE_CHECKING, Callable, Tuple
 
 from textual.content import Content
 
-from todooit.utils import copy_text, paste_text
+from todooit.utils import copy_text, paste_text, start_reading_text
 from todooit.utils.links import folded_link_at, raw_column
 
 from ..disp.document import FoldedDocument, HangingDocument
@@ -200,6 +200,9 @@ class NoteBuffer:
 
     def clipboard_text(self) -> str:
         return paste_text(self._editor.app)
+
+    def start_reading_clipboard(self) -> Callable[[], str]:
+        return start_reading_text(self._editor.app).text
 
     def paste_clipboard_text(self, text: str) -> None:
         self._editor.write_pasted(text)
