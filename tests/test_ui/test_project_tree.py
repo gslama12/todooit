@@ -2,6 +2,8 @@
 The projects pane: stored projects among the fixed ones
 """
 
+import pytest
+
 from tests.test_ui.ui_base import (
     boot,
     commit_line,
@@ -307,6 +309,18 @@ async def test_adding_from_a_fixed_row_starts_the_stored_block():
         assert project.description == "first real project"
         assert project.parent_project is not None
         assert project.parent_project.is_root
+
+
+@pytest.mark.parametrize("key", ["n", "i", "a"])
+async def test_every_add_key_adds_a_project(key):
+    async with run_pilot() as pilot:
+        await boot(pilot)
+        await new_project(pilot, "first")
+
+        await pilot.press(key)
+        await commit_line(pilot, "second")
+
+        assert sorted(p.description for p in Project.all()) == ["first", "second"]
 
 
 async def test_project_remove_cancelled():

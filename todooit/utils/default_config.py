@@ -607,7 +607,9 @@ def key_setup(api: TodooitAPI, _):
     # another one can never be pressed on its own
     api.keys.set("s", api.edit_scheduled, group=EDITING)
     api.keys.set("r", api.edit_recurrence, group=EDITING)
-    api.keys.set("n", api.add_sibling, group=EDITING)
+    # vim's two ways into INSERT start a new item as well. `n` is listed first:
+    # it is the one the docs and `key_for` go by
+    api.keys.set(["n", "i", "a"], api.add_sibling, group=EDITING, label="n/i/a")
     api.keys.set("N", api.add_child_node, group=EDITING)
     # The whole task in one line, from wherever the cursor happens to be. The
     # shifted twin of the key that ticks one off, since between them they are

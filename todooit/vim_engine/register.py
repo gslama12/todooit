@@ -3,7 +3,7 @@ The one register, and how it stands to the system clipboard
 """
 
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -42,11 +42,41 @@ class RegisterMemory:
     register: Optional[Register] = None
 
     # What the system clipboard last held that a paste shouldn't prefer: the last
-    # yank, or what was there when the first note opened. None until then.
+    # yank, or what was there at the last delete or when the first note opened.
+    # None until then.
     known_clipboard: Optional[str] = None
+
+    # Gives what was there at the last delete, until a paste first asks
+    _clipboard_then: Optional[Callable[[], str]] = None
+
+    def keep_yanked(self, register: Register) -> None:
+        """Keep what was yanked, which is on the system clipboard too."""
+
+        self.register = register
+        self.know_clipboard(register.text)
+
+    def keep_deleted(
+        self, register: Register, clipboard_then: Callable[[], str]
+    ) -> None:
+        """
+        Keep what was deleted or changed. It's newer than whatever the system
+        clipboard holds by now, which `clipboard_then` gives once it's known.
+        """
+
+        self.register = register
+        self._clipboard_then = clipboard_then
+
+    def know_clipboard(self, text: str) -> None:
+        """The system clipboard holds `text`, and that's no news any more."""
+
+        self.known_clipboard = text
+        self._clipboard_then = None
 
     def pastes_clipboard(self, text: str) -> bool:
         """Whether a paste should take `text` off the clipboard over the register."""
+
+        if self._clipboard_then is not None:
+            self.know_clipboard(self._clipboard_then())
 
         if not text:
             return False

@@ -426,10 +426,10 @@ async def test_a_click_on_a_rendered_line_lands_on_the_character_clicked():
 async def test_moving_down_lands_on_the_stored_column():
     async with run_pilot() as pilot:
         _, editor = await load(pilot, "0123456789\n**bold** words")
+        await pilot.press("escape")
         editor.move_cursor((0, 6))
         await pilot.pause()
 
-        await pilot.press("escape")
         editor.action_cursor_down()
         await pilot.pause()
 

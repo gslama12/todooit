@@ -9,7 +9,7 @@ ones the app builds from them.
 
 | Key | What it does |
 | --- | --- |
-| `n` | New project, as a sibling |
+| `n` / `i` / `a` | New project, as a sibling |
 | `N` | New project, as a child of this one |
 | `e` | Rename, with [vim keys](/guide/vim#task-descriptions) |
 | `h` | Expand / collapse |
